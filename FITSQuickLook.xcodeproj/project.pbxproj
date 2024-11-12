@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A3AE31E82CE3ED570080470D /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3AE31E72CE3ED570080470D /* Quartz.framework */; };
+		A3AE31F52CE3ED570080470D /* FITSQuickLookExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A3AE31E52CE3ED570080470D /* FITSQuickLookExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A3AE31C52CE3ED1C0080470D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -21,13 +26,46 @@
 			remoteGlobalIDString = A3AE31B22CE3ED1A0080470D;
 			remoteInfo = FITSQuickLook;
 		};
+		A3AE31F32CE3ED570080470D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A3AE31AB2CE3ED1A0080470D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A3AE31E42CE3ED570080470D;
+			remoteInfo = FITSQuickLookExtension;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A3AE31FA2CE3ED570080470D /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A3AE31F52CE3ED570080470D /* FITSQuickLookExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		A3AE31B32CE3ED1A0080470D /* FITSQuickLook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FITSQuickLook.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3AE31C42CE3ED1C0080470D /* FITSQuickLookTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FITSQuickLookTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3AE31CE2CE3ED1C0080470D /* FITSQuickLookUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FITSQuickLookUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A3AE31E52CE3ED570080470D /* FITSQuickLookExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = FITSQuickLookExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A3AE31E72CE3ED570080470D /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A3AE31F62CE3ED570080470D /* Exceptions for "FITSQuickLookExtension" folder in "FITSQuickLookExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A3AE31E42CE3ED570080470D /* FITSQuickLookExtension */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A3AE31B52CE3ED1A0080470D /* FITSQuickLook */ = {
@@ -43,6 +81,14 @@
 		A3AE31D12CE3ED1C0080470D /* FITSQuickLookUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = FITSQuickLookUITests;
+			sourceTree = "<group>";
+		};
+		A3AE31E92CE3ED570080470D /* FITSQuickLookExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A3AE31F62CE3ED570080470D /* Exceptions for "FITSQuickLookExtension" folder in "FITSQuickLookExtension" target */,
+			);
+			path = FITSQuickLookExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -69,6 +115,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A3AE31E22CE3ED570080470D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A3AE31E82CE3ED570080470D /* Quartz.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -78,6 +132,8 @@
 				A3AE31B52CE3ED1A0080470D /* FITSQuickLook */,
 				A3AE31C72CE3ED1C0080470D /* FITSQuickLookTests */,
 				A3AE31D12CE3ED1C0080470D /* FITSQuickLookUITests */,
+				A3AE31E92CE3ED570080470D /* FITSQuickLookExtension */,
+				A3AE31E62CE3ED570080470D /* Frameworks */,
 				A3AE31B42CE3ED1A0080470D /* Products */,
 			);
 			sourceTree = "<group>";
@@ -88,8 +144,17 @@
 				A3AE31B32CE3ED1A0080470D /* FITSQuickLook.app */,
 				A3AE31C42CE3ED1C0080470D /* FITSQuickLookTests.xctest */,
 				A3AE31CE2CE3ED1C0080470D /* FITSQuickLookUITests.xctest */,
+				A3AE31E52CE3ED570080470D /* FITSQuickLookExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A3AE31E62CE3ED570080470D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A3AE31E72CE3ED570080470D /* Quartz.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -102,10 +167,12 @@
 				A3AE31AF2CE3ED1A0080470D /* Sources */,
 				A3AE31B02CE3ED1A0080470D /* Frameworks */,
 				A3AE31B12CE3ED1A0080470D /* Resources */,
+				A3AE31FA2CE3ED570080470D /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A3AE31F42CE3ED570080470D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A3AE31B52CE3ED1A0080470D /* FITSQuickLook */,
@@ -163,6 +230,29 @@
 			productReference = A3AE31CE2CE3ED1C0080470D /* FITSQuickLookUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		A3AE31E42CE3ED570080470D /* FITSQuickLookExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A3AE31F72CE3ED570080470D /* Build configuration list for PBXNativeTarget "FITSQuickLookExtension" */;
+			buildPhases = (
+				A3AE31E12CE3ED570080470D /* Sources */,
+				A3AE31E22CE3ED570080470D /* Frameworks */,
+				A3AE31E32CE3ED570080470D /* Resources */,
+				A3AE32122CE40B630080470D /* Run Script */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A3AE31E92CE3ED570080470D /* FITSQuickLookExtension */,
+			);
+			name = FITSQuickLookExtension;
+			packageProductDependencies = (
+			);
+			productName = FITSQuickLookExtension;
+			productReference = A3AE31E52CE3ED570080470D /* FITSQuickLookExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -184,6 +274,9 @@
 						CreatedOnToolsVersion = 16.1;
 						TestTargetID = A3AE31B22CE3ED1A0080470D;
 					};
+					A3AE31E42CE3ED570080470D = {
+						CreatedOnToolsVersion = 16.1;
+					};
 				};
 			};
 			buildConfigurationList = A3AE31AE2CE3ED1A0080470D /* Build configuration list for PBXProject "FITSQuickLook" */;
@@ -203,6 +296,7 @@
 				A3AE31B22CE3ED1A0080470D /* FITSQuickLook */,
 				A3AE31C32CE3ED1C0080470D /* FITSQuickLookTests */,
 				A3AE31CD2CE3ED1C0080470D /* FITSQuickLookUITests */,
+				A3AE31E42CE3ED570080470D /* FITSQuickLookExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -229,7 +323,36 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A3AE31E32CE3ED570080470D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A3AE32122CE40B630080470D /* Run Script */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Run Script";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"${HOME}/Library/QuickLook/FITSQuickLook.qlgenerator",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Define variables\nAPP_NAME=\"FITSQuickLook\"\nEXTENSION_NAME=\"FITSQuickLookExtension\"\nQLGENERATOR_NAME=\"FITSQuickLook.qlgenerator\"\nDERIVED_DATA_PATH=\"${BUILD_DIR}/${CONFIGURATION}/${EXTENSION_NAME}.appex\"\nQLMANAGE_PATH=\"${HOME}/Library/QuickLook\"\n\n# Create QuickLook directory if it doesn't exist\nmkdir -p \"$QLMANAGE_PATH\"\n\n# Remove old generator if it exists\nrm -rf \"${QLMANAGE_PATH}/${QLGENERATOR_NAME}\"\n\n# Copy and rename the .appex to .qlgenerator\ncp -R \"$DERIVED_DATA_PATH\" \"${QLMANAGE_PATH}/${QLGENERATOR_NAME}\"\n\n# Optional: Modify the Info.plist if needed\nPLIST_PATH=\"${QLMANAGE_PATH}/${QLGENERATOR_NAME}/Contents/Info.plist\"\n/usr/libexec/PlistBuddy -c \"Set :CFBundlePackageType QLGEN\" \"$PLIST_PATH\"\n\n# Reset QuickLook\nqlmanage -r\nqlmanage -r cache\n\necho \"QuickLook generator deployed to ${QLMANAGE_PATH}/${QLGENERATOR_NAME}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A3AE31AF2CE3ED1A0080470D /* Sources */ = {
@@ -253,6 +376,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A3AE31E12CE3ED570080470D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +395,11 @@
 			isa = PBXTargetDependency;
 			target = A3AE31B22CE3ED1A0080470D /* FITSQuickLook */;
 			targetProxy = A3AE31CF2CE3ED1C0080470D /* PBXContainerItemProxy */;
+		};
+		A3AE31F42CE3ED570080470D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A3AE31E42CE3ED570080470D /* FITSQuickLookExtension */;
+			targetProxy = A3AE31F32CE3ED570080470D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -399,6 +534,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"FITSQuickLook/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -424,6 +560,7 @@
 				DEVELOPMENT_ASSET_PATHS = "\"FITSQuickLook/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -501,6 +638,54 @@
 			};
 			name = Release;
 		};
+		A3AE31F82CE3ED570080470D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = FITSQuickLookExtension/FITSQuickLookExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FITSQuickLookExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FITSQuickLookExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = SwRI.FITSQuickLook.FITSQuickLookExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A3AE31F92CE3ED570080470D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = FITSQuickLookExtension/FITSQuickLookExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = FITSQuickLookExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = FITSQuickLookExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = SwRI.FITSQuickLook.FITSQuickLookExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -536,6 +721,15 @@
 			buildConfigurations = (
 				A3AE31DF2CE3ED1C0080470D /* Debug */,
 				A3AE31E02CE3ED1C0080470D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A3AE31F72CE3ED570080470D /* Build configuration list for PBXNativeTarget "FITSQuickLookExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A3AE31F82CE3ED570080470D /* Debug */,
+				A3AE31F92CE3ED570080470D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

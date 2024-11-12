@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeExtensions</key>
+            <array>
+                <string>fits</string>
+            </array>
+            <key>CFBundleTypeName</key>
+            <string>FITS Image</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+        </dict>
+    </array>
+    <key>QLSupportedContentTypes</key>
+    <array>
+        <string>public.fits</string>
+        <string>com.example.fits</string>
+    </array>
+    <key>CFBundlePackageType</key>
+    <string>QLGEN</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>QLIsDataBasedPreview</key>
+            <false/>
+            <key>QLSupportedContentTypes</key>
+            <array>
+                <string>public.fits</string>
+                <string>com.example.fits</string>
+            </array>
+            <key>QLSupportsSearchableItems</key>
+            <false/>
+        </dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.quicklook.preview</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>$(PRODUCT_MODULE_NAME).PreviewProvider</string>
+    </dict>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.example.fits</string>
+            <key>UTTypeDescription</key>
+            <string>FITS Image</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>fits</string>
+                </array>
+                <key>public.mime-type</key>
+                <string>image/fits</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>
