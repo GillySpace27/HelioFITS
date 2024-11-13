@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A3186F732CE436DD00395F60 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3186F702CE436DD00395F60 /* QuickLook.framework */; };
 		A3AE31E82CE3ED570080470D /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3AE31E72CE3ED570080470D /* Quartz.framework */; };
 		A3AE31F52CE3ED570080470D /* FITSQuickLookExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A3AE31E52CE3ED570080470D /* FITSQuickLookExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -50,6 +51,9 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		A3186F702CE436DD00395F60 /* QuickLook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLook.framework; path = System/Library/Frameworks/QuickLook.framework; sourceTree = SDKROOT; };
+		A3186F712CE436DD00395F60 /* QuickLookUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookUI.framework; path = System/Library/Frameworks/QuickLookUI.framework; sourceTree = SDKROOT; };
+		A3186F722CE436DD00395F60 /* QuickLookThumbnailing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookThumbnailing.framework; path = System/Library/PrivateFrameworks/QuickLookThumbnailing.framework; sourceTree = SDKROOT; };
 		A3AE31B32CE3ED1A0080470D /* FITSQuickLook.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FITSQuickLook.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3AE31C42CE3ED1C0080470D /* FITSQuickLookTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FITSQuickLookTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A3AE31CE2CE3ED1C0080470D /* FITSQuickLookUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FITSQuickLookUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -120,6 +124,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A3AE31E82CE3ED570080470D /* Quartz.framework in Frameworks */,
+				A3186F732CE436DD00395F60 /* QuickLook.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -152,6 +157,9 @@
 		A3AE31E62CE3ED570080470D /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				A3186F702CE436DD00395F60 /* QuickLook.framework */,
+				A3186F722CE436DD00395F60 /* QuickLookThumbnailing.framework */,
+				A3186F712CE436DD00395F60 /* QuickLookUI.framework */,
 				A3AE31E72CE3ED570080470D /* Quartz.framework */,
 			);
 			name = Frameworks;
@@ -260,6 +268,9 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
+				KnownAssetTags = (
+					New,
+				);
 				LastSwiftUpdateCheck = 1610;
 				LastUpgradeCheck = 1610;
 				TargetAttributes = {
@@ -642,8 +653,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FITSQuickLookExtension/FITSQuickLookExtension.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FITSQuickLookExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FITSQuickLookExtension;
@@ -653,12 +666,17 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = SwRI.FITSQuickLook.FITSQuickLookExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SDKROOT)$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks",
+				);
 			};
 			name = Debug;
 		};
@@ -666,8 +684,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = FITSQuickLookExtension/FITSQuickLookExtension.entitlements;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = FITSQuickLookExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = FITSQuickLookExtension;
@@ -677,12 +697,17 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 14.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = SwRI.FITSQuickLook.FITSQuickLookExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SKIP_INSTALL = YES;
+				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
+				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SDKROOT)$(SYSTEM_LIBRARY_DIR)/PrivateFrameworks",
+				);
 			};
 			name = Release;
 		};
