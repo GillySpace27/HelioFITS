@@ -43,15 +43,22 @@ xcrun stapler validate "$APP"
 # ponytail: distribute the stapled .app; re-zip so the ticket travels with it.
 rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
 
-# xcodebuild archive silently registers the build-intermediates app copy in
-# LaunchServices. Once Xcode prunes that path, the dangling registration can
-# hijack QuickLook thumbnail generation (blank icons). Unregister it now, while
-# it still exists, and re-assert the installed /Applications copy.
+# LaunchServices hygiene. Every archive/ship transiently registers SEVERAL app
+# copies (the .xcarchive, this build/ copy, and a DerivedData archive
+# intermediate). Any dangling one can hijack QuickLook THUMBNAIL generation —
+# the ThumbnailsAgent latches a stale path and every launch fails "not found in
+# LS database" → blank icons. Unregister every non-/Applications copy, drop the
+# .xcarchive so nothing can re-latch it, then re-assert /Applications only.
 LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 12 \
-  -path "*/ArchiveIntermediates/*/Applications/HelioFITS.app" -prune 2>/dev/null \
+"$LSREG" -u "$APP" 2>/dev/null || true                                  # this build/ copy
+"$LSREG" -u "$ARCH/Products/Applications/HelioFITS.app" 2>/dev/null || true   # the archive copy
+# DerivedData archive intermediate (name-match, since the path depth varies):
+find "$HOME/Library/Developer/Xcode/DerivedData" -type d -name "HelioFITS.app" \
+  -path "*ArchiveIntermediates*" 2>/dev/null \
   | while read -r a; do "$LSREG" -u "$a" 2>/dev/null || true; done
+rm -rf "$ARCH"                                                           # xcarchive is intermediate; zip/app remain
 "$LSREG" -gc 2>/dev/null || true
 [ -d /Applications/HelioFITS.app ] && "$LSREG" -f -R /Applications/HelioFITS.app 2>/dev/null || true
+echo "==> LaunchServices: unregistered build/archive copies; /Applications re-asserted"
 
 echo "==> Done. Ship: $APP  (or the re-zipped $ZIP)"

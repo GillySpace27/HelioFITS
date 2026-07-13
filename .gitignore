@@ -9,3 +9,5 @@ xcuserdata/
 *.xcuserstate
 # Importer build artifacts
 FITSMetadataImporter/build/
+# Ship output
+ship.log

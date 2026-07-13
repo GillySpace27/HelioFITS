@@ -158,6 +158,11 @@ static Boolean GetMetadataForFile(void *thisInstance,
     if (date)           CFDictionarySetValue(attributes, CFSTR("com_gillyspace27_fits_dateobs"), date);
     if (m.has_exptime)  set_num_double(attributes, CFSTR("com_gillyspace27_fits_exptime"), m.exptime);
     set_num_long(attributes, CFSTR("com_gillyspace27_fits_nhdus"), m.nhdus);
+    if (m.has_dims) {
+        char res[64];
+        snprintf(res, sizeof res, "%ld \xc3\x97 %ld", m.width, m.height);  // "1024 × 1024"
+        set_str(attributes, CFSTR("com_gillyspace27_fits_resolution"), res);
+    }
 
     if (date) CFRelease(date);
     return TRUE;

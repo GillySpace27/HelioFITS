@@ -21,9 +21,9 @@ struct HelioFITSApp: App {
                 .onOpenURL { url in
                     if url.isFileURL {
                         HeaderWindowController.shared.present(fileURL: url)
-                        // If a header open is why the app launched, don't also
-                        // pop the settings window.
-                        ControlPanelController.shared.headerOpened(atLaunch: AppDelegate.isLaunching)
+                        // Opening a FITS file must never bring up the settings
+                        // panel (cold OR warm launch).
+                        ControlPanelController.shared.fileOpened()
                     } else {
                         applySyncURL(url)
                     }
@@ -33,15 +33,9 @@ struct HelioFITSApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    /// True during the launch window, so a file opened right after launch reads
-    /// as "launched to view a header" (→ keep the control panel hidden). Cleared
-    /// a couple seconds in, after which header opens leave a running app alone.
-    static var isLaunching = true
-
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = ServiceProvider.shared
         NSUpdateDynamicServices()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { AppDelegate.isLaunching = false }
     }
 
     // Clicking the Dock icon brings the control panel back even if it was
@@ -57,33 +51,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 /// unless a header was opened, which is the whole reason the app came up.
 final class ControlPanelController {
     static let shared = ControlPanelController()
-    private var window: NSWindow?          // strong: keep it alive to re-reveal
-    private var suppressed = false         // header-launch claimed this launch
+    private var window: NSWindow?          // the (latest) control-panel window
+    private var revealWork: DispatchWorkItem?
+    private var documentMode = false       // a file was opened → keep the panel down
 
-    // NOTE: `open -a` can deliver a reopen event BEFORE SwiftUI creates the
-    // window, so reveal() may run with window == nil. Only `suppressed` gates
-    // the delayed reveal — an early no-op reveal must NOT permanently mark the
-    // launch as "handled" (that bug left the panel hidden forever).
+    // The control panel appears ONLY on a plain launch or a Dock click — NEVER
+    // alongside a document. Two gotchas this handles:
+    //   • `open -a` can deliver a reopen BEFORE the window exists (reveal() then
+    //     no-ops on a nil window — fine, capture() reschedules).
+    //   • SwiftUI creates a FRESH WindowGroup window when a file is opened with
+    //     no window present, so we must NOT guard on window==nil — track the
+    //     newest and hide it; documentMode keeps every one down.
     func capture(_ w: NSWindow) {
-        guard window == nil else { return }      // only the first window (the panel)
         window = w
         w.orderOut(nil)                          // hidden until we decide (no flash)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            guard let self, !self.suppressed else { return }
+        guard !documentMode else { return }      // came up for a document → stay hidden
+        // Plain launch: reveal after long enough to catch a COLD document event
+        // (the old 0.4s was shorter than cold-launch delivery → the panel
+        // flashed up). fileOpened() cancels this if a document is opening.
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, !self.documentMode else { return }
             self.reveal()
         }
+        revealWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
     }
 
-    /// A header file was opened. During the launch window that means the app was
-    /// launched purely to show a header — keep the panel down.
-    func headerOpened(atLaunch: Bool) {
-        guard atLaunch else { return }           // already running → don't disturb it
-        suppressed = true
+    /// A FITS file was opened (its viewer window shows). The control panel must
+    /// never accompany a document — every time: cancel a pending reveal and hide
+    /// any panel a cold OR warm launch created/left up. Dock-click (reveal)
+    /// brings it back and clears documentMode.
+    func fileOpened() {
+        documentMode = true
+        revealWork?.cancel()
         window?.orderOut(nil)
     }
 
     func reveal() {
-        suppressed = false
+        documentMode = false
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -119,6 +124,17 @@ private func dirsFromURL(_ url: URL) -> [String] {
 /// heliofits://sync?hdu=N&paths=…  → write the rule directly (scripting path).
 func applySyncURL(_ url: URL) {
     guard url.scheme == "heliofits" else { return }
+
+    // heliofits://export?paths=… → batch PNG export. Needs FILE paths (not the
+    // parent dirs dirsFromURL collapses to), so parse queryItems directly.
+    if url.host == "export" {
+        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        let paths = (comps?.queryItems?.first { $0.name == "paths" }?.value ?? "")
+            .split(separator: "\n").map(String.init)
+        DispatchQueue.main.async { PNGExporter.run(paths: paths) }
+        return
+    }
+
     let dirs = dirsFromURL(url)
     guard !dirs.isEmpty else { return }
 

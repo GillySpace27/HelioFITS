@@ -133,37 +133,117 @@ private extension String {
     }
 }
 
+// MARK: - Drag-out image view
+
+/// NSImageView that offers its rendered PNG as a file promise, so the preview
+/// drags straight into Finder/Keynote/Slack. The controller supplies
+/// (pngData, filename) via `pngProvider` — nil until the first render lands.
+final class DraggablePNGView: NSImageView, NSDraggingSource, NSFilePromiseProviderDelegate {
+    var pngProvider: (() -> (data: Data, filename: String)?)?
+
+    override func mouseDown(with event: NSEvent) {}   // swallow; drag starts on movement
+
+    override func mouseDragged(with event: NSEvent) {
+        guard image != nil, pngProvider?() != nil else { return }
+        let promise = NSFilePromiseProvider(fileType: UTType.png.identifier, delegate: self)
+        let item = NSDraggingItem(pasteboardWriter: promise)
+        item.setDraggingFrame(bounds, contents: image)
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
+
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
+                             fileNameForType fileType: String) -> String {
+        pngProvider?()?.filename ?? "image.png"
+    }
+
+    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
+                             writePromiseTo url: URL,
+                             completionHandler: @escaping (Error?) -> Void) {
+        guard let png = pngProvider?() else { completionHandler(CocoaError(.fileNoSuchFile)); return }
+        do { try png.data.write(to: url); completionHandler(nil) }
+        catch { completionHandler(error) }
+    }
+}
+
 // MARK: - Native window
 
 final class HeaderWindowController: NSObject, NSWindowDelegate {
     static let shared = HeaderWindowController()
     private static let imageTag = 101
     private static let saveTag = 102
+    private static let hduPopupTag = 103
+    private static let copyPythonTag = 104
 
     private var windows = Set<NSWindow>()                 // retain until closed
     private var pngs = [ObjectIdentifier: Data]()         // rendered colormapped PNG per window (for export)
     private var sources = [ObjectIdentifier: URL]()       // source FITS per window
+    private var scopedURLs = [ObjectIdentifier: URL]()    // security scope held while open (HDU switching re-reads)
 
-    /// Show a native window with the colormapped image, the full header, and a
-    /// "Save PNG…" button. The image is rendered in-app via CFITSIO (same
-    /// FITSRenderer the extensions use) so it carries the instrument colormap and
-    /// exports at full render resolution.
+    /// Show a native window with the colormapped image, an HDU switcher, the
+    /// full header, and a "Save PNG…" button. The image is rendered in-app via
+    /// CFITSIO (same FITSRenderer the extensions use) so it carries the
+    /// instrument colormap and exports at full render resolution.
     func present(fileURL: URL) {
         let scoped = fileURL.startAccessingSecurityScopedResource()
         let text = FITSHeader.dump(path: fileURL.path)
-        let win = makeWindow(title: fileURL.lastPathComponent, text: text, source: fileURL)
 
+        // Renderable (image) HDUs + their EXTNAMEs, from the dump's "HDU n [name]" banners.
+        var idx = [Int](repeating: 0, count: 64)
+        let n = Int(fitsshim_image_hdus(fileURL.path, &idx, 64))
+        let imageHDUs = n > 0 ? Array(idx[0..<min(n, 64)]) : []
+        var names = [Int: String]()
+        for line in text.split(separator: "\n") where line.hasPrefix("HDU ") {
+            let rest = line.dropFirst(4)
+            guard let num = Int(rest.prefix(while: { $0.isNumber })),
+                  let l = rest.firstIndex(of: "["), let r = rest.lastIndex(of: "]"), l < r
+            else { continue }
+            names[num] = String(rest[rest.index(after: l)..<r])
+        }
+
+        let win = makeWindow(title: fileURL.lastPathComponent, text: text, source: fileURL)
+        if scoped { scopedURLs[ObjectIdentifier(win)] = fileURL }   // released in windowWillClose
+
+        // HDU switcher: same starting HDU the Quick Look preview would pick.
+        var initial = imageHDUs.first ?? -1                          // -1 = shim auto
+        let want = FITSRenderer.selectedHDU(forFileAt: fileURL.path)
+        if want >= 0, imageHDUs.contains(want) { initial = want }
+        if want == -2, let l = imageHDUs.last { initial = l }
+        if let popup = win.contentView?.viewWithTag(Self.hduPopupTag) as? NSPopUpButton {
+            if imageHDUs.count > 1 {
+                for h in imageHDUs {
+                    popup.addItem(withTitle: names[h].map { "HDU \(h) — \($0)" } ?? "HDU \(h)")
+                    popup.lastItem?.tag = h
+                }
+                popup.selectItem(withTag: initial)
+                popup.sizeToFit()
+            } else {
+                popup.isHidden = true                     // nothing to switch
+            }
+        }
+        renderHDU(in: win, url: fileURL, hdu: initial)
+    }
+
+    /// Render one HDU on a background queue and swap it into the window.
+    private func renderHDU(in win: NSWindow, url: URL, hdu: Int) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self, weak win] in
-            let result = try? FITSRenderer.render(path: fileURL.path, maxSide: 4096)
-            if scoped { fileURL.stopAccessingSecurityScopedResource() }
+            let result = try? FITSRenderer.render(path: url.path, maxSide: 4096, hdu: hdu)
             guard let r = result, let img = NSImage(data: r.png) else { return } // header still shown on failure
             DispatchQueue.main.async {
                 guard let self, let win else { return }
                 self.pngs[ObjectIdentifier(win)] = r.png
                 (win.contentView?.viewWithTag(Self.imageTag) as? NSImageView)?.image = img
                 (win.contentView?.viewWithTag(Self.saveTag) as? NSButton)?.isEnabled = true
+                (win.contentView?.viewWithTag(Self.copyPythonTag) as? NSButton)?.isEnabled = true
             }
         }
+    }
+
+    @objc private func hduChanged(_ sender: NSPopUpButton) {
+        guard let win = sender.window, let src = sources[ObjectIdentifier(win)] else { return }
+        renderHDU(in: win, url: src, hdu: sender.selectedTag())
     }
 
     private func makeWindow(title: String, text: String, source: URL) -> NSWindow {
@@ -178,21 +258,32 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: W, height: H))
 
-        // image band (top) — colormapped preview on black
-        let iv = NSImageView(frame: NSRect(x: 0, y: H - imgH, width: W, height: imgH))
+        // image band (top) — colormapped preview on black; drags out as a PNG
+        let iv = DraggablePNGView(frame: NSRect(x: 0, y: H - imgH, width: W, height: imgH))
         iv.tag = Self.imageTag
         iv.imageScaling = .scaleProportionallyUpOrDown
         iv.imageAlignment = .alignCenter
         iv.wantsLayer = true
         iv.layer?.backgroundColor = NSColor.black.cgColor
         iv.autoresizingMask = [.width, .minYMargin]
+        iv.pngProvider = { [weak self, weak win] in
+            guard let self, let win else { return nil }
+            return self.pngExport(for: win)
+        }
         content.addSubview(iv)
 
-        // action bar (middle) — Save PNG button, right-aligned
+        // action bar (middle) — HDU switcher (left), Save PNG button (right)
         let bar = NSView(frame: NSRect(x: 0, y: H - imgH - barH, width: W, height: barH))
         bar.wantsLayer = true
         bar.layer?.backgroundColor = NSColor(calibratedRed: 0.09, green: 0.09, blue: 0.09, alpha: 1).cgColor
         bar.autoresizingMask = [.width, .minYMargin]
+        let popup = NSPopUpButton(frame: NSRect(x: 12, y: (barH - 25) / 2, width: 230, height: 25),
+                                  pullsDown: false)
+        popup.tag = Self.hduPopupTag
+        popup.target = self
+        popup.action = #selector(hduChanged(_:))
+        popup.autoresizingMask = [.maxXMargin]
+        bar.addSubview(popup)
         let save = NSButton(title: "Save PNG…", target: self, action: #selector(savePNG(_:)))
         save.tag = Self.saveTag
         save.bezelStyle = .rounded
@@ -201,6 +292,15 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         save.setFrameOrigin(NSPoint(x: W - save.frame.width - 12, y: (barH - save.frame.height) / 2))
         save.autoresizingMask = [.minXMargin]
         bar.addSubview(save)
+        let copy = NSButton(title: "Copy Python", target: self, action: #selector(copyPython(_:)))
+        copy.tag = Self.copyPythonTag
+        copy.bezelStyle = .rounded
+        copy.isEnabled = false                        // enabled alongside Save PNG
+        copy.sizeToFit()
+        copy.setFrameOrigin(NSPoint(x: save.frame.minX - copy.frame.width - 8,
+                                    y: (barH - copy.frame.height) / 2))
+        copy.autoresizingMask = [.minXMargin]
+        bar.addSubview(copy)
         content.addSubview(bar)
 
         // header band (bottom) — monospaced, ⌘F-searchable
@@ -239,16 +339,39 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     /// figure. ponytail: capped at the thumbnail render size (~1024px native);
     /// add a full-res path via the cfitsio renderer if users need print DPI.
     @objc private func savePNG(_ sender: NSButton) {
-        guard let win = sender.window,
-              let data = pngs[ObjectIdentifier(win)],
-              let src = sources[ObjectIdentifier(win)] else { return }
+        guard let win = sender.window, let export = pngExport(for: win) else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = src.deletingPathExtension().lastPathComponent + ".png"
+        panel.nameFieldStringValue = export.filename
         panel.beginSheetModal(for: win) { resp in
             guard resp == .OK, let out = panel.url else { return }
-            try? data.write(to: out)   // the exact colormapped PNG we rendered
+            try? export.data.write(to: out)   // the exact colormapped PNG we rendered
         }
+    }
+
+    /// (png, "<base>[_hduN].png") for a window — nil until the first render lands.
+    /// Shared by Save PNG… and the image drag-out.
+    private func pngExport(for win: NSWindow) -> (data: Data, filename: String)? {
+        guard let data = pngs[ObjectIdentifier(win)],
+              let src = sources[ObjectIdentifier(win)] else { return nil }
+        let popup = win.contentView?.viewWithTag(Self.hduPopupTag) as? NSPopUpButton
+        let hduSuffix = (popup?.isHidden == false) ? "_hdu\(popup!.selectedTag())" : ""
+        return (data, src.deletingPathExtension().lastPathComponent + hduSuffix + ".png")
+    }
+
+    /// Copy a ready-to-run sunpy snippet for this file (and current HDU) — the
+    /// "now open it properly in python" escape hatch.
+    @objc private func copyPython(_ sender: NSButton) {
+        guard let win = sender.window, let src = sources[ObjectIdentifier(win)] else { return }
+        let popup = win.contentView?.viewWithTag(Self.hduPopupTag) as? NSPopUpButton
+        let hduArg = (popup?.isHidden == false) ? ", hdu=\(popup!.selectedTag())" : ""
+        let snippet = """
+        import sunpy.map
+        m = sunpy.map.Map("\(src.path)"\(hduArg))
+        m.peek()
+        """
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(snippet, forType: .string)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -256,6 +379,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             windows.remove(w)
             pngs.removeValue(forKey: ObjectIdentifier(w))
             sources.removeValue(forKey: ObjectIdentifier(w))
+            scopedURLs.removeValue(forKey: ObjectIdentifier(w))?.stopAccessingSecurityScopedResource()
         }
     }
 }

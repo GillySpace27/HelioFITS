@@ -17,3 +17,6 @@
 
 "com_gillyspace27_fits_nhdus"                 = "HDU Count";
 "com_gillyspace27_fits_nhdus.Description"     = "Number of Header/Data Units in the FITS file";
+
+"com_gillyspace27_fits_resolution"            = "Dimensions";
+"com_gillyspace27_fits_resolution.Description" = "Image size in pixels (NAXIS1 x NAXIS2 of the primary image HDU)";

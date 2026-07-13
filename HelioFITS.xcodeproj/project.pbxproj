@@ -122,15 +122,11 @@
 		};
 		A3AE31C72CE3ED1C0080470D /* HelioFITSTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = HelioFITSTests;
 			sourceTree = "<group>";
 		};
 		A3AE31D12CE3ED1C0080470D /* HelioFITSUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = HelioFITSUITests;
 			sourceTree = "<group>";
 		};
@@ -251,7 +247,6 @@
 			children = (
 				C8815A478097ECDE81A6098F /* ThumbnailProvider.swift */,
 			);
-			name = HelioFITSThumbnail;
 			path = HelioFITSThumbnail;
 			sourceTree = "<group>";
 		};
@@ -724,7 +719,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_ASSET_PATHS = "\"HelioFITS/Preview Content\"";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = UB45PPC2JS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
@@ -898,7 +893,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = UB45PPC2JS;
 				GENERATE_INFOPLIST_FILE = YES;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",

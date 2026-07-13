@@ -12,11 +12,12 @@ import SwiftUI
 import AppKit
 
 private let appGroup = "UB45PPC2JS.com.gillyspace27.fits"
-private let fitsExtensions = ["fits", "fts", "fit"]
+private let fitsExtensions = ["fits", "fts", "fit", "fz"]
 
 struct HelioFITSView: View {
     @State private var defaultHDU: Int = -1
     @State private var dirRules: [String: Int] = [:]
+    @State private var pdfPreviews = false
     @State private var status = ""
     @ObservedObject private var service = ServiceRequest.shared
     @State private var serviceHDU: Int = -1
@@ -40,6 +41,13 @@ struct HelioFITSView: View {
                 }
                 .labelsHidden().frame(width: 170)
             }
+
+            Toggle("Column-view previews (PDF pages)", isOn: $pdfPreviews)
+                .help("Renders previews as one PDF page per HDU. Finder's column view shows PDF pages with ← → arrows (it won't host the interactive preview), so this trades the blink comparator, pixel readout, and stretch controls for HDU paging in column view.")
+            Text(pdfPreviews
+                 ? "HDU arrows in column view; interactive blink/readout OFF."
+                 : "Interactive preview (blink, pixel readout, stretch); column view shows a static thumbnail.")
+                .font(.footnote).foregroundStyle(.tertiary)
 
             Divider()
 
@@ -85,6 +93,7 @@ struct HelioFITSView: View {
         .frame(minWidth: 560, minHeight: 380, alignment: .topLeading)
         .onAppear(perform: load)
         .onChange(of: defaultHDU) { save() }
+        .onChange(of: pdfPreviews) { save() }
         .onReceive(NotificationCenter.default.publisher(
             for: UserDefaults.didChangeNotification)) { _ in load() }
         .sheet(isPresented: Binding(
@@ -134,12 +143,14 @@ struct HelioFITSView: View {
         guard let d = suite else { status = "⚠️ App-group defaults unavailable"; return }
         defaultHDU = d.object(forKey: "defaultHDU") != nil ? d.integer(forKey: "defaultHDU") : -1
         dirRules = (d.dictionary(forKey: "dirHDU") as? [String: Int]) ?? [:]
+        pdfPreviews = d.string(forKey: "previewStyle") == "pdf"
     }
 
     private func save() {
         guard let d = suite else { return }
         d.set(defaultHDU, forKey: "defaultHDU")
         d.set(dirRules, forKey: "dirHDU")
+        d.set(pdfPreviews ? "pdf" : "html", forKey: "previewStyle")
         status = "Saved. Previews (Space) update immediately; use “Refresh icons” to regenerate thumbnails."
     }
 

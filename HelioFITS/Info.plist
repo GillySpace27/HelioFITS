@@ -62,6 +62,7 @@
 					<string>fits</string>
 					<string>fts</string>
 					<string>fit</string>
+					<string>fz</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>

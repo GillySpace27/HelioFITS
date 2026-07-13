@@ -13,6 +13,7 @@
         <attribute name="com_gillyspace27_fits_dateobs"  type="CFDate"/>
         <attribute name="com_gillyspace27_fits_exptime"  type="CFNumber"/>
         <attribute name="com_gillyspace27_fits_nhdus"    type="CFNumber"/>
+        <attribute name="com_gillyspace27_fits_resolution" type="CFString"/>
     </attributes>
 
     <types>
@@ -24,6 +25,7 @@
                 com_gillyspace27_fits_telescop
                 com_gillyspace27_fits_instrume
                 com_gillyspace27_fits_wavelnth
+                com_gillyspace27_fits_resolution
                 com_gillyspace27_fits_dateobs
                 com_gillyspace27_fits_exptime
                 com_gillyspace27_fits_nhdus
@@ -32,6 +34,7 @@
                 com_gillyspace27_fits_telescop
                 com_gillyspace27_fits_instrume
                 com_gillyspace27_fits_wavelnth
+                com_gillyspace27_fits_resolution
                 com_gillyspace27_fits_dateobs
                 com_gillyspace27_fits_exptime
                 com_gillyspace27_fits_nhdus
