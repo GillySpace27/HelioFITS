@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>FITS Image</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>gov.nasa.gsfc.fits</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.gillyspace27.HelioFITS.sync</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>heliofits</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSServices</key>
+	<array>
+		<dict>
+			<key>NSMenuItem</key>
+			<dict>
+				<key>default</key>
+				<string>Sync FITS HDU</string>
+			</dict>
+			<key>NSMessage</key>
+			<string>syncFITSPreviews</string>
+			<key>NSSendFileTypes</key>
+			<array>
+				<string>gov.nasa.gsfc.fits</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>FITS Image</string>
+			<key>UTTypeIdentifier</key>
+			<string>gov.nasa.gsfc.fits</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>fits</string>
+					<string>fts</string>
+					<string>fit</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/fits</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -1,0 +1,19 @@
+/* Display names and descriptions for FITS custom Spotlight attributes */
+
+"com_gillyspace27_fits_telescop"              = "Telescope";
+"com_gillyspace27_fits_telescop.Description"  = "TELESCOP keyword: observing telescope/spacecraft";
+
+"com_gillyspace27_fits_instrume"              = "Instrument";
+"com_gillyspace27_fits_instrume.Description"  = "INSTRUME keyword: observing instrument";
+
+"com_gillyspace27_fits_wavelnth"              = "Wavelength";
+"com_gillyspace27_fits_wavelnth.Description"  = "WAVELNTH keyword: observing wavelength";
+
+"com_gillyspace27_fits_dateobs"               = "Observation Date";
+"com_gillyspace27_fits_dateobs.Description"   = "DATE-OBS keyword: UTC time of observation";
+
+"com_gillyspace27_fits_exptime"               = "Exposure Time";
+"com_gillyspace27_fits_exptime.Description"   = "EXPTIME keyword: exposure duration in seconds";
+
+"com_gillyspace27_fits_nhdus"                 = "HDU Count";
+"com_gillyspace27_fits_nhdus.Description"     = "Number of Header/Data Units in the FITS file";

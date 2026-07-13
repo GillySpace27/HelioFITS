@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schema version="1.0" xmlns="http://www.apple.com/metadata"
+                      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                      xsi:schemaLocation="http://www.apple.com/metadata file:///System/Library/Frameworks/CoreServices.framework/Frameworks/Metadata.framework/Resources/MetadataSchema.xsd">
+    <note>
+        Custom Spotlight attributes extracted from FITS image headers
+        (SDO/AIA and similar solar-physics data products).
+    </note>
+    <attributes>
+        <attribute name="com_gillyspace27_fits_wavelnth" type="CFNumber"/>
+        <attribute name="com_gillyspace27_fits_instrume" type="CFString"/>
+        <attribute name="com_gillyspace27_fits_telescop" type="CFString"/>
+        <attribute name="com_gillyspace27_fits_dateobs"  type="CFDate"/>
+        <attribute name="com_gillyspace27_fits_exptime"  type="CFNumber"/>
+        <attribute name="com_gillyspace27_fits_nhdus"    type="CFNumber"/>
+    </attributes>
+
+    <types>
+        <type name="com.gillyspace27.fits">
+            <note>
+                FITS image files (.fits/.fts/.fit).
+            </note>
+            <allattrs>
+                com_gillyspace27_fits_telescop
+                com_gillyspace27_fits_instrume
+                com_gillyspace27_fits_wavelnth
+                com_gillyspace27_fits_dateobs
+                com_gillyspace27_fits_exptime
+                com_gillyspace27_fits_nhdus
+            </allattrs>
+            <displayattrs>
+                com_gillyspace27_fits_telescop
+                com_gillyspace27_fits_instrume
+                com_gillyspace27_fits_wavelnth
+                com_gillyspace27_fits_dateobs
+                com_gillyspace27_fits_exptime
+                com_gillyspace27_fits_nhdus
+            </displayattrs>
+        </type>
+    </types>
+</schema>

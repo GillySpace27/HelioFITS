@@ -1,0 +1,11 @@
+# Build output
+build/
+DerivedData/
+*.xcarchive
+# macOS
+.DS_Store
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+# Importer build artifacts
+FITSMetadataImporter/build/
