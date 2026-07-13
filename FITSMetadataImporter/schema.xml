@@ -16,7 +16,7 @@
     </attributes>
 
     <types>
-        <type name="com.gillyspace27.fits">
+        <type name="gov.nasa.gsfc.fits">
             <note>
                 FITS image files (.fits/.fts/.fit).
             </note>
