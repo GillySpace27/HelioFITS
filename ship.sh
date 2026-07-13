@@ -42,4 +42,16 @@ xcrun stapler validate "$APP"
 
 # ponytail: distribute the stapled .app; re-zip so the ticket travels with it.
 rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
+
+# xcodebuild archive silently registers the build-intermediates app copy in
+# LaunchServices. Once Xcode prunes that path, the dangling registration can
+# hijack QuickLook thumbnail generation (blank icons). Unregister it now, while
+# it still exists, and re-assert the installed /Applications copy.
+LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+find "$HOME/Library/Developer/Xcode/DerivedData" -maxdepth 12 \
+  -path "*/ArchiveIntermediates/*/Applications/HelioFITS.app" -prune 2>/dev/null \
+  | while read -r a; do "$LSREG" -u "$a" 2>/dev/null || true; done
+"$LSREG" -gc 2>/dev/null || true
+[ -d /Applications/HelioFITS.app ] && "$LSREG" -f -R /Applications/HelioFITS.app 2>/dev/null || true
+
 echo "==> Done. Ship: $APP  (or the re-zipped $ZIP)"
