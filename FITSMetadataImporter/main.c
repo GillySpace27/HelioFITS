@@ -33,6 +33,13 @@ static void set_num_long(CFMutableDictionaryRef d, CFStringRef key, long v) {
     if (n) { CFDictionarySetValue(d, key, n); CFRelease(n); }
 }
 
+// Append a non-empty C string to a Keywords array.
+static void kw_add(CFMutableArrayRef arr, const char *s) {
+    if (!s || !*s) return;
+    CFStringRef v = CFStringCreateWithCString(kCFAllocatorDefault, s, kCFStringEncodingUTF8);
+    if (v) { CFArrayAppendValue(arr, v); CFRelease(v); }
+}
+
 // Parse a FITS DATE-OBS / T_OBS string ("YYYY-MM-DDTHH:MM:SS[.sss][Z]") into a
 // CFDate. Returns NULL on failure. Treated as UTC (FITS times are UTC).
 static CFDateRef make_date(const char *s) {
@@ -101,25 +108,30 @@ static Boolean GetMetadataForFile(void *thisInstance,
         set_str(attributes, kMDItemTitle, title);
     }
 
-    // ---- Keywords array [TELESCOP, INSTRUME, "<WAVELNTH> <WAVEUNIT>"] ----
+    // ---- Keywords: a compact science summary, since Keywords is the one
+    // metadata row Finder still renders in Get Info (custom displayattrs are no
+    // longer honored on macOS 26). Tokens: telescope · instrument · detector ·
+    // wavelength · observation time · exposure. All Spotlight-searchable.
     {
-        CFMutableArrayRef kws = CFArrayCreateMutable(kCFAllocatorDefault, 3, &kCFTypeArrayCallBacks);
-        if (m.has_telescop) {
-            CFStringRef s = CFStringCreateWithCString(kCFAllocatorDefault, m.telescop, kCFStringEncodingUTF8);
-            if (s) { CFArrayAppendValue(kws, s); CFRelease(s); }
-        }
-        if (m.has_instrume) {
-            CFStringRef s = CFStringCreateWithCString(kCFAllocatorDefault, m.instrume, kCFStringEncodingUTF8);
-            if (s) { CFArrayAppendValue(kws, s); CFRelease(s); }
-        }
+        CFMutableArrayRef kws = CFArrayCreateMutable(kCFAllocatorDefault, 8, &kCFTypeArrayCallBacks);
+        if (m.has_telescop) kw_add(kws, m.telescop);
+        if (m.has_instrume) kw_add(kws, m.instrume);
+        if (m.has_detector) kw_add(kws, m.detector);
         if (m.has_wavelnth) {
             char wl[80];
-            if (m.wavelnth == (long)m.wavelnth)
-                snprintf(wl, sizeof wl, "%ld %s", (long)m.wavelnth, m.has_waveunit ? m.waveunit : "");
-            else
-                snprintf(wl, sizeof wl, "%g %s", m.wavelnth, m.has_waveunit ? m.waveunit : "");
-            CFStringRef s = CFStringCreateWithCString(kCFAllocatorDefault, wl, kCFStringEncodingUTF8);
-            if (s) { CFArrayAppendValue(kws, s); CFRelease(s); }
+            if (m.wavelnth == (long)m.wavelnth) snprintf(wl, sizeof wl, "%ld", (long)m.wavelnth);
+            else                                snprintf(wl, sizeof wl, "%g", m.wavelnth);
+            if (m.has_waveunit && m.waveunit[0]) {
+                size_t n = strlen(wl);
+                snprintf(wl + n, sizeof wl - n, " %s", m.waveunit);
+            }
+            kw_add(kws, wl);
+        }
+        if (m.has_dateobs) kw_add(kws, m.dateobs);        // e.g. 2013-01-01T00:00:11.34
+        if (m.has_exptime) {
+            char ex[48];
+            snprintf(ex, sizeof ex, "exp %g s", m.exptime);
+            kw_add(kws, ex);
         }
         if (CFArrayGetCount(kws) > 0) CFDictionarySetValue(attributes, kMDItemKeywords, kws);
         CFRelease(kws);
