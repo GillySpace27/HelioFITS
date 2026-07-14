@@ -1,42 +1,126 @@
-# HelioFITS — launch copy
+# HelioFITS — App Store listing copy
 
-Working name **HelioFITS** (also open: SunFITS). Both are clear on the Mac App Store
-as of 2026‑07‑12 — only "QuickFits", CloudMakers' "FITS Preview", and the unrelated
-"Helio Fit" fitness app exist. Do NOT ship as "FITS Quick Look" (confusable with
-QuickFits; Apple may reject "Quick Look" in an app name).
+Paste-ready text for App Store Connect. Name **HelioFITS** (clear on the Mac App
+Store as of 2026‑07‑12 — only "QuickFits", CloudMakers' "FITS Preview", and the
+unrelated "Helio Fit" fitness app exist). Do NOT ship as "FITS Quick Look"
+(confusable with QuickFits; Apple may reject "Quick Look" in an app name).
 
-## Tagline
-> Quick Look previews for AIA, HMI, LASCO, PUNCH & more — in the right colors.
+Primary category: **Utilities**. It is a Quick Look extension, a thumbnail
+generator and a Spotlight importer — its job is teaching Finder a file type.
 
-## App Store description
+---
 
-**HelioFITS** brings instant, science‑accurate previews of solar FITS files to Finder —
-made for heliophysicists and solar astronomers.
+## Subtitle (30 char max)
 
-Press Space on any `.fits` file and see it rendered with the **correct instrument
-colormap** — SDO/AIA gold, HMI magnetograms, LASCO, SUVI, EIT, PUNCH, K‑Cor and more —
-drawn straight from the sunpy standard.
+```
+Solar FITS previews in Finder
+```
 
-**Features**
-- Instrument‑ and wavelength‑aware color tables (73 sunpy LUTs)
-- Finder Info panel shows Telescope, Instrument, Wavelength, Observation Date, Exposure
-  and HDU count — and makes them Spotlight‑searchable
-- Handles multi‑extension and Rice‑compressed archive files; pick or pin which HDU to
-  show per folder (auto‑first, auto‑last, or a specific HDU)
-- Blink between HDUs to compare processing levels or filters, pixel‑registered
-- Native FITS header viewer with one‑click PNG export for slides and papers
+## Promotional text (170 char max — editable without a new build)
 
-Made by a solar physicist, for the archive on your disk.
+```
+Press Space on a FITS file and see the Sun, in the right colormap, with real helioprojective coordinates under the cursor. For the archive already sitting on your disk.
+```
+
+## Description
+
+```
+HelioFITS teaches Finder to read solar FITS files.
+
+Press Space on any .fits file and it renders instantly — in the correct
+instrument colormap, drawn from the sunpy standard. SDO/AIA, HMI magnetograms,
+LASCO, SUVI, EIT, STEREO, PUNCH, K-Cor, TRACE, XRT and more are recognized from
+the header; nothing to configure.
+
+Built by a solar physicist, for the archive already sitting on your disk.
+
+COORDINATES YOU CAN TRUST
+Hover any pixel and read its value together with its helioprojective coordinate
+(Tx, Ty) and its distance from disk center in solar radii. The world-coordinate
+solution does the real spherical deprojection — TAN, ARC, SIN and CAR — honors
+CUNIT, the PC and CD matrices and CROTA2, and is pinned against astropy in the
+test suite. It refuses to guess: a projection it cannot handle produces no
+readout rather than a plausible wrong number.
+
+MEASURE WITHOUT LEAVING FINDER
+Drag a box to get mean, median, sigma, sum, min and max over the region at full
+native resolution, with a histogram. Toggle the solar limb. Adjust the stretch
+live — percentile clip, gamma, log — without touching the file.
+
+MULTI-EXTENSION FILES, HANDLED
+Scroll to blink between HDUs, pixel-registered, to compare processing levels or
+filters. Overlay a running difference. Pin which HDU a folder should show —
+first, last, or a specific one — and every preview, thumbnail and icon follows.
+Rice-compressed and .fz files work natively.
+
+METADATA IN THE FINDER
+Telescope, instrument, wavelength, observation date, exposure, dimensions and
+HDU count appear in Get Info, and are Spotlight-searchable.
+
+BACK TO PYTHON IN ONE CLICK
+Copy a sunpy snippet that loads exactly the HDU you are looking at. Export any
+HDU to PNG for slides and papers, or convert a whole folder at once.
+
+Free. No account, no network, no telemetry — HelioFITS has no networking code at
+all. Sandboxed, and it only ever reads the files you point it at.
+```
+
+## Keywords (100 char max, comma-separated, no spaces)
+
+```
+FITS,solar,sun,astronomy,heliophysics,sunpy,SDO,AIA,HMI,LASCO,PUNCH,quicklook,preview,FITS viewer
+```
+
+## What's New in This Version (1.0)
+
+```
+First release.
+```
+
+## Support / Marketing URL
+
+- Support URL: https://github.com/GillySpace27/HelioFITS  (required — must resolve)
+- Marketing URL: optional, same is fine
+
+## App Review notes
+
+```
+HelioFITS is a Quick Look preview extension, thumbnail extension and Spotlight
+importer for FITS (Flexible Image Transport System) files — the standard data
+format in astronomy.
+
+To see it work, open any .fits file in Finder and press Space, or double-click it
+to open the built-in viewer. Sample solar FITS files are freely available from
+https://sdo.gsfc.nasa.gov/data/ — or use the file attached to this submission.
+
+The app has no accounts, no network access, and no data collection of any kind.
+```
+
+---
+
+## Screenshots
+
+macOS requires 1280×800, 1440×900, 2560×1600 or 2880×1800. Up to 10.
+Generated by `make-screenshots.sh` into `build/screenshots/`.
+
+Suggested set, in order:
+1. Quick Look preview of an AIA or PUNCH frame with the coordinate readout visible
+2. Finder gallery/icon view — a folder of FITS files with colored thumbnails
+3. The viewer window with the header beneath and the stretch panel open
+4. Get Info showing the Spotlight metadata rows
+
+---
 
 ## Positioning note (internal)
-Position *for* solar/heliophysics science — do not position against astrophotographers.
-QuickFits serves astrophotography (debayer camera frames, export TIFF for further
-processing); HelioFITS serves calibrated solar science data, where the colormap and
-header metadata carry physical meaning. Different jobs; both are good tools. We adopt the
-canonical `gov.nasa.gsfc.fits` type so the two coexist cleanly on one Mac.
 
-## Distribution (decision pending)
-- Direct notarized download + open source (recommended for this GitHub‑native audience;
-  community can PR new instruments/colormaps), optionally also Mac App Store for reach.
-- Price: free or free‑plus‑donate maximizes adoption + reputation; a token price filters
-  for serious users and covers the $99/yr dev account.
+Position *for* solar/heliophysics science — do not position against
+astrophotographers. QuickFits serves astrophotography (debayer camera frames,
+export TIFF); HelioFITS serves calibrated solar science data, where the colormap
+and header metadata carry physical meaning. Different jobs; both are good tools.
+We adopt the canonical `gov.nasa.gsfc.fits` type so the two coexist on one Mac.
+
+## Price
+
+Free. The audience is a few thousand researchers worldwide; reach and reputation
+are worth more than revenue, and a price is friction in front of exactly the
+senior scientists we most want using it.
