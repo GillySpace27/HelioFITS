@@ -71,14 +71,30 @@ enum FITSHeader {
     /// Data-segment size in bytes (unpadded): |BITPIX|/8 * GCOUNT * (PCOUNT +
     /// product(NAXIS1..NAXISn)). Covers BINTABLE/compressed images via PCOUNT.
     private static func dataSize(_ cards: [String]) -> Int {
+        // Hostile/truncated headers reach here (this parses untrusted files on
+        // the main thread with no catch), so every arithmetic step is
+        // overflow-guarded — a negative NAXIS would trap `1...naxis`, a huge
+        // NAXISn would trap the multiply. On any anomaly we return 0, which
+        // stops the HDU walk cleanly rather than crashing.
         let naxis = intValue(cards, "NAXIS") ?? 0
-        if naxis == 0 { return 0 }
+        guard naxis > 0, naxis < 1000 else { return 0 }
         let bitpix = intValue(cards, "BITPIX") ?? 8
-        let gcount = intValue(cards, "GCOUNT") ?? 1
-        let pcount = intValue(cards, "PCOUNT") ?? 0
+        let gcount = max(0, intValue(cards, "GCOUNT") ?? 1)
+        let pcount = max(0, intValue(cards, "PCOUNT") ?? 0)
         var nelem = 1
-        for i in 1...naxis { nelem *= intValue(cards, "NAXIS\(i)") ?? 0 }
-        return abs(bitpix) / 8 * gcount * (pcount + nelem)
+        for i in 1...naxis {
+            let n = intValue(cards, "NAXIS\(i)") ?? 0
+            guard n >= 0 else { return 0 }
+            let (m, overflow) = nelem.multipliedReportingOverflow(by: n)
+            guard !overflow else { return 0 }
+            nelem = m
+        }
+        let bytesPerElem = abs(bitpix) / 8
+        let (groups, o1) = pcount.addingReportingOverflow(nelem)
+        guard !o1 else { return 0 }
+        let (a, o2) = groups.multipliedReportingOverflow(by: gcount)
+        let (size, o3) = a.multipliedReportingOverflow(by: bytesPerElem)
+        return (o2 || o3) ? 0 : size
     }
 
     private static func roundUpBlock(_ n: Int) -> Int {
@@ -215,6 +231,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     private var scopedURLs = [ObjectIdentifier: URL]()    // security scope held while open (HDU switching re-reads)
     private var renders = [ObjectIdentifier: FITSRenderer.Result]()   // value grid + native dims for the readout
     private var wcs = [ObjectIdentifier: FITSRenderer.SolarWCS]()     // per displayed HDU (absent = non-solar)
+    private var renderGen = [ObjectIdentifier: Int]()    // bumped per HDU switch; stale completions are dropped
 
     /// Show a native window with the colormapped image, an HDU switcher, the
     /// full header, and a "Save PNG…" button. The image is rendered in-app via
@@ -263,6 +280,13 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     /// Render one HDU on a background queue and swap it into the window, along
     /// with the value grid + WCS that back the hover readout.
     private func renderHDU(in win: NSWindow, url: URL, hdu: Int) {
+        // Renders run on a concurrent queue and can finish out of order. Stamp
+        // each request; a completion only wins if it's still the latest — else a
+        // slow HDU-1 render could land after HDU-2 and leave the popup labelled
+        // "HDU 2" while pngs/renders hold HDU-1 bytes (wrong export + readout).
+        let k = ObjectIdentifier(win)
+        let gen = (renderGen[k] ?? 0) + 1
+        renderGen[k] = gen
         DispatchQueue.global(qos: .userInitiated).async { [weak self, weak win] in
             let result = try? FITSRenderer.render(path: url.path, maxSide: 4096, hdu: hdu)
             guard let r = result, let img = NSImage(data: r.png) else { return } // header still shown on failure
@@ -274,8 +298,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                                       isSolar: FITSRenderer.colormapKey(fromHeader: r.header) != nil)
             }
             DispatchQueue.main.async {
-                guard let self, let win else { return }
-                let k = ObjectIdentifier(win)
+                guard let self, let win, self.renderGen[k] == gen else { return }   // superseded → drop
                 self.pngs[k] = r.png
                 self.renders[k] = r
                 if let w = solarWCS { self.wcs[k] = w } else { self.wcs.removeValue(forKey: k) }
@@ -496,6 +519,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             sources.removeValue(forKey: ObjectIdentifier(w))
             renders.removeValue(forKey: ObjectIdentifier(w))
             wcs.removeValue(forKey: ObjectIdentifier(w))
+            renderGen.removeValue(forKey: ObjectIdentifier(w))
             scopedURLs.removeValue(forKey: ObjectIdentifier(w))?.stopAccessingSecurityScopedResource()
         }
     }
