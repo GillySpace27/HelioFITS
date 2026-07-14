@@ -22,11 +22,18 @@ LSREG=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchService
 APP=/Applications/HelioFITS.app
 
 # 1. Unregister every copy that is not the installed one.
+#
+#    Ask the LS database what it actually knows about rather than guessing where
+#    a stray copy might be: any -derivedDataPath (including a throwaway one under
+#    /tmp), an .xcarchive, a Trashed copy. Guessing is how this bug kept coming
+#    back — the previous globs only covered ~/Library/Developer and ./build, so a
+#    build anywhere else re-latched the ThumbnailsAgent silently.
 while IFS= read -r a; do
     [ -n "$a" ] && "$LSREG" -u "$a" 2>/dev/null
 done < <(
-    find "$HOME/Library/Developer/Xcode/DerivedData" -type d -name "HelioFITS.app" 2>/dev/null
-    find "$PWD/build" -type d -name "HelioFITS.app" 2>/dev/null
+    "$LSREG" -dump 2>/dev/null \
+        | sed -n 's/^[[:space:]]*path:[[:space:]]*\(.*HelioFITS[^[:space:]]*\.app\).*/\1/p' \
+        | grep -v "^$APP$" | sort -u
     find "$HOME/.Trash" -maxdepth 2 -type d -name "HelioFITS*.app" 2>/dev/null
 )
 

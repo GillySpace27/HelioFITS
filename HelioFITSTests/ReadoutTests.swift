@@ -83,10 +83,10 @@ struct ReadoutTests {
         #expect(f.pix[h * w - 1] == Float(w * 100 + 1))            // bot-right = FITS (w,1)
     }
 
-    @Test("A frame larger than the value grid still reads back exactly")
+    @Test("A frame larger than the old 512px grid still reads back exactly")
     func aboveGridCap() throws {
-        // 600 > vgridMax (512), so the coarse grid decimates but the full-res
-        // buffer must not. This is the regime where the old readout lied.
+        // 600 > the 512/side cap the value grid used to have — the regime where
+        // the readout used to lie. Nothing decimates the values any more.
         let n = 600
         let p = try writeRampFITS(w: n, h: n)
         defer { try? FileManager.default.removeItem(atPath: p) }

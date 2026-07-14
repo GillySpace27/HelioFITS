@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  HelioFITS collects nothing and talks to no one: there is no networking code in
+  the app or either extension, no analytics, no third-party SDKs. It reads the
+  FITS files the user opens and writes the PNGs the user asks for.
+
+  The two declarations below are Apple's "required reason" APIs, which must be
+  declared even when used for the app's own housekeeping:
+
+    UserDefaults (CA92.1) — the HDU-selection rules (which HDU to show for a
+      given folder) live in the shared app group so the app and its Quick Look
+      extensions agree. Read/written only within this app group.
+
+    File timestamp (C617.1) — "Refresh icons" touches the user's FITS files to
+      bust Quick Look's thumbnail cache, which is the only way to make Finder
+      re-render an icon after the HDU rule for a folder changes.
+-->
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>C617.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>

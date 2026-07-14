@@ -15,16 +15,60 @@ enum FITSRenderer {
     static let pHigh: Double = 99.5   // high clip percentile
     static let gamma: Float = 0.5     // <1 brightens faint structure (sqrt)
     static let maxSide = 1024         // cap preview dimension
-    static let vgridMax = 512         // cap the coarse value grid per side
 
 
     // Shared with the container app (HDU-selection UI) via app group.
     static let appGroup = "UB45PPC2JS.com.gillyspace27.fits"
 
-    struct Result { let png: Data; let header: String; let width: Int; let height: Int
-                    // native NAXIS1/2 + a coarse value grid (display orientation)
-                    // for the hover (x,y)=z readout.
-                    let natW: Int; let natH: Int; let vgw: Int; let vgh: Int; let vgrid: [Float] }
+    struct Result {
+        let png: Data; let header: String; let width: Int; let height: Int
+        let natW: Int; let natH: Int          // native NAXIS1/2
+        let factor: Int                       // native → display decimation of `png`
+
+        // The EXACT mapping `png` was built with. The interactive stretch reuses
+        // these so that opening the colour panel — before any slider is touched —
+        // reproduces the baked image instead of quietly re-deriving its own
+        // limits from a different population of pixels and shifting the contrast.
+        let lo: Float; let hi: Float; let gam: Float
+        let cmapKey: String?
+    }
+
+    /// Percentile clip limits from a strided sample of finite pixels, plus the
+    /// magnetogram special case. The ONE place limits are decided: `render` bakes
+    /// the PNG with it and the live stretch re-derives with it, so the two cannot
+    /// disagree about what "0.5 – 99.5%" means.
+    static func levels(_ pix: UnsafePointer<Float>, count: Int,
+                       pLow: Double, pHigh: Double, cmapKey: String?) -> (lo: Float, hi: Float) {
+        var sample = [Float]()
+        let step = max(1, count / 200_000)
+        sample.reserveCapacity(count / step + 1)
+        for i in stride(from: 0, to: count, by: step) where pix[i].isFinite {
+            sample.append(pix[i])
+        }
+        sample.sort()
+        let n = sample.count
+        var lo: Float = 0, hi: Float = 1
+        if n > 1 {
+            lo = sample[min(n - 1, Int(Double(n) * pLow / 100.0))]
+            hi = sample[min(n - 1, Int(Double(n) * pHigh / 100.0))]
+            if hi <= lo { lo = sample.first!; hi = sample.last! }
+            if hi <= lo { hi = lo + 1 }
+        }
+        // Magnetograms: clip symmetric about zero so 0 G lands at the colormap
+        // midpoint (gray). A percentile+gamma stretch shifts the neutral line and
+        // is scientifically wrong for a signed B-field.
+        if cmapKey == "hmimag" {
+            let m = max(abs(lo), abs(hi))
+            lo = -m; hi = m
+        }
+        return (lo, hi)
+    }
+
+    /// Linear scale is right for signed magnetograms; everything else gets the
+    /// faint-structure-brightening gamma.
+    static func defaultGamma(_ cmapKey: String?) -> Float {
+        cmapKey == "hmimag" ? 1.0 : gamma
+    }
 
     /// Instrument/channel-appropriate sunpy colormap for a file, from the
     /// header summary the shim returns. nil -> grayscale.
@@ -110,30 +154,8 @@ enum FITSRenderer {
         let factor = max(1, (max(w, h) + maxSide - 1) / maxSide)
         let ow = w / factor, oh = h / factor
 
-        // Percentile limits from a sample of finite pixels.
-        var sample = [Float]()
-        sample.reserveCapacity(ow * oh)
-        for i in stride(from: 0, to: w * h, by: max(1, (w * h) / 200_000)) {
-            let v = pix[i]
-            if v.isFinite { sample.append(v) }
-        }
-        sample.sort()
-        let n = sample.count
-        var lo: Float = 0, hi: Float = 1
-        if n > 1 {
-            lo = sample[min(n - 1, Int(Double(n) * pLow / 100.0))]
-            hi = sample[min(n - 1, Int(Double(n) * pHigh / 100.0))]
-            if hi <= lo { lo = sample.first!; hi = sample.last! }
-            if hi <= lo { hi = lo + 1 }
-        }
-        // Magnetograms: clip symmetric about zero so 0 G lands at the colormap
-        // midpoint (gray), + linear scale — the percentile+gamma stretch shifts
-        // the neutral line and is scientifically wrong for signed B-fields.
-        if cmapKey == "hmimag" {
-            let m = max(abs(lo), abs(hi))
-            lo = -m; hi = m
-        }
-        let gam: Float = cmapKey == "hmimag" ? 1.0 : gamma
+        let (lo, hi) = levels(pix, count: w * h, pLow: pLow, pHigh: pHigh, cmapKey: cmapKey)
+        let gam = defaultGamma(cmapKey)
         let span = hi - lo
 
         // Build 8-bit gray bytes, flipping vertically (FITS y increases upward).
@@ -149,22 +171,6 @@ enum FITSRenderer {
             }
         }
 
-        // Coarse value grid, <=vgridMax per side, in the SAME v-flipped
-        // orientation as the image. It backs the stretch/Δ renders and is the
-        // readout's fallback until the full-res buffer lands.
-        //
-        // It is NOT the readout's source of truth: it is decimated, so pairing a
-        // value from it with a native-resolution coordinate names two different
-        // pixels. See FITSRenderer.pixels and FITSPreviewModel.sample.
-        let vgFactor = max(1, (max(w, h) + vgridMax - 1) / vgridMax)
-        let vgw = w / vgFactor, vgh = h / vgFactor
-        var vgrid = [Float](repeating: .nan, count: vgw * vgh)
-        for gy in 0..<vgh {
-            let sy = (vgh - 1 - gy) * vgFactor          // flip to match the image
-            let srow = sy * w
-            for gx in 0..<vgw { vgrid[gy * vgw + gx] = pix[srow + gx * vgFactor] }
-        }
-
         // Instrument colormap: map stretched gray through the sunpy LUT.
         if let key = cmapKey, let lut = FITSColormaps.lut(key) {
             var rgba = [UInt8](repeating: 255, count: ow * oh * 4)
@@ -176,11 +182,13 @@ enum FITSRenderer {
             }
             let png = try encodePNG(rgba: &rgba, width: ow, height: oh)
             return Result(png: png, header: header + "COLORMAP  \(key)\n", width: ow, height: oh,
-                          natW: w, natH: h, vgw: vgw, vgh: vgh, vgrid: vgrid)
+                          natW: w, natH: h, factor: factor,
+                          lo: lo, hi: hi, gam: gam, cmapKey: key)
         }
         let png = try encodePNG(gray: &bytes, width: ow, height: oh)
         return Result(png: png, header: header, width: ow, height: oh,
-                      natW: w, natH: h, vgw: vgw, vgh: vgh, vgrid: vgrid)
+                      natW: w, natH: h, factor: factor,
+                      lo: lo, hi: hi, gam: gam, cmapKey: cmapKey)
     }
 
 
@@ -221,17 +229,17 @@ enum FITSRenderer {
     }
 
     /// Full-resolution values for one HDU, in DISPLAY orientation (row 0 = top),
-    /// so a display pixel indexes straight into it — the same orientation as the
-    /// coarse `vgrid`, just undecimated.
+    /// so a display pixel indexes straight into it.
     ///
-    /// The readout and region statistics MUST come from this, not from `vgrid`:
-    /// the grid is decimated to 512/side, so on a 4096² frame one grid cell
-    /// covers 64 native pixels. Sampling a value there while printing a native
-    /// coordinate names two different pixels, and summing there understates the
-    /// flux over a stated box by the square of the decimation factor.
+    /// This is the ONLY source of pixel values. There used to be a decimated
+    /// copy alongside it, and everything that read from it was subtly wrong: the
+    /// readout paired a value with another pixel's coordinate, a region sum came
+    /// up 64× short, and the live stretch re-derived its clip limits from a
+    /// different population of pixels than the baked image — so merely opening
+    /// the colour panel appeared to change the contrast of the data.
     ///
-    /// ~w*h*4 bytes (64 MB for 4096²), so the caller holds it for the CURRENT
-    /// HDU only. Call OFF the main thread.
+    /// ~w*h*4 bytes (64 MB for 4096²), so the caller holds only the HDUs on
+    /// screen. Call OFF the main thread.
     static func pixels(path: String, hdu: Int) -> (w: Int, h: Int, pix: [Float])? {
         var w: Int = 0, h: Int = 0
         var pixPtr: UnsafeMutablePointer<Float>? = nil

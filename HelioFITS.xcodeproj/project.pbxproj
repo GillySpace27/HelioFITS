@@ -27,6 +27,7 @@
 		A3C301A82CF12A1B00DF1E56 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3C301A72CF12A1B00DF1E56 /* Foundation.framework */; };
 		A5B822DC325D315A576D82F0 /* FITSColormaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */; };
 		BC204350F77D473FAFC965B8 /* HelioFITSThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3D17D4927978BC19D807D408 /* HelioFITSThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E1927352D5DE44F8821011EF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F5B74F42E4084BD7999E17A2 /* PrivacyInfo.xcprivacy */; };
 		FF395D9B80498D1004441098 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8815A478097ECDE81A6098F /* ThumbnailProvider.swift */; };
 /* End PBXBuildFile section */
 
@@ -94,6 +95,7 @@
 		B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FITSPreviewCore.swift; path = HelioFITSExtension/FITSPreviewCore.swift; sourceTree = "<group>"; };
 		C8815A478097ECDE81A6098F /* ThumbnailProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookThumbnailing.framework; path = System/Library/Frameworks/QuickLookThumbnailing.framework; sourceTree = SDKROOT; };
+		F5B74F42E4084BD7999E17A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = HelioFITSThumbnail/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -194,6 +196,14 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		2F262A203006DD5700F1EF79 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				F5B74F42E4084BD7999E17A2 /* PrivacyInfo.xcprivacy */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		7FCAF9DA0AE1D09CE6D3D52F /* OS X */ = {
 			isa = PBXGroup;
 			children = (
@@ -216,6 +226,7 @@
 				DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */,
 				47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */,
 				B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */,
+				2F262A203006DD5700F1EF79 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -443,6 +454,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E1927352D5DE44F8821011EF /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -920,7 +932,6 @@
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-lcfitsio",
 					"-lz",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSExtension;
@@ -969,7 +980,6 @@
 				MARKETING_VERSION = 1.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
-					"-lcfitsio",
 					"-lz",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSExtension;

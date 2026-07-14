@@ -39,15 +39,16 @@ final class FITSPreviewModel {
 
     struct Page {
         let hdu: Int
-        let image: NSImage                  // baked, colormapped, native stretch
-        let res: FITSRenderer.Result        // value grid + native dims + header
+        let image: NSImage                  // baked, colormapped, default stretch
+        let res: FITSRenderer.Result        // native dims + baked levels + header
         let wcs: FITSRenderer.SolarWCS?
         let caption: String
         let lut: [UInt8]?
-        var sortedFinite: [Float]?          // cached, for percentile stretching
     }
 
     enum Mode { case plain, stretch, diff }
+
+    typealias Buffer = (w: Int, h: Int, pix: [Float])
 
     private(set) var pages: [Page] = []
     private(set) var path = ""
@@ -56,16 +57,18 @@ final class FITSPreviewModel {
     var limbOn = false
     var stretch = (lo: 0.5, hi: 99.5, gamma: 0.5, log: false)
 
-    // Full-resolution values for the CURRENT HDU only, fetched lazily off the
-    // main thread. The readout and region statistics must not come from the
-    // coarse `vgrid` (see FITSRenderer.pixels) — a grid cell covers vgFactor²
-    // native pixels, so the value there belongs to a different pixel than the
-    // coordinate we print, and a region sum there is short by that same factor.
-    // Holding one HDU rather than all of them keeps a 3-HDU 4096² PUNCH file at
-    // ~64 MB instead of ~190 MB inside a Quick Look extension.
-    private var fullHDU: Int?
-    private var full: (w: Int, h: Int, pix: [Float])?
-    /// Fired on the main thread when the full-res buffer lands (redraw hook).
+    /// Full-resolution values, in display order, keyed by HDU. EVERYTHING that
+    /// reports or re-renders data reads from here: the (x,y)=z chip, the region
+    /// statistics, the live stretch and the Δ. There is no decimated copy of the
+    /// data any more — a coarse grid is what let the readout pair a value with
+    /// another pixel's coordinate and let the region sum come up 64× short.
+    ///
+    /// Bounded to the two HDUs that can be on screen at once (the current one,
+    /// and its predecessor for Δ), so a 4096² frame costs ~64 MB and a Δ ~128 MB
+    /// rather than every HDU of the file at once.
+    private var buffers: [Int: Buffer] = [:]
+    private var loading: Set<Int> = []
+    /// Fired on the main thread when a buffer lands (redraw hook).
     var onFullRes: (() -> Void)?
 
     var count: Int { pages.count }
@@ -74,10 +77,18 @@ final class FITSPreviewModel {
     /// Δ needs a previous HDU of the same size.
     var canDiff: Bool {
         guard cur > 0, pages.indices.contains(cur) else { return false }
-        return pages[cur].res.vgw == pages[cur - 1].res.vgw
-            && pages[cur].res.vgh == pages[cur - 1].res.vgh
+        return pages[cur].res.natW == pages[cur - 1].res.natW
+            && pages[cur].res.natH == pages[cur - 1].res.natH
     }
     var hasLimb: Bool { (page?.wcs?.rpx ?? 0) > 0 }
+
+    /// The HDUs whose pixels we need resident: the one on screen, plus the one Δ
+    /// subtracts from it.
+    private var neededHDUs: [Int] {
+        guard let p = page else { return [] }
+        guard mode == .diff, canDiff else { return [p.hdu] }
+        return [p.hdu, pages[cur - 1].hdu]
+    }
 
     /// Render every image HDU. Call OFF the main thread.
     static func load(path: String, maxSide: Int = 1024) -> FITSPreviewModel {
@@ -97,8 +108,7 @@ final class FITSPreviewModel {
                 wcs: FITSRenderer.solarWCS(cards: cards, isSolar: key != nil),
                 caption: FITSRenderer.caption(res: r, cards: cards,
                                               index: m.pages.count + 1, of: hdus.count),
-                lut: key.flatMap { FITSColormaps.lut($0) },
-                sortedFinite: nil))
+                lut: key.flatMap { FITSColormaps.lut($0) }))
         }
         // Start on the HDU the folder rule / global default selects.
         let want = FITSRenderer.resolveAutoHDU(path: path,
@@ -109,45 +119,48 @@ final class FITSPreviewModel {
 
     func select(hdu: Int) { if let i = pages.firstIndex(where: { $0.hdu == hdu }) { cur = i } }
 
-    /// Fetch the current HDU's full-resolution values in the background. Cheap
-    /// to call on every refresh — it no-ops once the current HDU is cached.
+    /// Fetch the pixels the current view needs, in the background. Cheap to call
+    /// on every refresh — it no-ops for HDUs already resident, and evicts the
+    /// ones no longer reachable so the cache stays at two buffers.
     func prefetchFullRes() {
-        guard let p = page, fullHDU != p.hdu else { return }
-        let path = self.path, hdu = p.hdu
-        fullHDU = hdu                       // claim it now: a later HDU wins
-        full = nil                          // readout falls back to the grid meanwhile
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let f = FITSRenderer.pixels(path: path, hdu: hdu)
-            DispatchQueue.main.async {
-                guard let self, self.fullHDU == hdu else { return }   // superseded
-                self.full = f
-                self.onFullRes?()
+        let want = neededHDUs
+        for h in buffers.keys where !want.contains(h) { buffers[h] = nil }
+
+        for hdu in want where buffers[hdu] == nil && !loading.contains(hdu) {
+            loading.insert(hdu)
+            let path = self.path
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let f = FITSRenderer.pixels(path: path, hdu: hdu)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.loading.remove(hdu)
+                    guard let f, self.neededHDUs.contains(hdu) else { return }   // superseded
+                    self.buffers[hdu] = f
+                    self.onFullRes?()
+                }
             }
         }
     }
 
+    /// True once the current HDU's pixels are resident, so the readout, the
+    /// statistics and the live stretch can all answer exactly.
+    var fullResReady: Bool { buffer(cur) != nil }
+
+    /// Full-resolution pixels for a page, if resident.
+    private func buffer(_ i: Int) -> Buffer? {
+        guard pages.indices.contains(i), let b = buffers[pages[i].hdu],
+              b.w == pages[i].res.natW, b.h == pages[i].res.natH else { return nil }
+        return b
+    }
+
     /// The pixel actually sampled at (u,v): its 1-based FITS coordinate AND its
-    /// value, always drawn from the same buffer — so the label can never name a
-    /// pixel other than the one whose value it reports. Exact once the full-res
-    /// buffer has landed; until then it names the grid cell's own native pixel,
-    /// which is coarse but still true.
+    /// value, read from the same buffer — so the chip can never name a pixel
+    /// other than the one whose value it shows.
     private func sample(u: Double, v: Double) -> (fx: Int, fy: Int, z: Float)? {
-        guard let p = page else { return nil }
-        let r = p.res
-
-        if let f = full, f.w == r.natW, f.h == r.natH {
-            let x = min(f.w - 1, max(0, Int(u * Double(f.w))))
-            let y = min(f.h - 1, max(0, Int(v * Double(f.h))))
-            return (x + 1, f.h - y, f.pix[y * f.w + x])     // 1-based; FITS y counts up
-        }
-
-        guard r.vgw > 0, r.vgh > 0 else { return nil }
-        let gx = min(r.vgw - 1, max(0, Int(u * Double(r.vgw))))
-        let gy = min(r.vgh - 1, max(0, Int(v * Double(r.vgh))))
-        // The grid was built as vgrid[gy][gx] = pix[((vgh-1-gy)*vgF)*w + gx*vgF],
-        // so that cell IS this native pixel. Name it, not the one under the cursor.
-        let vgF = max(1, (max(r.natW, r.natH) + FITSRenderer.vgridMax - 1) / FITSRenderer.vgridMax)
-        return (gx * vgF + 1, (r.vgh - 1 - gy) * vgF + 1, r.vgrid[gy * r.vgw + gx])
+        guard let f = buffer(cur) else { return nil }
+        let x = min(f.w - 1, max(0, Int(u * Double(f.w))))
+        let y = min(f.h - 1, max(0, Int(v * Double(f.h))))
+        return (x + 1, f.h - y, f.pix[y * f.w + x])        // 1-based; FITS y counts up
     }
 
     @discardableResult
@@ -201,18 +214,15 @@ final class FITSPreviewModel {
     /// Region statistics over a rect given in normalized image coords (0…1,
     /// origin top-left). Returns the report text and a log-scaled histogram.
     ///
-    /// Every pixel in the named box is counted, at native resolution. This must
-    /// not fall back to the coarse grid: `sum` over a box is a quantity people
-    /// measure with (total intensity, total unsigned flux), and summing a
-    /// decimated grid while labelling the box in native pixels understates it by
-    /// vgFactor² — 64× on a 4096² frame — with the instrument's BUNIT attached.
-    /// So we return nil until the full-res buffer lands rather than post a
-    /// number that is wrong by two orders of magnitude.
+    /// Every pixel in the named box is counted, at native resolution. `sum` over
+    /// a box is a quantity people measure with (total intensity, total unsigned
+    /// flux), so it has to be the real one: summing a decimated copy while
+    /// labelling the box in native pixels understated it 64× on a 4096² frame,
+    /// BUNIT and all. Nothing is posted until the pixels are actually resident.
     func statistics(u0: Double, v0: Double, u1: Double, v1: Double)
         -> (text: String, histogram: [Int])? {
-        guard let p = page else { return nil }
+        guard let p = page, let f = buffer(cur) else { return nil }
         let r = p.res
-        guard let f = full, f.w == r.natW, f.h == r.natH else { return nil }
 
         func cx(_ u: Double) -> Int { min(f.w - 1, max(0, Int(u * Double(f.w)))) }
         func cy(_ v: Double) -> Int { min(f.h - 1, max(0, Int(v * Double(f.h)))) }
@@ -257,67 +267,108 @@ final class FITSPreviewModel {
 
     // MARK: image synthesis
 
-    private func percentiles(_ lo: Double, _ hi: Double) -> (Float, Float) {
-        if pages[cur].sortedFinite == nil {
-            pages[cur].sortedFinite = pages[cur].res.vgrid.filter { $0.isFinite }.sorted()
-        }
-        guard let s = pages[cur].sortedFinite, !s.isEmpty else { return (0, 1) }
-        func at(_ p: Double) -> Float {
-            s[min(s.count - 1, max(0, Int(p / 100 * Double(s.count - 1))))]
-        }
-        var a = at(lo), b = at(hi)
-        if b <= a { b = a + 1e-9 }
-        return (a, b)
+    /// True when the stretch controls are still where they started. At the
+    /// defaults the live stretch must reproduce the baked image EXACTLY —
+    /// otherwise merely opening the colour panel appears to change the contrast
+    /// of the data, which is alarming in a tool people read numbers off.
+    private var stretchIsDefault: Bool {
+        stretch.lo == FITSRenderer.pLow && stretch.hi == FITSRenderer.pHigh
+            && !stretch.log
+            && Float(stretch.gamma) == FITSRenderer.defaultGamma(page?.res.cmapKey)
     }
 
+    /// Clip limits for the live stretch, from the SAME routine `render` baked the
+    /// image with, so "0.5 – 99.5%" means one thing everywhere.
+    private func levels(_ f: Buffer, _ r: FITSRenderer.Result) -> (lo: Float, hi: Float) {
+        f.pix.withUnsafeBufferPointer {
+            FITSRenderer.levels($0.baseAddress!, count: f.pix.count,
+                                pLow: stretch.lo, pHigh: stretch.hi, cmapKey: r.cmapKey)
+        }
+    }
+
+    /// Live stretch, rendered from the full-resolution pixels and decimated to
+    /// the same size as the baked image, so moving a slider changes the mapping
+    /// and nothing else — not the sharpness, not the framing.
     private func stretched() -> NSImage? {
         guard let p = page else { return nil }
-        let (lo, hi) = percentiles(stretch.lo, stretch.hi)
+
+        // Untouched controls ⇒ the baked image, byte for byte. Re-deriving it
+        // would only invite the two paths to drift, and drift is precisely what
+        // made merely OPENING the panel appear to change the data's contrast.
+        if stretchIsDefault { return p.image }
+
+        guard let f = buffer(cur) else { return nil }
+        let r = p.res
+        let (lo, hi) = levels(f, r)
         let span = hi - lo
-        let n = p.res.vgw * p.res.vgh
-        var rgba = [UInt8](repeating: 255, count: n * 4)
-        for i in 0..<n {
-            var t = (p.res.vgrid[i] - lo) / span
-            if !t.isFinite { t = 0 }
-            t = max(0, min(1, t))
-            if stretch.log { t = Float(Foundation.log(1 + 9 * Double(t)) / Foundation.log(10.0)) }
-            let v = max(0, min(255, Int(powf(t, Float(stretch.gamma)) * 255)))
-            if let lut = p.lut {
-                rgba[i * 4] = lut[v * 3]; rgba[i * 4 + 1] = lut[v * 3 + 1]; rgba[i * 4 + 2] = lut[v * 3 + 2]
-            } else {
-                rgba[i * 4] = UInt8(v); rgba[i * 4 + 1] = UInt8(v); rgba[i * 4 + 2] = UInt8(v)
+        let gam = Float(stretch.gamma)
+        let ow = r.width, oh = r.height, k = r.factor
+
+        var rgba = [UInt8](repeating: 255, count: ow * oh * 4)
+        for oy in 0..<oh {
+            let srow = Self.sourceRow(oy, oh: oh, k: k, h: f.h) * f.w
+            let drow = oy * ow
+            for ox in 0..<ow {
+                var t = (f.pix[srow + min(f.w - 1, ox * k)] - lo) / span
+                if !t.isFinite { t = 0 }
+                t = max(0, min(1, t))
+                if stretch.log { t = Float(Foundation.log(1 + 9 * Double(t)) / Foundation.log(10.0)) }
+                let v = max(0, min(255, Int(powf(t, gam) * 255)))
+                let i = (drow + ox) * 4
+                if let lut = p.lut {
+                    rgba[i] = lut[v * 3]; rgba[i + 1] = lut[v * 3 + 1]; rgba[i + 2] = lut[v * 3 + 2]
+                } else {
+                    rgba[i] = UInt8(v); rgba[i + 1] = UInt8(v); rgba[i + 2] = UInt8(v)
+                }
             }
         }
-        return Self.image(rgba: &rgba, w: p.res.vgw, h: p.res.vgh)
+        return Self.image(rgba: &rgba, w: ow, h: oh)
     }
 
-    /// HDU_n − HDU_(n−1), diverging blue/white/red, clipped at ±p99.
+    /// The row of the display-ordered buffer that `FITSRenderer.render` decimates
+    /// into output row `oy`. render walks the RAW (bottom-up) buffer and takes
+    /// FITS row `(oh-1-oy)*k`; our buffer is top-down, where that same row sits at
+    /// `h-1-(oh-1-oy)*k`. Sampling `oy*k` instead — the obvious thing — picks a
+    /// row up to k-1 away, which slides the stretched image against the plain one.
+    private static func sourceRow(_ oy: Int, oh: Int, k: Int, h: Int) -> Int {
+        min(h - 1, max(0, h - 1 - (oh - 1 - oy) * k))
+    }
+
+    /// HDU_n − HDU_(n−1), diverging blue/white/red, clipped at ±p99. Differenced
+    /// at full resolution, then decimated — differencing two decimated copies
+    /// aliases whatever moved between the frames, which is the whole signal.
     private func difference() -> NSImage? {
-        guard canDiff, let p = page else { return nil }
-        let a = p.res, b = pages[cur - 1].res
-        let n = a.vgw * a.vgh
-        var diff = [Float](repeating: 0, count: n)
+        guard canDiff, let p = page, let a = buffer(cur), let b = buffer(cur - 1),
+              a.w == b.w, a.h == b.h else { return nil }
+        let r = p.res
+        let ow = r.width, oh = r.height, k = r.factor
+
+        var diff = [Float](repeating: 0, count: ow * oh)
         var mags: [Float] = []
-        mags.reserveCapacity(n)
-        for k in 0..<n {
-            let d = a.vgrid[k] - b.vgrid[k]
-            diff[k] = d
-            if d.isFinite { mags.append(abs(d)) }
+        mags.reserveCapacity(ow * oh)
+        for oy in 0..<oh {
+            let srow = Self.sourceRow(oy, oh: oh, k: k, h: a.h) * a.w
+            for ox in 0..<ow {
+                let s = srow + min(a.w - 1, ox * k)
+                let d = a.pix[s] - b.pix[s]
+                diff[oy * ow + ox] = d
+                if d.isFinite { mags.append(abs(d)) }
+            }
         }
         mags.sort()
         let m = mags.isEmpty ? 1
             : max(mags[min(mags.count - 1, Int(0.99 * Double(mags.count - 1)))], 1e-12)
 
-        var rgba = [UInt8](repeating: 255, count: n * 4)
-        for k in 0..<n {
-            var t = diff[k] / m
+        var rgba = [UInt8](repeating: 255, count: ow * oh * 4)
+        for j in 0..<(ow * oh) {
+            var t = diff[j] / m
             if !t.isFinite { t = 0 }
             t = max(-1, min(1, t))
             let s = UInt8(max(0, min(255, Int((1 - abs(t)) * 255))))
-            if t < 0 { rgba[k * 4] = s;   rgba[k * 4 + 1] = s; rgba[k * 4 + 2] = 255 }
-            else      { rgba[k * 4] = 255; rgba[k * 4 + 1] = s; rgba[k * 4 + 2] = s }
+            if t < 0 { rgba[j * 4] = s;   rgba[j * 4 + 1] = s; rgba[j * 4 + 2] = 255 }
+            else      { rgba[j * 4] = 255; rgba[j * 4 + 1] = s; rgba[j * 4 + 2] = s }
         }
-        return Self.image(rgba: &rgba, w: a.vgw, h: a.vgh)
+        return Self.image(rgba: &rgba, w: ow, h: oh)
     }
 
     private static func image(rgba: inout [UInt8], w: Int, h: Int) -> NSImage? {
