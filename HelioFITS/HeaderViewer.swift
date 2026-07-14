@@ -78,7 +78,11 @@ enum FITSHeader {
         // stops the HDU walk cleanly rather than crashing.
         let naxis = intValue(cards, "NAXIS") ?? 0
         guard naxis > 0, naxis < 1000 else { return 0 }
+        // BITPIX is one of six values in the standard; anything else is a
+        // malformed file. Rejecting up front also keeps `abs` away from
+        // Int.min, which traps rather than returning a magnitude.
         let bitpix = intValue(cards, "BITPIX") ?? 8
+        guard [8, 16, 32, 64, -32, -64].contains(bitpix) else { return 0 }
         let gcount = max(0, intValue(cards, "GCOUNT") ?? 1)
         let pcount = max(0, intValue(cards, "PCOUNT") ?? 0)
         var nelem = 1
@@ -440,6 +444,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     }
 
     private func refresh(_ c: Ctx) {
+        c.model.prefetchFullRes()   // exact readout/statistics for this HDU
         c.canvas.image = c.model.image()
         c.canvas.caption = c.model.caption()
         c.canvas.limb = c.model.limbCircle()

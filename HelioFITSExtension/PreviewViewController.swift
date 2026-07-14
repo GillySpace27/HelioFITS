@@ -178,6 +178,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     }
 
     private func refresh() {
+        model.prefetchFullRes()     // exact readout/statistics for this HDU
         canvas.image = model.image()
         canvas.caption = model.caption()
         canvas.limb = compact ? nil : model.limbCircle()

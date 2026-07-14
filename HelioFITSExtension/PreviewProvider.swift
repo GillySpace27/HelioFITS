@@ -15,6 +15,7 @@ enum FITSRenderer {
     static let pHigh: Double = 99.5   // high clip percentile
     static let gamma: Float = 0.5     // <1 brightens faint structure (sqrt)
     static let maxSide = 1024         // cap preview dimension
+    static let vgridMax = 512         // cap the coarse value grid per side
 
 
     // Shared with the container app (HDU-selection UI) via app group.
@@ -148,13 +149,14 @@ enum FITSRenderer {
             }
         }
 
-        // Value grid for the hover (x,y)=z readout: sample the RAW data at
-        // <=VGRID_MAX per side, in the SAME v-flipped orientation as the image
-        // (so a display pixel maps straight to a value). Coarse on purpose — it
-        // rides along in the preview HTML, so keep it light.
-        // ponytail: 512 cap; raise if the readout feels blocky on huge frames.
-        let VGRID_MAX = 512
-        let vgFactor = max(1, (max(w, h) + VGRID_MAX - 1) / VGRID_MAX)
+        // Coarse value grid, <=vgridMax per side, in the SAME v-flipped
+        // orientation as the image. It backs the stretch/Δ renders and is the
+        // readout's fallback until the full-res buffer lands.
+        //
+        // It is NOT the readout's source of truth: it is decimated, so pairing a
+        // value from it with a native-resolution coordinate names two different
+        // pixels. See FITSRenderer.pixels and FITSPreviewModel.sample.
+        let vgFactor = max(1, (max(w, h) + vgridMax - 1) / vgridMax)
         let vgw = w / vgFactor, vgh = h / vgFactor
         var vgrid = [Float](repeating: .nan, count: vgw * vgh)
         for gy in 0..<vgh {
@@ -218,6 +220,34 @@ enum FITSRenderer {
         cardVal(cards, key).flatMap(Double.init)
     }
 
+    /// Full-resolution values for one HDU, in DISPLAY orientation (row 0 = top),
+    /// so a display pixel indexes straight into it — the same orientation as the
+    /// coarse `vgrid`, just undecimated.
+    ///
+    /// The readout and region statistics MUST come from this, not from `vgrid`:
+    /// the grid is decimated to 512/side, so on a 4096² frame one grid cell
+    /// covers 64 native pixels. Sampling a value there while printing a native
+    /// coordinate names two different pixels, and summing there understates the
+    /// flux over a stated box by the square of the decimation factor.
+    ///
+    /// ~w*h*4 bytes (64 MB for 4096²), so the caller holds it for the CURRENT
+    /// HDU only. Call OFF the main thread.
+    static func pixels(path: String, hdu: Int) -> (w: Int, h: Int, pix: [Float])? {
+        var w: Int = 0, h: Int = 0
+        var pixPtr: UnsafeMutablePointer<Float>? = nil
+        var hdrPtr: UnsafeMutablePointer<CChar>? = nil
+        guard fitsshim_read_image(path, hdu, &w, &h, &pixPtr, &hdrPtr) == 0,
+              let pix = pixPtr, w > 0, h > 0 else { return nil }
+        defer { free(pixPtr); free(hdrPtr) }
+
+        var out = [Float](repeating: .nan, count: w * h)
+        for y in 0..<h {                       // flip: FITS y increases upward
+            let src = (h - 1 - y) * w, dst = y * w
+            for x in 0..<w { out[dst + x] = pix[src + x] }
+        }
+        return (w, h, out)
+    }
+
     /// Raw header cards for one HDU (nil if the HDU can't be read).
     static func cards(path: String, hdu: Int) -> String? {
         var p: UnsafeMutablePointer<CChar>? = nil
@@ -266,9 +296,11 @@ enum FITSRenderer {
             case "ARC": theta = (90 - r) * d2r             // zenithal equidistant
             case "SIN": theta = acos(min(1, r * d2r))      // orthographic
             default:
-                // Unknown projection — fall back to the flat approximation
-                // rather than inventing a number.
-                return ((cv1 + x) * 3600, (cv2 + y) * 3600)
+                // Unreachable: solarWCS() refuses to build a SolarWCS for a
+                // projection this switch cannot handle, precisely so that no
+                // caller can be handed a flat-plane approximation dressed up as
+                // a real coordinate.
+                return (.nan, .nan)
             }
             let phi = atan2(x, -y)
 
@@ -298,39 +330,95 @@ enum FITSRenderer {
     /// SDO/LASCO/STEREO use arcsec. Ignoring this scaled PUNCH's coordinates —
     /// and its limb radius — by 3600×. Absent CUNIT ⇒ arcsec (the solar norm for
     /// HPLN/HPLT; EIT and LASCO omit it).
-    private static func arcsecPerUnit(_ cunit: String?) -> Double {
-        switch (cunit ?? "arcsec").lowercased().trimmingCharacters(in: .whitespaces) {
-        case "deg", "degree", "degrees":  return 3600
-        case "arcmin", "amin":            return 60
-        case "rad", "radian", "radians":  return 206_264.806_247_1
-        default:                          return 1        // arcsec
+    /// nil for a CUNIT we do not recognise. An unknown unit must NOT be assumed
+    /// to be arcsec: a spectroheliogram's second axis carries 'Angstrom' or
+    /// 'm/s', and silently reading that as arcsec folds a wavelength into Ty,
+    /// r/R☉ and the limb radius. Absent CUNIT still means arcsec — that is the
+    /// documented solar convention, and EIT/LASCO rely on it.
+    private static func arcsecPerUnit(_ cunit: String?) -> Double? {
+        guard let c = cunit?.lowercased().trimmingCharacters(in: .whitespaces),
+              !c.isEmpty else { return 1 }                // absent ⇒ arcsec
+        switch c {
+        case "arcsec", "asec", "arcsecs", "arcseconds": return 1
+        case "deg", "degree", "degrees":                return 3600
+        case "arcmin", "amin", "arcminute", "arcminutes": return 60
+        case "rad", "radian", "radians":                return 206_264.806_247_1
+        default:                                        return nil
         }
     }
 
-    static func solarWCS(cards: String, isSolar: Bool) -> SolarWCS? {
-        guard let cd1 = cardNum(cards, "CDELT1"), let cp1 = cardNum(cards, "CRPIX1"),
-              let cd2 = cardNum(cards, "CDELT2"), let cp2 = cardNum(cards, "CRPIX2"),
-              cd1 != 0, cd2 != 0 else { return nil }
-        let ct = cardVal(cards, "CTYPE1") ?? ""
-        guard ct.hasPrefix("HPLN") || (ct.isEmpty && isSolar) else { return nil }
+    /// Projections hpc() actually implements. Anything else (ZEA, CEA, HPX, a
+    /// -SIP distortion suffix, a truncated CTYPE) must yield NO WCS rather than
+    /// a plausible wrong number: the flat fallback it used to take is off by
+    /// ~12,000″ on a PUNCH frame, and a scientist has no way to see that.
+    private static let projections: Set<String> = ["TAN", "ARC", "SIN", "CAR"]
 
-        // Everything downstream works in DEGREES; CUNIT says what CDELT/CRVAL
+    static func solarWCS(cards: String, isSolar: Bool) -> SolarWCS? {
+        guard let cp1 = cardNum(cards, "CRPIX1"), let cp2 = cardNum(cards, "CRPIX2")
+        else { return nil }
+
+        // Both axes must be helioprojective. CTYPE2 was never checked, so an
+        // HPLN-vs-wavelength raster was deprojected as if λ were a latitude.
+        let ct1 = cardVal(cards, "CTYPE1") ?? "", ct2 = cardVal(cards, "CTYPE2") ?? ""
+        let blank = ct1.isEmpty && ct2.isEmpty && isSolar     // EIT/LASCO omit CTYPE
+        guard blank || (ct1.hasPrefix("HPLN") && ct2.hasPrefix("HPLT")) else { return nil }
+
+        // Projection code: "HPLN-ARC" → "ARC". Require the exact 8-char form, so
+        // "HPLN-TAN-SIP" (suffix "SIP") and a bare "HPLN" ("PLN") are rejected
+        // rather than silently misread.
+        let proj: String
+        if blank {
+            proj = "TAN"
+        } else {
+            guard ct1.count == 8, ct1.dropFirst(4).hasPrefix("-") else { return nil }
+            proj = String(ct1.suffix(3)).uppercased()
+        }
+        guard projections.contains(proj) else { return nil }
+
+        // Everything downstream works in DEGREES; CUNIT says what CDELT/CRVAL/CD
         // are actually in (PUNCH: 'deg'; SDO/LASCO/STEREO: 'arcsec').
-        let f1 = arcsecPerUnit(cardVal(cards, "CUNIT1")) / 3600   // → degrees
-        let f2 = arcsecPerUnit(cardVal(cards, "CUNIT2")) / 3600
-        let d1 = cd1 * f1, d2 = cd2 * f2
+        guard let a1 = arcsecPerUnit(cardVal(cards, "CUNIT1")),
+              let a2 = arcsecPerUnit(cardVal(cards, "CUNIT2")) else { return nil }
+        let f1 = a1 / 3600, f2 = a2 / 3600                    // → degrees
         let cv1 = (cardNum(cards, "CRVAL1") ?? 0) * f1
         let cv2 = (cardNum(cards, "CRVAL2") ?? 0) * f2
 
-        // Fold CDELT together with the rotation — PC matrix if present (modern
-        // headers), else CROTA2 (SDO).
+        // The linear transform, in astropy's precedence order: CD wins over
+        // CDELT+PC, which wins over CDELT+CROTA2. A header carrying BOTH a CD
+        // matrix and legacy CDELT/CROTA2 (pipelines do emit these) is read via CD
+        // by astropy/sunpy — reading CDELT there put us at odds with every other
+        // tool in the user's workflow, silently.
         let m11, m12, m21, m22: Double
-        if let p11 = cardNum(cards, "PC1_1"), let p22 = cardNum(cards, "PC2_2") {
-            let p12 = cardNum(cards, "PC1_2") ?? 0, p21 = cardNum(cards, "PC2_1") ?? 0
-            (m11, m12, m21, m22) = (d1 * p11, d1 * p12, d2 * p21, d2 * p22)
+        let cdKeys = ["CD1_1", "CD1_2", "CD2_1", "CD2_2"]
+        let pcKeys = ["PC1_1", "PC1_2", "PC2_1", "PC2_2"]
+
+        if cdKeys.contains(where: { cardNum(cards, $0) != nil }) {
+            let c11 = cardNum(cards, "CD1_1") ?? 0, c12 = cardNum(cards, "CD1_2") ?? 0
+            let c21 = cardNum(cards, "CD2_1") ?? 0, c22 = cardNum(cards, "CD2_2") ?? 0
+            (m11, m12, m21, m22) = (c11 * f1, c12 * f1, c21 * f2, c22 * f2)
         } else {
-            let a = (cardNum(cards, "CROTA2") ?? 0) * .pi / 180
-            (m11, m12, m21, m22) = (d1 * cos(a), -d1 * sin(a), d2 * sin(a), d2 * cos(a))
+            guard let cd1 = cardNum(cards, "CDELT1"), let cd2 = cardNum(cards, "CDELT2"),
+                  cd1 != 0, cd2 != 0 else { return nil }
+            let d1 = cd1 * f1, d2 = cd2 * f2
+
+            if pcKeys.contains(where: { cardNum(cards, $0) != nil }) {
+                // PCi_j defaults to 1 on the diagonal and 0 off it. Requiring
+                // PC1_1 AND PC2_2 to be present meant a legal header that wrote
+                // only the off-diagonal terms fell through to CROTA2, found none,
+                // and silently discarded the entire roll.
+                let p11 = cardNum(cards, "PC1_1") ?? 1, p12 = cardNum(cards, "PC1_2") ?? 0
+                let p21 = cardNum(cards, "PC2_1") ?? 0, p22 = cardNum(cards, "PC2_2") ?? 1
+                (m11, m12, m21, m22) = (d1 * p11, d1 * p12, d2 * p21, d2 * p22)
+            } else {
+                // Greisen & Calabretta (2002) eq. 189:
+                //   CD = [[CDELT1·cos ρ, -CDELT2·sin ρ], [CDELT1·sin ρ, CDELT2·cos ρ]]
+                // The off-diagonal terms take the OTHER axis's CDELT. Using d1/d2
+                // on the wrong ones agrees only when CDELT1 == CDELT2, which is
+                // true of every square-pixel instrument (AIA, HMI, LASCO) — hence
+                // invisible — and wrong the moment they differ.
+                let a = (cardNum(cards, "CROTA2") ?? 0) * .pi / 180
+                (m11, m12, m21, m22) = (d1 * cos(a), -d2 * sin(a), d1 * sin(a), d2 * cos(a))
+            }
         }
 
         var rsun = cardNum(cards, "RSUN_OBS") ?? cardNum(cards, "RSUN_ARC")
@@ -350,8 +438,6 @@ enum FITSRenderer {
         let arcsecPerPixel = det != 0 ? abs(det).squareRoot() * 3600 : 0
         let rpx = (arcsecPerPixel > 0 && (rsun ?? 0) > 0) ? (rsun! / arcsecPerPixel) : 0
 
-        // Projection code is the last 3 chars of CTYPE1 ("HPLN-ARC" → "ARC").
-        let proj = ct.count >= 3 ? String(ct.suffix(3)).uppercased() : ""
         // LONPOLE defaults to 180° for zenithal projections whose fiducial point
         // is off the pole — i.e. every solar frame with CRVAL2 != 90.
         let lonpole = cardNum(cards, "LONPOLE") ?? 180

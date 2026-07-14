@@ -50,10 +50,23 @@ final class FITSPreviewModel {
     enum Mode { case plain, stretch, diff }
 
     private(set) var pages: [Page] = []
+    private(set) var path = ""
     var cur = 0
     var mode: Mode = .plain
     var limbOn = false
     var stretch = (lo: 0.5, hi: 99.5, gamma: 0.5, log: false)
+
+    // Full-resolution values for the CURRENT HDU only, fetched lazily off the
+    // main thread. The readout and region statistics must not come from the
+    // coarse `vgrid` (see FITSRenderer.pixels) — a grid cell covers vgFactor²
+    // native pixels, so the value there belongs to a different pixel than the
+    // coordinate we print, and a region sum there is short by that same factor.
+    // Holding one HDU rather than all of them keeps a 3-HDU 4096² PUNCH file at
+    // ~64 MB instead of ~190 MB inside a Quick Look extension.
+    private var fullHDU: Int?
+    private var full: (w: Int, h: Int, pix: [Float])?
+    /// Fired on the main thread when the full-res buffer lands (redraw hook).
+    var onFullRes: (() -> Void)?
 
     var count: Int { pages.count }
     var isEmpty: Bool { pages.isEmpty }
@@ -69,6 +82,7 @@ final class FITSPreviewModel {
     /// Render every image HDU. Call OFF the main thread.
     static func load(path: String, maxSide: Int = 1024) -> FITSPreviewModel {
         let m = FITSPreviewModel()
+        m.path = path
         var idx = [Int](repeating: 0, count: FITSRenderer.maxPagerHDUs)
         let total = Int(fitsshim_image_hdus(path, &idx, Int32(FITSRenderer.maxPagerHDUs)))
         let hdus = total > 0 ? Array(idx[0..<min(total, FITSRenderer.maxPagerHDUs)]) : []
@@ -95,6 +109,47 @@ final class FITSPreviewModel {
 
     func select(hdu: Int) { if let i = pages.firstIndex(where: { $0.hdu == hdu }) { cur = i } }
 
+    /// Fetch the current HDU's full-resolution values in the background. Cheap
+    /// to call on every refresh — it no-ops once the current HDU is cached.
+    func prefetchFullRes() {
+        guard let p = page, fullHDU != p.hdu else { return }
+        let path = self.path, hdu = p.hdu
+        fullHDU = hdu                       // claim it now: a later HDU wins
+        full = nil                          // readout falls back to the grid meanwhile
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let f = FITSRenderer.pixels(path: path, hdu: hdu)
+            DispatchQueue.main.async {
+                guard let self, self.fullHDU == hdu else { return }   // superseded
+                self.full = f
+                self.onFullRes?()
+            }
+        }
+    }
+
+    /// The pixel actually sampled at (u,v): its 1-based FITS coordinate AND its
+    /// value, always drawn from the same buffer — so the label can never name a
+    /// pixel other than the one whose value it reports. Exact once the full-res
+    /// buffer has landed; until then it names the grid cell's own native pixel,
+    /// which is coarse but still true.
+    private func sample(u: Double, v: Double) -> (fx: Int, fy: Int, z: Float)? {
+        guard let p = page else { return nil }
+        let r = p.res
+
+        if let f = full, f.w == r.natW, f.h == r.natH {
+            let x = min(f.w - 1, max(0, Int(u * Double(f.w))))
+            let y = min(f.h - 1, max(0, Int(v * Double(f.h))))
+            return (x + 1, f.h - y, f.pix[y * f.w + x])     // 1-based; FITS y counts up
+        }
+
+        guard r.vgw > 0, r.vgh > 0 else { return nil }
+        let gx = min(r.vgw - 1, max(0, Int(u * Double(r.vgw))))
+        let gy = min(r.vgh - 1, max(0, Int(v * Double(r.vgh))))
+        // The grid was built as vgrid[gy][gx] = pix[((vgh-1-gy)*vgF)*w + gx*vgF],
+        // so that cell IS this native pixel. Name it, not the one under the cursor.
+        let vgF = max(1, (max(r.natW, r.natH) + FITSRenderer.vgridMax - 1) / FITSRenderer.vgridMax)
+        return (gx * vgF + 1, (r.vgh - 1 - gy) * vgF + 1, r.vgrid[gy * r.vgw + gx])
+    }
+
     @discardableResult
     func step(_ d: Int) -> Bool {
         let n = max(0, min(pages.count - 1, cur + d))
@@ -107,7 +162,9 @@ final class FITSPreviewModel {
 
     func caption() -> String {
         guard let p = page else { return "" }
-        return p.caption + (mode == .diff ? "   ·   Δ − previous HDU" : "")
+        // Gate on canDiff too: image() silently falls back to the plain image on
+        // a non-diffable HDU, so an ungated suffix labels it Δ while showing it.
+        return p.caption + (mode == .diff && canDiff ? "   ·   Δ − previous HDU" : "")
     }
 
     /// The image to draw for the current HDU + mode.
@@ -127,20 +184,12 @@ final class FITSPreviewModel {
 
     /// (u,v) are 0…1 from the image's top-left.
     func readout(u: Double, v: Double) -> String? {
-        guard let p = page else { return nil }
-        let r = p.res
-        guard r.vgw > 0, r.vgh > 0 else { return nil }
-        let gx = min(r.vgw - 1, max(0, Int(u * Double(r.vgw))))
-        let gy = min(r.vgh - 1, max(0, Int(v * Double(r.vgh))))
-        let z = r.vgrid[gy * r.vgw + gx]
+        guard let p = page, let s = sample(u: u, v: v) else { return nil }
+        let unit = FITSRenderer.headerVal(p.res.header, "BUNIT").map { " \($0)" } ?? ""
 
-        let fx = Int((u * Double(r.natW - 1)).rounded()) + 1
-        let fy = r.natH - Int((v * Double(r.natH - 1)).rounded())
-        let unit = FITSRenderer.headerVal(r.header, "BUNIT").map { " \($0)" } ?? ""
-
-        var t = "(\(fx), \(fy)) = \(FITSRenderer.fmtValue(z))\(unit)"
+        var t = "(\(s.fx), \(s.fy)) = \(FITSRenderer.fmtValue(s.z))\(unit)"
         if let w = p.wcs {
-            let (tx, ty) = w.hpc(Double(fx), Double(fy))
+            let (tx, ty) = w.hpc(Double(s.fx), Double(s.fy))
             t += String(format: "\nTx,Ty = (%.1f″, %.1f″)", tx, ty)
             if w.rsun > 0 {
                 t += String(format: "   r = %.2f R☉", (tx * tx + ty * ty).squareRoot() / w.rsun)
@@ -151,39 +200,51 @@ final class FITSPreviewModel {
 
     /// Region statistics over a rect given in normalized image coords (0…1,
     /// origin top-left). Returns the report text and a log-scaled histogram.
+    ///
+    /// Every pixel in the named box is counted, at native resolution. This must
+    /// not fall back to the coarse grid: `sum` over a box is a quantity people
+    /// measure with (total intensity, total unsigned flux), and summing a
+    /// decimated grid while labelling the box in native pixels understates it by
+    /// vgFactor² — 64× on a 4096² frame — with the instrument's BUNIT attached.
+    /// So we return nil until the full-res buffer lands rather than post a
+    /// number that is wrong by two orders of magnitude.
     func statistics(u0: Double, v0: Double, u1: Double, v1: Double)
         -> (text: String, histogram: [Int])? {
         guard let p = page else { return nil }
         let r = p.res
-        guard r.vgw > 0, r.vgh > 0 else { return nil }
-        func gx(_ u: Double) -> Int { min(r.vgw - 1, max(0, Int(u * Double(r.vgw)))) }
-        func gy(_ v: Double) -> Int { min(r.vgh - 1, max(0, Int(v * Double(r.vgh)))) }
-        let x0 = gx(min(u0, u1)), x1 = gx(max(u0, u1))
-        let y0 = gy(min(v0, v1)), y1 = gy(max(v0, v1))
+        guard let f = full, f.w == r.natW, f.h == r.natH else { return nil }
+
+        func cx(_ u: Double) -> Int { min(f.w - 1, max(0, Int(u * Double(f.w)))) }
+        func cy(_ v: Double) -> Int { min(f.h - 1, max(0, Int(v * Double(f.h)))) }
+        let x0 = cx(min(u0, u1)), x1 = cx(max(u0, u1))
+        let y0 = cy(min(v0, v1)), y1 = cy(max(v0, v1))
 
         var vals: [Float] = []
+        vals.reserveCapacity((x1 - x0 + 1) * (y1 - y0 + 1))
         for yy in y0...y1 {
-            for xx in x0...x1 where r.vgrid[yy * r.vgw + xx].isFinite {
-                vals.append(r.vgrid[yy * r.vgw + xx])
-            }
+            let row = yy * f.w
+            for xx in x0...x1 where f.pix[row + xx].isFinite { vals.append(f.pix[row + xx]) }
         }
         guard !vals.isEmpty else { return nil }
 
-        let sum = vals.reduce(Float(0), +)
-        let mean = sum / Float(vals.count)
+        // Pairwise summation: a naive Float running total loses low-order bits
+        // once a 4096²-pixel box pushes the accumulator far above the addends.
+        let sum = vals.reduce(Double(0)) { $0 + Double($1) }
+        let mean = Float(sum / Double(vals.count))
         let sd = (vals.reduce(Float(0)) { $0 + ($1 - mean) * ($1 - mean) } / Float(vals.count)).squareRoot()
         let sorted = vals.sorted()
         let med = sorted[(sorted.count - 1) / 2]
         let mn = sorted.first!, mx = sorted.last!
 
-        func fx(_ u: Double) -> Int { Int((u * Double(r.natW - 1)).rounded()) + 1 }
-        func fy(_ v: Double) -> Int { r.natH - Int((v * Double(r.natH - 1)).rounded()) }
+        // The box the header line names is exactly the box we summed.
+        func fx(_ x: Int) -> Int { x + 1 }
+        func fy(_ y: Int) -> Int { f.h - y }
         let unit = FITSRenderer.headerVal(r.header, "BUNIT").map { " \($0)" } ?? ""
 
         let text = """
-        region x \(fx(min(u0, u1)))–\(fx(max(u0, u1)))  y \(fy(max(v0, v1)))–\(fy(min(v0, v1)))   n=\(vals.count)
+        region x \(fx(x0))–\(fx(x1))  y \(fy(y1))–\(fy(y0))   n=\(vals.count)
         mean \(FITSRenderer.fmtValue(mean))\(unit)   median \(FITSRenderer.fmtValue(med))\(unit)
-        σ \(FITSRenderer.fmtValue(sd))   sum \(FITSRenderer.fmtValue(sum))
+        σ \(FITSRenderer.fmtValue(sd))   sum \(FITSRenderer.fmtValue(Float(sum)))
         min \(FITSRenderer.fmtValue(mn))   max \(FITSRenderer.fmtValue(mx))
         """
 
@@ -268,8 +329,14 @@ final class FITSPreviewModel {
     }
 
     /// Paste-ready sunpy snippet for the displayed HDU.
+    ///
+    /// The keyword is `hdus`, not `hdu`. sunpy's reader takes `hdus=`; an `hdu=`
+    /// falls through **kwargs into astropy and is silently ignored, so Map()
+    /// hands back a LIST of every image HDU — .peek() then raises AttributeError,
+    /// and anyone who "fixes" that with m[0] is quietly reading a different HDU
+    /// than the one on screen.
     func pythonSnippet(path: String) -> String {
-        let hdu = page.map { ", hdu=\($0.hdu)" } ?? ""
+        let hdu = page.map { ", hdus=\($0.hdu)" } ?? ""
         return """
         import sunpy.map
         m = sunpy.map.Map("\(path)"\(hdu))
@@ -281,9 +348,16 @@ final class FITSPreviewModel {
 // MARK: - Statistics card
 
 final class FITSStatsCard: NSView {
-    var text = ""
+    var text = "" { didSet { setAccessibilityValue(text) } }
     var histogram: [Int] = []
     override var isFlipped: Bool { true }
+
+    // The whole card is custom-drawn, so without this VoiceOver sees an empty
+    // box where the mean/median/σ/sum live.
+    override func accessibilityLabel() -> String? { "Region statistics" }
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
+    override func accessibilityValue() -> Any? { text }
 
     override func draw(_ dirty: NSRect) {
         NSColor(calibratedWhite: 0.07, alpha: 0.96).setFill()
@@ -334,6 +408,18 @@ final class FITSImageCanvas: NSView {
     var onHover: ((Double, Double)?) -> Void = { _ in }     // normalized, or nil
     var onRegion: (((u0: Double, v0: Double, u1: Double, v1: Double)?) -> Void)?
     var onZoomChanged: (() -> Void)?
+
+    // MARK: accessibility
+    //
+    // Everything here is drawn, not built from controls, so VoiceOver sees one
+    // roleless view unless we say otherwise. The caption already names the HDU,
+    // instrument, wavelength and dimensions, and the readout already carries the
+    // pixel value and helioprojective coordinate — expose those rather than
+    // inventing a second description that could drift from what is on screen.
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { .image }
+    override func accessibilityLabel() -> String? { caption.isEmpty ? "FITS image" : caption }
+    override func accessibilityValue() -> Any? { readout }
 
     private(set) var zoom: CGFloat = 1              // 1 = fit
     private var pan = CGPoint.zero                  // in view points, at current zoom

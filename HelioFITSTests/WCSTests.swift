@@ -167,4 +167,103 @@ struct WCSTests {
             ("CRPIX1", "512.0"),      ("CRPIX2", "512.0"),
         ]), isSolar: true) == nil)
     }
+
+    // MARK: the rotation matrix — cases every square-pixel instrument hides
+    //
+    // AIA, HMI and LASCO all have CDELT1 == CDELT2, which makes the two forms of
+    // the CROTA2 matrix agree. The tests above therefore could not see that the
+    // off-diagonal terms were taking the wrong axis's CDELT. These can.
+
+    @Test("CROTA2 with non-square pixels matches astropy (off-diagonal CDELT)")
+    func crota2NonSquarePixels() throws {
+        let w = try #require(FITSRenderer.solarWCS(cards: cards([
+            ("CTYPE1", "'HPLN-TAN'"), ("CTYPE2", "'HPLT-TAN'"),
+            ("CUNIT1", "'arcsec'"),   ("CUNIT2", "'arcsec'"),
+            ("CDELT1", "-11.4"),      ("CDELT2", "23.8"),   // deliberately unequal
+            ("CRPIX1", "512.0"),      ("CRPIX2", "512.0"),
+            ("CRVAL1", "0.0"),        ("CRVAL2", "0.0"),
+            ("CROTA2", "30.0"),
+        ]), isSolar: true))
+        // astropy: (600,700) -> Tx=-3105.762" Ty=3372.661"
+        // (it reports Tx wrapped past 360 deg, as 1292894.238".)
+        // The old, wrong matrix gave Tx=202.80" Ty=4921.21".
+        let t = w.hpc(600, 700)
+        #expect(abs(t.tx - (-3105.762)) < 0.05)
+        #expect(abs(t.ty - 3372.661) < 0.05)
+    }
+
+    @Test("A CD matrix is used, and takes precedence like astropy's")
+    func cdMatrix() throws {
+        let w = try #require(FITSRenderer.solarWCS(cards: cards([
+            ("CTYPE1", "'HPLN-TAN'"), ("CTYPE2", "'HPLT-TAN'"),
+            ("CUNIT1", "'arcsec'"),   ("CUNIT2", "'arcsec'"),
+            ("CD1_1", "-0.6"),        ("CD1_2", "0.05"),
+            ("CD2_1", "0.04"),        ("CD2_2", "0.6"),
+            ("CRPIX1", "512.0"),      ("CRPIX2", "512.0"),
+            ("CRVAL1", "0.0"),        ("CRVAL2", "0.0"),
+        ]), isSolar: true))
+        // astropy: (600,700) -> Tx=-43.400" Ty=116.320" (Tx reported wrapped).
+        // A CD-only header used to yield NO readout and NO limb at all.
+        let t = w.hpc(600, 700)
+        #expect(abs(t.tx - (-43.400)) < 0.05)
+        #expect(abs(t.ty - 116.320) < 0.05)
+    }
+
+    @Test("A partially-specified PC matrix keeps its roll (PCi_i defaults to 1)")
+    func partialPCMatrix() throws {
+        let w = try #require(FITSRenderer.solarWCS(cards: cards([
+            ("CTYPE1", "'HPLN-TAN'"), ("CTYPE2", "'HPLT-TAN'"),
+            ("CUNIT1", "'arcsec'"),   ("CUNIT2", "'arcsec'"),
+            ("CDELT1", "0.6"),        ("CDELT2", "0.6"),
+            ("PC1_2", "-0.2"),        ("PC2_1", "0.2"),      // diagonal omitted
+            ("CRPIX1", "512.0"),      ("CRPIX2", "512.0"),
+            ("CRVAL1", "0.0"),        ("CRVAL2", "0.0"),
+        ]), isSolar: true))
+        // astropy: (600,700) -> Tx=30.240" Ty=123.360".
+        // Requiring PC1_1 AND PC2_2 to be present dropped the roll entirely,
+        // which would have given Tx=52.8" Ty=112.8".
+        let t = w.hpc(600, 700)
+        #expect(abs(t.tx - 30.240) < 0.05)
+        #expect(abs(t.ty - 123.360) < 0.05)
+    }
+
+    // MARK: refuse rather than invent
+    //
+    // Each of these used to produce a plausible-looking number from the flat
+    // tangent-plane fallback — the same failure mode as the PUNCH bug, which is
+    // exactly the kind a scientist cannot see and would trust.
+
+    @Test("An unsupported projection yields no WCS, not a flat approximation")
+    func unsupportedProjectionRefused() {
+        for ctype in ["'HPLN-ZEA'", "'HPLN-CEA'", "'HPLN-TAN-SIP'", "'HPLN'"] {
+            #expect(FITSRenderer.solarWCS(cards: cards([
+                ("CTYPE1", ctype),      ("CTYPE2", "'HPLT-ARC'"),
+                ("CUNIT1", "'arcsec'"), ("CUNIT2", "'arcsec'"),
+                ("CDELT1", "2.4"),      ("CDELT2", "2.4"),
+                ("CRPIX1", "512.0"),    ("CRPIX2", "512.0"),
+            ]), isSolar: true) == nil, "\(ctype) must be refused")
+        }
+    }
+
+    @Test("A non-latitude second axis is refused, not read as arcsec")
+    func nonLatitudeSecondAxisRefused() {
+        // A spectroheliogram raster: x is helioprojective, y is wavelength.
+        // This used to be deprojected with Angstroms folded into Ty and R_sun.
+        #expect(FITSRenderer.solarWCS(cards: cards([
+            ("CTYPE1", "'HPLN-TAN'"), ("CTYPE2", "'WAVE'"),
+            ("CUNIT1", "'arcsec'"),   ("CUNIT2", "'Angstrom'"),
+            ("CDELT1", "2.4"),        ("CDELT2", "0.02"),
+            ("CRPIX1", "512.0"),      ("CRPIX2", "512.0"),
+        ]), isSolar: true) == nil)
+    }
+
+    @Test("An unrecognised CUNIT is refused, not assumed to be arcsec")
+    func unknownCunitRefused() {
+        #expect(FITSRenderer.solarWCS(cards: cards([
+            ("CTYPE1", "'HPLN-TAN'"), ("CTYPE2", "'HPLT-TAN'"),
+            ("CUNIT1", "'m/s'"),      ("CUNIT2", "'m/s'"),
+            ("CDELT1", "2.4"),        ("CDELT2", "2.4"),
+            ("CRPIX1", "512.0"),      ("CRPIX2", "512.0"),
+        ]), isSolar: true) == nil)
+    }
 }

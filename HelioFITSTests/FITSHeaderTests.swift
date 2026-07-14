@@ -72,6 +72,18 @@ struct FITSHeaderTests {
         #expect(!FITSHeader.dump(path: p).isEmpty)   // returns quickly, no hang
     }
 
+    @Test("BITPIX = Int.min does not trap on abs()")
+    func intMinBitpix() throws {
+        // abs(Int.min) has no representable magnitude and traps in Swift, so an
+        // unvalidated BITPIX was a one-card hard crash on open.
+        let p = try writeHeaderFile([
+            ("SIMPLE", "T"), ("BITPIX", "-9223372036854775808"),
+            ("NAXIS", "1"), ("NAXIS1", "1"),
+        ])
+        defer { try? FileManager.default.removeItem(atPath: p) }
+        #expect(!FITSHeader.dump(path: p).isEmpty)
+    }
+
     @Test("Empty file returns a message, not a crash")
     func emptyFile() throws {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())

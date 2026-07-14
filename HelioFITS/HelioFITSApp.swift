@@ -121,12 +121,22 @@ private func dirsFromURL(_ url: URL) -> [String] {
 }
 
 /// heliofits://choose?paths=…  → open the app's native HDU chooser sheet.
-/// heliofits://sync?hdu=N&paths=…  → write the rule directly (scripting path).
+/// heliofits://export?paths=…  → batch PNG export (into a folder the user picks).
+///
+/// Both verbs end at a piece of UI the user has to act on, which is the point:
+/// heliofits:// is registered system-wide, so ANY web page can navigate to it.
+/// There used to be a third verb, `sync`, that wrote the directory→HDU rules
+/// straight into the shared UserDefaults with no confirmation and no visible UI
+/// — a drive-by persistent-settings write for any page that could guess a real
+/// directory. Nothing shipped used it (the Quick Actions call `choose` and
+/// `export`), so it is gone rather than merely gated.
 func applySyncURL(_ url: URL) {
     guard url.scheme == "heliofits" else { return }
 
     // heliofits://export?paths=… → batch PNG export. Needs FILE paths (not the
     // parent dirs dirsFromURL collapses to), so parse queryItems directly.
+    // PNGExporter.run puts up an NSOpenPanel for the destination, so nothing is
+    // written anywhere the user did not choose.
     if url.host == "export" {
         let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
         let paths = (comps?.queryItems?.first { $0.name == "paths" }?.value ?? "")
@@ -136,21 +146,11 @@ func applySyncURL(_ url: URL) {
     }
 
     let dirs = dirsFromURL(url)
-    guard !dirs.isEmpty else { return }
+    guard !dirs.isEmpty, url.host == "choose" else { return }
 
-    if url.host == "sync" {
-        let comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        let hdu = Int(comps?.queryItems?.first { $0.name == "hdu" }?.value ?? "") ?? -1
-        guard let d = UserDefaults(suiteName: fitsAppGroup) else { return }
-        var rules = (d.dictionary(forKey: "dirHDU") as? [String: Int]) ?? [:]
-        // hdu -1 = auto first, -2 = auto last, >=0 = specific; below -2 clears.
-        for dir in dirs { if hdu >= -2 { rules[dir] = hdu } else { rules.removeValue(forKey: dir) } }
-        d.set(rules, forKey: "dirHDU")
-    } else {
-        DispatchQueue.main.async {
-            ServiceRequest.shared.pendingDirs = dirs
-            NSApp.activate(ignoringOtherApps: true)
-        }
+    DispatchQueue.main.async {
+        ServiceRequest.shared.pendingDirs = dirs
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 
