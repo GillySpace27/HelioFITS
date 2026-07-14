@@ -343,6 +343,8 @@ final class FITSImageCanvas: NSView {
     private var dragStart: NSPoint?
     private var panStart: (mouse: NSPoint, pan: CGPoint)?
     private var cmdDown = false
+    private var mouseInside = false
+    private var scrollIsZoom = false
     private var hintDeadline = Date.distantPast
     private var flagsMonitor: Any?
 
@@ -392,22 +394,24 @@ final class FITSImageCanvas: NSView {
         return parts.isEmpty ? nil : parts.joined(separator: "   ·   ")
     }
 
+    /// The cursor is driven explicitly rather than through cursor rects: rects
+    /// are only re-evaluated when the mouse MOVES, so pressing ⌘ while holding
+    /// still would not change the cursor until you jiggled the mouse.
     private func stateChanged() {
-        window?.invalidateCursorRects(for: self)
-        cursorForMode.set()
+        if mouseInside { cursorForMode.set() }
         needsDisplay = true
     }
 
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(imageRect() ?? bounds, cursor: cursorForMode)
+    override func cursorUpdate(with event: NSEvent) {
+        if mouseInside { cursorForMode.set() } else { super.cursorUpdate(with: event) }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil, flagsMonitor == nil else { return }
-        // ⌘ can be pressed while the mouse is still, which produces no mouse
-        // event — watch the modifier directly so the cursor and hint keep up.
+        // ⌘ can be pressed with the mouse perfectly still, which produces no
+        // mouse event at all — watch the modifier itself so the cursor and the
+        // hint update the instant the key goes down, not on the next wiggle.
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] e in
             guard let self else { return e }
             let down = e.modifierFlags.contains(.command)
@@ -432,7 +436,7 @@ final class FITSImageCanvas: NSView {
         if let t = tracking { removeTrackingArea(t) }
         // .activeAlways — a hosted preview never becomes the key window.
         let t = NSTrackingArea(rect: bounds,
-                               options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                               options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
                                owner: self, userInfo: nil)
         addTrackingArea(t)
         tracking = t
@@ -523,25 +527,43 @@ final class FITSImageCanvas: NSView {
 
     override func scrollWheel(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
-        // ⌥ scroll zooms; plain scroll steps HDUs (the only gesture Finder
-        // delivers to a preview in the column pane, so it must be navigation).
-        if e.modifierFlags.contains(.option) {
-            setZoom(zoom * (1 + e.scrollingDeltaY * 0.01), about: p)
-            return
-        }
         let now = Date()
+
         // Scrolling DOWN advances to the next HDU (like paging down a document),
-        // so the step is the negated delta.
-        //
-        // A trackpad reports PIXEL deltas (large, continuous); a mouse wheel
-        // reports LINE deltas (±1-ish per notch). One threshold cannot serve
-        // both — a wheel would never accumulate enough to step.
+        // hence the negated delta below.
+
+        // --- discrete mouse wheel: no phases, each notch stands alone ---
+        // (A wheel reports LINE deltas of ±1-ish; a trackpad reports PIXEL
+        // deltas. One threshold cannot serve both.)
         guard e.hasPreciseScrollingDeltas else {
+            if e.modifierFlags.contains(.option) {
+                setZoom(zoom * (1 + e.scrollingDeltaY * 0.06), about: p)
+                return
+            }
             guard e.scrollingDeltaY != 0, now.timeIntervalSince(lastStep) > 0.10 else { return }
             onScrollStep?(e.scrollingDeltaY > 0 ? -1 : 1)     // one notch = one HDU
             lastStep = now
             return
         }
+
+        // --- trackpad: a gesture is a begin, a body, and an INERTIAL TAIL ---
+        // Latch what the gesture is for when it BEGINS. Otherwise, releasing ⌥
+        // during a fast zoom drops the modifier from the momentum events still
+        // in flight, and the tail of the zoom blinks through the HDUs.
+        if e.phase.contains(.began) {
+            scrollIsZoom = e.modifierFlags.contains(.option)
+            acc = 0
+        }
+        if scrollIsZoom {
+            setZoom(zoom * (1 + e.scrollingDeltaY * 0.01), about: p)   // tail keeps zooming
+            return
+        }
+
+        // Inertia must not blink HDUs either: a flick would race through the
+        // stack after your fingers have already left the trackpad. Only the
+        // part of the gesture you are actually driving steps.
+        guard e.momentumPhase.isEmpty else { return }
+
         acc += e.scrollingDeltaY
         if abs(acc) >= 30, now.timeIntervalSince(lastStep) > 0.13 {
             onScrollStep?(acc > 0 ? -1 : 1)
@@ -555,13 +577,20 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseMoved(with e: NSEvent) {
+        mouseInside = true
         cmdDown = e.modifierFlags.contains(.command)
         cursorForMode.set()
         guard dragStart == nil, panStart == nil else { return }
         onHover(normalized(convert(e.locationInWindow, from: nil)))
     }
 
+    override func mouseEntered(with e: NSEvent) {
+        mouseInside = true
+        cursorForMode.set()
+    }
+
     override func mouseExited(with e: NSEvent) {
+        mouseInside = false
         onHover(nil)
         NSCursor.arrow.set()
     }
