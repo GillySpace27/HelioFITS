@@ -8,10 +8,13 @@
     <dict>
         <key>NSExtensionAttributes</key>
         <dict>
-            <!-- Required: routes previews to our QLPreviewProvider subclass
-                 (data-based) instead of a view controller. -->
-            <key>QLIsDataBasedPreview</key>
-            <true/>
+            <!-- VIEW-BASED preview (no QLIsDataBasedPreview). A data reply is
+                 routed through an Apple display bundle picked by content type,
+                 and Finder's COLUMN pane REFUSES the HTML one (qldisplay.Web2)
+                 — it falls back to a generic thumbnail. A view controller is
+                 hosted by qldisplay.Extensions instead, which the column pane
+                 does accept, so one implementation renders in the column pane,
+                 gallery and the Space panel alike. -->
             <key>QLSupportedContentTypes</key>
             <array>
                 <string>gov.nasa.gsfc.fits</string>
@@ -22,7 +25,7 @@
         <key>NSExtensionPointIdentifier</key>
         <string>com.apple.quicklook.preview</string>
         <key>NSExtensionPrincipalClass</key>
-        <string>$(PRODUCT_MODULE_NAME).PreviewProvider</string>
+        <string>$(PRODUCT_MODULE_NAME).PreviewViewController</string>
     </dict>
 </dict>
 </plist>
