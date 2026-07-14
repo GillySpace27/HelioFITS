@@ -149,378 +149,350 @@ private extension String {
     }
 }
 
-// MARK: - Drag-out image view
+// MARK: - Native viewer window
 
-/// NSImageView that offers its rendered PNG as a file promise, so the preview
-/// drags straight into Finder/Keynote/Slack. The controller supplies
-/// (pngData, filename) via `pngProvider` — nil until the first render lands.
-final class DraggablePNGView: NSImageView, NSDraggingSource, NSFilePromiseProviderDelegate {
-    var pngProvider: (() -> (data: Data, filename: String)?)?
-    /// Cursor moved over the view (point in view coords), or nil on exit —
-    /// drives the (x,y)=z + helioprojective readout.
-    var onHover: ((NSPoint?) -> Void)?
-
-    private var tracking: NSTrackingArea?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let t = tracking { removeTrackingArea(t) }
-        let t = NSTrackingArea(rect: bounds,
-                               options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-                               owner: self, userInfo: nil)
-        addTrackingArea(t)
-        tracking = t
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        onHover?(convert(event.locationInWindow, from: nil))
-    }
-
-    override func mouseExited(with event: NSEvent) { onHover?(nil) }
-
-    /// The drawn image's rect inside the view — NSImageView letterboxes a
-    /// proportionally-scaled image, exactly like CSS object-fit: contain.
-    func imageRect() -> NSRect? {
-        guard let sz = image?.size, sz.width > 0, sz.height > 0 else { return nil }
-        let ar = sz.width / sz.height, vr = bounds.width / bounds.height
-        let w = ar > vr ? bounds.width : bounds.height * ar
-        let h = ar > vr ? bounds.width / ar : bounds.height
-        return NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
-    }
-
-    override func mouseDown(with event: NSEvent) {}   // swallow; drag starts on movement
-
-    override func mouseDragged(with event: NSEvent) {
-        guard image != nil, pngProvider?() != nil else { return }
-        let promise = NSFilePromiseProvider(fileType: UTType.png.identifier, delegate: self)
-        let item = NSDraggingItem(pasteboardWriter: promise)
-        item.setDraggingFrame(bounds, contents: image)
-        beginDraggingSession(with: [item], event: event, source: self)
-    }
-
-    func draggingSession(_ session: NSDraggingSession,
-                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation { .copy }
-
-    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
-                             fileNameForType fileType: String) -> String {
-        pngProvider?()?.filename ?? "image.png"
-    }
-
-    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
-                             writePromiseTo url: URL,
-                             completionHandler: @escaping (Error?) -> Void) {
-        guard let png = pngProvider?() else { completionHandler(CocoaError(.fileNoSuchFile)); return }
-        do { try png.data.write(to: url); completionHandler(nil) }
-        catch { completionHandler(error) }
-    }
-}
-
-// MARK: - Native window
-
+/// The window shown when a FITS file is opened with the app (double-click, or
+/// the "View HDU header" Quick Action).
+///
+/// It hosts the SAME interactive surface as the Quick Look preview
+/// (FITSPreviewCore): scroll to blink HDUs, hover for (x,y)=z + helioprojective
+/// coordinates, drag to measure a region, plus the limb / running-difference /
+/// stretch tools — and adds the full header underneath, an HDU picker, PNG
+/// export and a paste-ready sunpy snippet.
+///
+/// Image and header sit in a split view, so enlarging the window (or dragging
+/// the divider) actually gives the image more room; ⌥-scroll or pinch zooms in,
+/// ⌘-drag pans, double-click resets.
 final class HeaderWindowController: NSObject, NSWindowDelegate {
     static let shared = HeaderWindowController()
-    private static let imageTag = 101
-    private static let saveTag = 102
-    private static let hduPopupTag = 103
-    private static let copyPythonTag = 104
-    private static let readoutTag = 105
 
-    private var windows = Set<NSWindow>()                 // retain until closed
-    private var pngs = [ObjectIdentifier: Data]()         // rendered colormapped PNG per window (for export)
-    private var sources = [ObjectIdentifier: URL]()       // source FITS per window
-    private var scopedURLs = [ObjectIdentifier: URL]()    // security scope held while open (HDU switching re-reads)
-    private var renders = [ObjectIdentifier: FITSRenderer.Result]()   // value grid + native dims for the readout
-    private var wcs = [ObjectIdentifier: FITSRenderer.SolarWCS]()     // per displayed HDU (absent = non-solar)
-    private var renderGen = [ObjectIdentifier: Int]()    // bumped per HDU switch; stale completions are dropped
+    private final class Ctx {
+        let url: URL
+        var model = FITSPreviewModel()
+        let canvas = FITSImageCanvas()
+        let stats = FITSStatsCard()
+        var tools: FITSToolbar!
+        let popup = NSPopUpButton()
+        let save = NSButton()
+        let copy = NSButton()
+        var gen = 0                       // drops superseded background renders
+        var scoped = false
+        init(url: URL) { self.url = url }
+    }
 
-    /// Show a native window with the colormapped image, an HDU switcher, the
-    /// full header, and a "Save PNG…" button. The image is rendered in-app via
-    /// CFITSIO (same FITSRenderer the extensions use) so it carries the
-    /// instrument colormap and exports at full render resolution.
+    private var windows = Set<NSWindow>()
+    private var ctx = [ObjectIdentifier: Ctx]()
+
+    // MARK: present
+
     func present(fileURL: URL) {
-        let scoped = fileURL.startAccessingSecurityScopedResource()
+        let c = Ctx(url: fileURL)
+        c.scoped = fileURL.startAccessingSecurityScopedResource()
         let text = FITSHeader.dump(path: fileURL.path)
+        let win = makeWindow(title: fileURL.lastPathComponent, headerText: text, ctx: c)
+        ctx[ObjectIdentifier(win)] = c
 
-        // Renderable (image) HDUs + their EXTNAMEs, from the dump's "HDU n [name]" banners.
-        var idx = [Int](repeating: 0, count: 64)
-        let n = Int(fitsshim_image_hdus(fileURL.path, &idx, 64))
-        let imageHDUs = n > 0 ? Array(idx[0..<min(n, 64)]) : []
+        // Render every image HDU off-main, then wire up the picker.
+        let gen = c.gen
+        DispatchQueue.global(qos: .userInitiated).async { [weak self, weak win] in
+            let m = FITSPreviewModel.load(path: fileURL.path, maxSide: 2048)
+            DispatchQueue.main.async {
+                guard let self, let win, let c = self.ctx[ObjectIdentifier(win)], c.gen == gen else { return }
+                c.model = m
+                self.populatePopup(c, headerText: text)
+                c.save.isEnabled = !m.isEmpty
+                c.copy.isEnabled = !m.isEmpty
+                c.canvas.hint = m.count > 1
+                    ? "scroll ⇅ to blink HDUs  ·  drag to measure  ·  ⌥scroll to zoom"
+                    : "drag to measure  ·  ⌥scroll to zoom"
+                self.refresh(c)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak c] in
+                    c?.canvas.hint = nil
+                    c?.canvas.needsDisplay = true
+                }
+            }
+        }
+    }
+
+    /// HDU picker labelled with EXTNAMEs parsed from the header dump's banners.
+    private func populatePopup(_ c: Ctx, headerText: String) {
         var names = [Int: String]()
-        for line in text.split(separator: "\n") where line.hasPrefix("HDU ") {
+        for line in headerText.split(separator: "\n") where line.hasPrefix("HDU ") {
             let rest = line.dropFirst(4)
-            guard let num = Int(rest.prefix(while: { $0.isNumber })),
+            guard let n = Int(rest.prefix(while: { $0.isNumber })),
                   let l = rest.firstIndex(of: "["), let r = rest.lastIndex(of: "]"), l < r
             else { continue }
-            names[num] = String(rest[rest.index(after: l)..<r])
+            names[n] = String(rest[rest.index(after: l)..<r])
         }
-
-        let win = makeWindow(title: fileURL.lastPathComponent, text: text, source: fileURL)
-        if scoped { scopedURLs[ObjectIdentifier(win)] = fileURL }   // released in windowWillClose
-
-        // HDU switcher: same starting HDU the Quick Look preview would pick.
-        var initial = imageHDUs.first ?? -1                          // -1 = shim auto
-        let want = FITSRenderer.selectedHDU(forFileAt: fileURL.path)
-        if want >= 0, imageHDUs.contains(want) { initial = want }
-        if want == -2, let l = imageHDUs.last { initial = l }
-        if let popup = win.contentView?.viewWithTag(Self.hduPopupTag) as? NSPopUpButton {
-            if imageHDUs.count > 1 {
-                for h in imageHDUs {
-                    popup.addItem(withTitle: names[h].map { "HDU \(h) — \($0)" } ?? "HDU \(h)")
-                    popup.lastItem?.tag = h
-                }
-                popup.selectItem(withTag: initial)
-                popup.sizeToFit()
-            } else {
-                popup.isHidden = true                     // nothing to switch
-            }
+        c.popup.removeAllItems()
+        guard c.model.count > 1 else { c.popup.isHidden = true; return }
+        for p in 0..<c.model.count {
+            let h = c.model.pages[p].hdu
+            c.popup.addItem(withTitle: names[h].map { "HDU \(h) — \($0)" } ?? "HDU \(h)")
+            c.popup.lastItem?.tag = h
         }
-        renderHDU(in: win, url: fileURL, hdu: initial)
+        c.popup.selectItem(withTag: c.model.page?.hdu ?? 0)
+        c.popup.sizeToFit()
     }
 
-    /// Render one HDU on a background queue and swap it into the window, along
-    /// with the value grid + WCS that back the hover readout.
-    private func renderHDU(in win: NSWindow, url: URL, hdu: Int) {
-        // Renders run on a concurrent queue and can finish out of order. Stamp
-        // each request; a completion only wins if it's still the latest — else a
-        // slow HDU-1 render could land after HDU-2 and leave the popup labelled
-        // "HDU 2" while pngs/renders hold HDU-1 bytes (wrong export + readout).
-        let k = ObjectIdentifier(win)
-        let gen = (renderGen[k] ?? 0) + 1
-        renderGen[k] = gen
-        DispatchQueue.global(qos: .userInitiated).async { [weak self, weak win] in
-            let result = try? FITSRenderer.render(path: url.path, maxSide: 4096, hdu: hdu)
-            guard let r = result, let img = NSImage(data: r.png) else { return } // header still shown on failure
-            // The shim resolves -1/-2; ask it which HDU actually rendered so the
-            // WCS cards come from the HDU on screen, not the sentinel.
-            let shown = FITSRenderer.resolveAutoHDU(path: url.path, want: hdu)
-            let solarWCS = FITSRenderer.cards(path: url.path, hdu: max(shown, 0)).flatMap {
-                FITSRenderer.solarWCS(cards: $0,
-                                      isSolar: FITSRenderer.colormapKey(fromHeader: r.header) != nil)
-            }
-            DispatchQueue.main.async {
-                guard let self, let win, self.renderGen[k] == gen else { return }   // superseded → drop
-                self.pngs[k] = r.png
-                self.renders[k] = r
-                if let w = solarWCS { self.wcs[k] = w } else { self.wcs.removeValue(forKey: k) }
-                (win.contentView?.viewWithTag(Self.imageTag) as? NSImageView)?.image = img
-                (win.contentView?.viewWithTag(Self.saveTag) as? NSButton)?.isEnabled = true
-                (win.contentView?.viewWithTag(Self.copyPythonTag) as? NSButton)?.isEnabled = true
-            }
-        }
-    }
+    // MARK: window
 
-    /// Hover → "(x, y) = z BUNIT / Tx,Ty = (…″, …″)  r = … R☉".
-    /// Mirrors the Quick Look preview's readout: same grid, same conventions
-    /// (FITS pixels are 1-based with y increasing upward).
-    private func updateReadout(win: NSWindow, imageView: DraggablePNGView, at p: NSPoint?) {
-        guard let label = win.contentView?.viewWithTag(Self.readoutTag) as? NSTextField else { return }
-        guard let p, let r = renders[ObjectIdentifier(win)], let box = imageView.imageRect(),
-              box.contains(p), r.vgw > 0, r.vgh > 0 else {
-            label.isHidden = true
-            return
-        }
-        // u,v are 0…1 from the image's top-left (AppKit y is up, so flip it).
-        let u = (p.x - box.minX) / box.width
-        let v = 1 - (p.y - box.minY) / box.height
-
-        let gx = min(r.vgw - 1, max(0, Int(u * Double(r.vgw))))
-        let gy = min(r.vgh - 1, max(0, Int(v * Double(r.vgh))))
-        let z = r.vgrid[gy * r.vgw + gx]
-
-        let fx = Int((u * Double(r.natW - 1)).rounded()) + 1
-        let fy = r.natH - Int((v * Double(r.natH - 1)).rounded())
-
-        let unit = FITSRenderer.headerVal(r.header, "BUNIT").map { " \($0)" } ?? ""
-        var text = "(\(fx), \(fy)) = \(FITSRenderer.fmtValue(z))\(unit)"
-        if let w = wcs[ObjectIdentifier(win)] {
-            let (tx, ty) = w.hpc(Double(fx), Double(fy))
-            text += String(format: "     Tx,Ty = (%.1f″, %.1f″)", tx, ty)
-            if w.rsun > 0 {
-                text += String(format: "   r = %.2f R☉", (tx * tx + ty * ty).squareRoot() / w.rsun)
-            }
-        }
-        label.stringValue = text
-        label.sizeToFit()
-        label.isHidden = false
-    }
-
-    @objc private func hduChanged(_ sender: NSPopUpButton) {
-        guard let win = sender.window, let src = sources[ObjectIdentifier(win)] else { return }
-        renderHDU(in: win, url: src, hdu: sender.selectedTag())
-    }
-
-    private func makeWindow(title: String, text: String, source: URL) -> NSWindow {
-        let W: CGFloat = 760, H: CGFloat = 860, imgH: CGFloat = 420, barH: CGFloat = 40
-        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: W, height: H),
+    private func makeWindow(title: String, headerText: String, ctx c: Ctx) -> NSWindow {
+        let win = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 820, height: 900),
                            styleMask: [.titled, .closable, .resizable, .miniaturizable],
                            backing: .buffered, defer: false)
         win.title = title
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self
-        win.acceptsMouseMovedEvents = true          // required for the hover readout
-        // The window is a dark data viewer (black image band, near-black header).
-        // Pin it to darkAqua so the header-material bar and its controls render
-        // with dark-mode contrast instead of a light bar sandwiched in black.
+        win.acceptsMouseMovedEvents = true                 // required for the readout
+        // A dark data viewer (black image, near-black header) — pin the appearance
+        // so the header-material bar and its controls get dark-mode contrast.
         win.appearance = NSAppearance(named: .darkAqua)
 
-        let content = NSView(frame: NSRect(x: 0, y: 0, width: W, height: H))
-
-        // image band (top) — colormapped preview on black; drags out as a PNG
-        let iv = DraggablePNGView(frame: NSRect(x: 0, y: H - imgH, width: W, height: imgH))
-        iv.tag = Self.imageTag
-        iv.imageScaling = .scaleProportionallyUpOrDown
-        iv.imageAlignment = .alignCenter
-        iv.wantsLayer = true
-        iv.layer?.backgroundColor = NSColor.black.cgColor
-        iv.autoresizingMask = [.width, .minYMargin]
-        iv.pngProvider = { [weak self, weak win] in
-            guard let self, let win else { return nil }
-            return self.pngExport(for: win)
+        // ---- image pane: the shared interactive canvas ----
+        let top = NSView()
+        c.canvas.translatesAutoresizingMaskIntoConstraints = false
+        c.canvas.onScrollStep = { [weak self, weak c] d in
+            guard let self, let c, c.model.step(d) else { return }
+            c.canvas.hint = nil
+            c.popup.selectItem(withTag: c.model.page?.hdu ?? 0)
+            self.refresh(c)
         }
-        iv.onHover = { [weak self, weak win, weak iv] p in
-            guard let self, let win, let iv else { return }
-            self.updateReadout(win: win, imageView: iv, at: p)
+        c.canvas.onHover = { [weak c] n in
+            guard let c else { return }
+            c.canvas.readout = n.flatMap { c.model.readout(u: $0.0, v: $0.1) }
+            c.canvas.needsDisplay = true
         }
-        content.addSubview(iv)
-
-        // readout overlay (bottom-left of the image band) — same content and
-        // conventions as the Quick Look preview's corner readout.
-        let readout = NSTextField(labelWithString: "")
-        readout.tag = Self.readoutTag
-        readout.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        readout.textColor = NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)
-        readout.drawsBackground = true
-        readout.backgroundColor = NSColor.black.withAlphaComponent(0.58)
-        readout.isBezeled = false
-        readout.isHidden = true
-        readout.frame = NSRect(x: 10, y: H - imgH + 8, width: 320, height: 17)
-        readout.autoresizingMask = [.minYMargin]        // pinned to the image band's bottom edge
-        content.addSubview(readout)
-
-        // action bar (middle) — HDU switcher (left), actions (right). A system
-        // header material (not near-black) so the popup and buttons render with
-        // their normal contrast; flat #171717 made the controls hard to read.
-        let bar = NSVisualEffectView(frame: NSRect(x: 0, y: H - imgH - barH, width: W, height: barH))
-        bar.material = .headerView
-        bar.blendingMode = .withinWindow
-        bar.state = .active
-        bar.autoresizingMask = [.width, .minYMargin]
-        // hairline separators so the bar reads as a distinct band against the
-        // black image above and the near-black header below
-        for y in [CGFloat(0), barH - 1] {
-            let rule = NSView(frame: NSRect(x: 0, y: y, width: W, height: 1))
-            rule.wantsLayer = true
-            rule.layer?.backgroundColor = NSColor.separatorColor.cgColor
-            rule.autoresizingMask = [.width]
-            bar.addSubview(rule)
+        c.canvas.onRegion = { [weak self, weak c] r in
+            guard let self, let c else { return }
+            guard let r, let s = c.model.statistics(u0: r.u0, v0: r.v0, u1: r.u1, v1: r.v1) else {
+                c.stats.isHidden = true
+                return
+            }
+            c.stats.text = s.text
+            c.stats.histogram = s.histogram
+            c.stats.isHidden = false
+            c.stats.needsDisplay = true
+            _ = self
         }
-        let popup = NSPopUpButton(frame: NSRect(x: 12, y: (barH - 25) / 2, width: 230, height: 25),
-                                  pullsDown: false)
-        popup.tag = Self.hduPopupTag
-        popup.target = self
-        popup.action = #selector(hduChanged(_:))
-        popup.autoresizingMask = [.maxXMargin]
-        bar.addSubview(popup)
-        let save = NSButton(title: "Save PNG…", target: self, action: #selector(savePNG(_:)))
-        save.tag = Self.saveTag
-        save.bezelStyle = .rounded
-        save.isEnabled = false                        // enabled once the image renders
-        save.sizeToFit()
-        save.setFrameOrigin(NSPoint(x: W - save.frame.width - 12, y: (barH - save.frame.height) / 2))
-        save.autoresizingMask = [.minXMargin]
-        bar.addSubview(save)
-        let copy = NSButton(title: "Copy Python", target: self, action: #selector(copyPython(_:)))
-        copy.tag = Self.copyPythonTag
-        copy.bezelStyle = .rounded
-        copy.isEnabled = false                        // enabled alongside Save PNG
-        copy.sizeToFit()
-        copy.setFrameOrigin(NSPoint(x: save.frame.minX - copy.frame.width - 8,
-                                    y: (barH - copy.frame.height) / 2))
-        copy.autoresizingMask = [.minXMargin]
-        bar.addSubview(copy)
-        content.addSubview(bar)
+        top.addSubview(c.canvas)
 
-        // header band (bottom) — monospaced, ⌘F-searchable
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: W, height: H - imgH - barH))
+        c.stats.isHidden = true
+        c.stats.translatesAutoresizingMaskIntoConstraints = false
+        top.addSubview(c.stats)
+
+        c.tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb(_:)),
+                              diffSel: #selector(toggleDiff(_:)), tuneSel: #selector(toggleTune(_:)),
+                              stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)))
+        let toolStack = c.tools.stack
+        toolStack.translatesAutoresizingMaskIntoConstraints = false
+        c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
+        top.addSubview(toolStack)
+        top.addSubview(c.tools.panel)
+
+        NSLayoutConstraint.activate([
+            c.canvas.leadingAnchor.constraint(equalTo: top.leadingAnchor),
+            c.canvas.trailingAnchor.constraint(equalTo: top.trailingAnchor),
+            c.canvas.topAnchor.constraint(equalTo: top.topAnchor),
+            c.canvas.bottomAnchor.constraint(equalTo: top.bottomAnchor),
+            c.stats.leadingAnchor.constraint(equalTo: top.leadingAnchor, constant: 10),
+            c.stats.topAnchor.constraint(equalTo: top.topAnchor, constant: 28),
+            c.stats.widthAnchor.constraint(equalToConstant: 210),
+            c.stats.heightAnchor.constraint(equalToConstant: 118),
+            toolStack.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
+            toolStack.bottomAnchor.constraint(equalTo: top.bottomAnchor, constant: -10),
+            c.tools.panel.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
+            c.tools.panel.bottomAnchor.constraint(equalTo: toolStack.topAnchor, constant: -8),
+            c.tools.panel.widthAnchor.constraint(equalToConstant: 250),
+        ])
+
+        // ---- header pane: monospaced, ⌘F-searchable ----
+        let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .noBorder
-        scroll.autoresizingMask = [.width, .height]
-        let tv = NSTextView(frame: scroll.bounds)
+        let tv = NSTextView()
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = true
-        tv.backgroundColor = NSColor(calibratedRed: 0.05, green: 0.05, blue: 0.05, alpha: 1)
+        tv.backgroundColor = NSColor(calibratedWhite: 0.05, alpha: 1)
         tv.textColor = NSColor(calibratedRed: 0.62, green: 0.89, blue: 0.69, alpha: 1)
         tv.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         tv.textContainerInset = NSSize(width: 14, height: 12)
-        tv.string = text
+        tv.string = headerText
         tv.usesFindBar = true
         tv.isIncrementalSearchingEnabled = true
         tv.isVerticallyResizable = true
         tv.isHorizontallyResizable = false
         tv.autoresizingMask = [.width]
-        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                            height: CGFloat.greatestFiniteMagnitude)
         tv.textContainer?.widthTracksTextView = true
         scroll.documentView = tv
-        content.addSubview(scroll)
 
-        win.contentView = content
+        // ---- action bar: HDU picker | Copy Python, Save PNG ----
+        let bar = NSVisualEffectView()
+        bar.material = .headerView
+        bar.blendingMode = .withinWindow
+        bar.state = .active
+
+        c.popup.target = self
+        c.popup.action = #selector(hduChanged(_:))
+        c.popup.toolTip = "Which HDU to display. You can also scroll over the image to blink between them."
+
+        c.save.title = "Save PNG…"
+        c.save.bezelStyle = .rounded
+        c.save.target = self
+        c.save.action = #selector(savePNG(_:))
+        c.save.isEnabled = false
+        c.save.toolTip = "Export the displayed HDU as a colour-mapped PNG — the image as you see it"
+
+        c.copy.title = "Copy Python"
+        c.copy.bezelStyle = .rounded
+        c.copy.target = self
+        c.copy.action = #selector(copyPython(_:))
+        c.copy.isEnabled = false
+        c.copy.toolTip = "Copy the code that loads this image into sunpy — paste it straight into Python"
+
+        let right = NSStackView(views: [c.copy, c.save])
+        right.spacing = 8
+        let barStack = NSStackView(views: [c.popup, NSView(), right])
+        barStack.spacing = 10
+        barStack.translatesAutoresizingMaskIntoConstraints = false
+        bar.addSubview(barStack)
+        NSLayoutConstraint.activate([
+            barStack.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: 12),
+            barStack.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -12),
+            barStack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            bar.heightAnchor.constraint(equalToConstant: 40),
+        ])
+
+        // ---- image | bar | header, with a draggable divider so the image grows ----
+        let split = NSSplitView()
+        split.isVertical = false
+        split.dividerStyle = .thin
+        split.addArrangedSubview(top)
+        split.addArrangedSubview(scroll)
+        split.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSStackView(views: [split, bar])
+        content.orientation = .vertical
+        content.spacing = 0
+        content.distribution = .fill
+        content.translatesAutoresizingMaskIntoConstraints = false
+        // The bar is a fixed strip; the split view takes the rest — so a taller
+        // window means a taller IMAGE, which is what "zoom in" should feel like.
+        bar.setContentHuggingPriority(.required, for: .vertical)
+        split.setContentHuggingPriority(.defaultLow, for: .vertical)
+
+        let root = NSView()
+        root.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            content.topAnchor.constraint(equalTo: root.topAnchor),
+            content.bottomAnchor.constraint(equalTo: root.bottomAnchor),
+        ])
+        win.contentView = root
+        // Give the image ~60% at first; the divider is draggable from there.
+        DispatchQueue.main.async { split.setPosition(540, ofDividerAt: 0) }
+
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         windows.insert(win)
-        sources[ObjectIdentifier(win)] = source
         return win
     }
 
-    /// Save the rendered (colormapped) image as a PNG — a share/publish-ready
-    /// figure. ponytail: capped at the thumbnail render size (~1024px native);
-    /// add a full-res path via the cfitsio renderer if users need print DPI.
+    // MARK: actions
+
+    private func ctx(for sender: Any?) -> Ctx? {
+        guard let v = sender as? NSView, let w = v.window else { return nil }
+        return ctx[ObjectIdentifier(w)]
+    }
+
+    @objc private func hduChanged(_ sender: NSPopUpButton) {
+        guard let c = ctx(for: sender) else { return }
+        c.model.select(hdu: sender.selectedTag())
+        refresh(c)
+    }
+
+    @objc private func toggleLimb(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        c.model.limbOn.toggle(); refresh(c)
+    }
+
+    @objc private func toggleDiff(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        c.model.mode = (c.model.mode == .diff) ? .plain : .diff; refresh(c)
+    }
+
+    @objc private func toggleTune(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        c.model.mode = (c.model.mode == .stretch) ? .plain : .stretch; refresh(c)
+    }
+
+    @objc private func stretchChanged(_ s: NSControl) {
+        guard let c = ctx(for: s) else { return }
+        c.model.stretch = c.tools.readStretch()
+        if c.model.mode == .stretch { refresh(c) }
+    }
+
+    @objc private func resetStretch(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        c.tools.resetStretch()
+        c.model.stretch = c.tools.readStretch()
+        if c.model.mode == .stretch { refresh(c) }
+    }
+
+    private func refresh(_ c: Ctx) {
+        c.canvas.image = c.model.image()
+        c.canvas.caption = c.model.caption()
+        c.canvas.limb = c.model.limbCircle()
+        if let p = c.model.page {
+            c.canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
+        }
+        c.tools.sync(model: c.model)
+        c.canvas.needsDisplay = true
+    }
+
+    /// The exact bytes on screen, named for the HDU they came from.
+    private func pngExport(_ c: Ctx) -> (data: Data, filename: String)? {
+        guard let img = c.model.image(),
+              let tiff = img.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff),
+              let png = rep.representation(using: .png, properties: [:]) else { return nil }
+        let base = c.url.deletingPathExtension().lastPathComponent
+        let suffix = c.model.count > 1 ? "_hdu\(c.model.page?.hdu ?? 0)" : ""
+        return (png, base + suffix + ".png")
+    }
+
     @objc private func savePNG(_ sender: NSButton) {
-        guard let win = sender.window, let export = pngExport(for: win) else { return }
+        guard let win = sender.window, let c = ctx(for: sender), let out = pngExport(c) else { return }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = export.filename
+        panel.nameFieldStringValue = out.filename
         panel.beginSheetModal(for: win) { resp in
-            guard resp == .OK, let out = panel.url else { return }
-            try? export.data.write(to: out)   // the exact colormapped PNG we rendered
+            guard resp == .OK, let url = panel.url else { return }
+            try? out.data.write(to: url)
         }
     }
 
-    /// (png, "<base>[_hduN].png") for a window — nil until the first render lands.
-    /// Shared by Save PNG… and the image drag-out.
-    private func pngExport(for win: NSWindow) -> (data: Data, filename: String)? {
-        guard let data = pngs[ObjectIdentifier(win)],
-              let src = sources[ObjectIdentifier(win)] else { return nil }
-        let popup = win.contentView?.viewWithTag(Self.hduPopupTag) as? NSPopUpButton
-        let hduSuffix = (popup?.isHidden == false) ? "_hdu\(popup!.selectedTag())" : ""
-        return (data, src.deletingPathExtension().lastPathComponent + hduSuffix + ".png")
-    }
-
-    /// Copy a ready-to-run sunpy snippet for this file (and current HDU) — the
-    /// "now open it properly in python" escape hatch.
     @objc private func copyPython(_ sender: NSButton) {
-        guard let win = sender.window, let src = sources[ObjectIdentifier(win)] else { return }
-        let popup = win.contentView?.viewWithTag(Self.hduPopupTag) as? NSPopUpButton
-        let hduArg = (popup?.isHidden == false) ? ", hdu=\(popup!.selectedTag())" : ""
-        let snippet = """
-        import sunpy.map
-        m = sunpy.map.Map("\(src.path)"\(hduArg))
-        m.peek()
-        """
+        guard let c = ctx(for: sender) else { return }
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(snippet, forType: .string)
+        NSPasteboard.general.setString(c.model.pythonSnippet(path: c.url.path), forType: .string)
+        // Confirm, since the clipboard is invisible.
+        let old = sender.title
+        sender.title = "Copied ✓"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { sender.title = old }
     }
 
     func windowWillClose(_ notification: Notification) {
-        if let w = notification.object as? NSWindow {
-            windows.remove(w)
-            pngs.removeValue(forKey: ObjectIdentifier(w))
-            sources.removeValue(forKey: ObjectIdentifier(w))
-            renders.removeValue(forKey: ObjectIdentifier(w))
-            wcs.removeValue(forKey: ObjectIdentifier(w))
-            renderGen.removeValue(forKey: ObjectIdentifier(w))
-            scopedURLs.removeValue(forKey: ObjectIdentifier(w))?.stopAccessingSecurityScopedResource()
+        guard let w = notification.object as? NSWindow else { return }
+        if let c = ctx[ObjectIdentifier(w)], c.scoped {
+            c.url.stopAccessingSecurityScopedResource()
         }
+        ctx.removeValue(forKey: ObjectIdentifier(w))
+        windows.remove(w)
     }
 }

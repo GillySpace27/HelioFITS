@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		01BC9D342A3C101708CEDA1B /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8BD5F28682761BE7F9C2B117 /* Cocoa.framework */; };
+		046801A8F1AE81BBBED87E38 /* FITSPreviewCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */; };
 		2CDAC07023C0F7A3709504A0 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3186F702CE436DD00395F60 /* QuickLook.framework */; };
 		37E610B161CF266FB1F00D5D /* FITSColormaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */; };
 		5B0B6DAF069F7C753A49F279 /* QuickLookThumbnailing.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */; };
@@ -90,6 +91,7 @@
 		A3AE31E72CE3ED570080470D /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
 		A3C301A02CF129DE00DF1E56 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		A3C301A72CF12A1B00DF1E56 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
+		B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FITSPreviewCore.swift; path = HelioFITSExtension/FITSPreviewCore.swift; sourceTree = "<group>"; };
 		C8815A478097ECDE81A6098F /* ThumbnailProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookThumbnailing.framework; path = System/Library/Frameworks/QuickLookThumbnailing.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -122,11 +124,15 @@
 		};
 		A3AE31C72CE3ED1C0080470D /* HelioFITSTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = HelioFITSTests;
 			sourceTree = "<group>";
 		};
 		A3AE31D12CE3ED1C0080470D /* HelioFITSUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = HelioFITSUITests;
 			sourceTree = "<group>";
 		};
@@ -213,6 +219,7 @@
 				46E37F857E789E73DE5B1FA4 /* PreviewProvider.swift */,
 				DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */,
 				47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */,
+				B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -452,6 +459,7 @@
 			files = (
 				999F6D2A260AFCC4282A327D /* PreviewProvider.swift in Sources */,
 				A5B822DC325D315A576D82F0 /* FITSColormaps.swift in Sources */,
+				046801A8F1AE81BBBED87E38 /* FITSPreviewCore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
