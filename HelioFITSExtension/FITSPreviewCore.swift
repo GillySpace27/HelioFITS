@@ -8,11 +8,20 @@
 //  and interactive now happens here, so both surfaces get the same behaviour by
 //  construction rather than by copy-paste.
 //
-//  Gestures (identical in both surfaces):
+//  Gestures (identical in both surfaces). A plain drag does the thing that is
+//  actually useful in the current state, and the CURSOR says which:
+//
+//      state        drag                 ⌘-drag        cursor
+//      fit (1x)     measure a region     measure       ✛ crosshair
+//      zoomed in    pan                  measure       ✋ / ✊ open-closed hand
+//
+//  Pan is meaningless at fit — there is nothing to pan to — so a plain drag
+//  measures there; once you zoom in, a plain drag pans, as in every image
+//  viewer. The on-screen hint re-states the current gestures, and reappears
+//  while ⌘ is held.
+//
 //      scroll            step HDU (blink comparator)
 //      ⌥ scroll / pinch  zoom about the cursor
-//      drag              measure a region -> statistics + histogram
-//      ⌘ drag            pan (when zoomed in)
 //      double-click      reset zoom to fit
 //
 //  Scroll is the primary navigation because it is the ONLY gesture Finder
@@ -313,7 +322,7 @@ final class FITSImageCanvas: NSView {
     var image: NSImage?
     var caption = ""
     var readout: String?
-    var hint: String?
+    var pageCount = 1                              // drives the gesture hint
     var limb: (cx: Double, cy: Double, r: Double)?
     var natSize: CGSize = .zero
     /// Selection in normalized image coords (0…1, top-left origin) so it stays
@@ -333,8 +342,84 @@ final class FITSImageCanvas: NSView {
     private var lastStep = Date.distantPast
     private var dragStart: NSPoint?
     private var panStart: (mouse: NSPoint, pan: CGPoint)?
+    private var cmdDown = false
+    private var hintDeadline = Date.distantPast
+    private var flagsMonitor: Any?
 
     var isZoomed: Bool { zoom > 1.001 }
+
+    /// What a plain drag does *right now*.
+    ///
+    /// Pan is meaningless at fit — there is nothing to pan to — so a plain drag
+    /// measures. Once you zoom in, a plain drag pans, which is what every image
+    /// viewer does; hold ⌘ then to measure instead. The cursor always says which.
+    enum DragMode { case measure, pan }
+    var dragMode: DragMode {
+        guard isZoomed else { return .measure }
+        return cmdDown ? .measure : .pan
+    }
+
+    private var cursorForMode: NSCursor {
+        switch dragMode {
+        case .measure: return .crosshair
+        case .pan:     return panStart != nil ? .closedHand : .openHand
+        }
+    }
+
+    /// Show the gesture hint for a while (on load, and whenever the gestures
+    /// change because the zoom state flipped).
+    func flashHint(_ seconds: TimeInterval = 6) {
+        hintDeadline = Date().addingTimeInterval(seconds)
+        needsDisplay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds + 0.1) { [weak self] in
+            self?.needsDisplay = true
+        }
+    }
+
+    /// The hint describes the CURRENT gestures, so the behaviour is
+    /// self-documenting rather than something you have to be told once.
+    private func hintText() -> String? {
+        var parts: [String] = []
+        if pageCount > 1 { parts.append("scroll ⇅ blink HDUs") }
+        if isZoomed {
+            parts.append("drag ✋ pan")
+            parts.append("⌘-drag ✛ measure")
+            parts.append("double-click to fit")
+        } else {
+            parts.append("drag ✛ measure")
+            parts.append("⌥-scroll to zoom")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "   ·   ")
+    }
+
+    private func stateChanged() {
+        window?.invalidateCursorRects(for: self)
+        cursorForMode.set()
+        needsDisplay = true
+    }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(imageRect() ?? bounds, cursor: cursorForMode)
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard window != nil, flagsMonitor == nil else { return }
+        // ⌘ can be pressed while the mouse is still, which produces no mouse
+        // event — watch the modifier directly so the cursor and hint keep up.
+        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] e in
+            guard let self else { return e }
+            let down = e.modifierFlags.contains(.command)
+            if down != self.cmdDown {
+                self.cmdDown = down
+                self.stateChanged()
+            }
+            return e
+        }
+    }
+
+    deinit { if let m = flagsMonitor { NSEvent.removeMonitor(m) } }
 
     override init(frame f: NSRect) {
         super.init(frame: f)
@@ -355,11 +440,30 @@ final class FITSImageCanvas: NSView {
 
     // MARK: geometry
 
-    /// Area available to the image (leaves the caption strip room).
+    /// Chrome around the drawn image: just the caption strip. No side margins —
+    /// they would show as dead bars once the host sizes itself to our content.
+    var chromeInsets: NSEdgeInsets {
+        NSEdgeInsets(top: showsCaption ? 22 : 0, left: 0, bottom: 0, right: 0)
+    }
+
+    /// Area available to the image.
     private func contentBox() -> NSRect {
-        let top: CGFloat = showsCaption ? 24 : 4
-        return NSRect(x: 6, y: top, width: bounds.width - 12,
-                      height: max(1, bounds.height - top - 6))
+        let i = chromeInsets
+        return NSRect(x: i.left, y: i.top,
+                      width: max(1, bounds.width - i.left - i.right),
+                      height: max(1, bounds.height - i.top - i.bottom))
+    }
+
+    /// The canvas size at which the image fills exactly — no letterboxing.
+    /// Hosts hand this to Quick Look via `preferredContentSize` (Quick Look
+    /// sizes the preview panel to the content; without it the panel keeps a
+    /// default shape and a square Sun sits inside dark pillars).
+    func idealSize(maxSide: CGFloat = 820) -> NSSize? {
+        guard let sz = image?.size, sz.width > 0, sz.height > 0 else { return nil }
+        let s = maxSide / max(sz.width, sz.height)
+        let i = chromeInsets
+        return NSSize(width: (sz.width * s + i.left + i.right).rounded(),
+                      height: (sz.height * s + i.top + i.bottom).rounded())
     }
 
     /// Where the image is drawn, honouring aspect-fit + zoom + pan.
@@ -395,8 +499,11 @@ final class FITSImageCanvas: NSView {
     /// Zoom about a fixed view point so the pixel under the cursor stays put.
     private func setZoom(_ z: CGFloat, about p: NSPoint) {
         let old = imageRect()
+        let wasZoomed = isZoomed
         let anchor = old.map { (u: (p.x - $0.minX) / $0.width, v: (p.y - $0.minY) / $0.height) }
         zoom = max(1, min(20, z))
+        // Crossing fit<->zoomed changes what a drag does, so re-advertise it.
+        if isZoomed != wasZoomed { flashHint(4); stateChanged() }
         if zoom == 1 { pan = .zero } else if let a = anchor, let r = imageRect() {
             let now = NSPoint(x: r.minX + a.u * r.width, y: r.minY + a.v * r.height)
             pan.x += p.x - now.x
@@ -448,21 +555,27 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseMoved(with e: NSEvent) {
+        cmdDown = e.modifierFlags.contains(.command)
+        cursorForMode.set()
         guard dragStart == nil, panStart == nil else { return }
         onHover(normalized(convert(e.locationInWindow, from: nil)))
     }
 
-    override func mouseExited(with e: NSEvent) { onHover(nil) }
+    override func mouseExited(with e: NSEvent) {
+        onHover(nil)
+        NSCursor.arrow.set()
+    }
 
     override func mouseDown(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
         if e.clickCount == 2 { resetZoom(); return }
-        // ⌘ drag pans a zoomed image; a plain drag measures a region.
-        if e.modifierFlags.contains(.command), isZoomed {
-            panStart = (p, pan)
-        } else if imageRect()?.contains(p) == true {
-            dragStart = p
+        cmdDown = e.modifierFlags.contains(.command)
+        guard imageRect()?.contains(p) == true else { return }
+        switch dragMode {
+        case .pan:     panStart = (p, pan)
+        case .measure: dragStart = p
         }
+        stateChanged()                                    // open hand -> closed
     }
 
     override func mouseDragged(with e: NSEvent) {
@@ -472,17 +585,18 @@ final class FITSImageCanvas: NSView {
             needsDisplay = true
             return
         }
-        guard let s = dragStart, let a = normalized(s) else { return }
-        let clamped = NSPoint(x: min(max(p.x, imageRect()!.minX), imageRect()!.maxX),
-                              y: min(max(p.y, imageRect()!.minY), imageRect()!.maxY))
+        guard let s = dragStart, let box = imageRect(), let a = normalized(s) else { return }
+        let clamped = NSPoint(x: min(max(p.x, box.minX), box.maxX),
+                              y: min(max(p.y, box.minY), box.maxY))
         guard let b = normalized(clamped) else { return }
         selection = (a.u, a.v, b.u, b.v)
         needsDisplay = true
     }
 
     override func mouseUp(with e: NSEvent) {
-        defer { dragStart = nil; panStart = nil }
-        guard let s = dragStart else { return }
+        let wasPanning = panStart != nil
+        defer { dragStart = nil; panStart = nil; stateChanged() }
+        guard !wasPanning, let s = dragStart else { return }
         let p = convert(e.locationInWindow, from: nil)
         if abs(p.x - s.x) + abs(p.y - s.y) < 8 {          // a click clears
             selection = nil
@@ -490,7 +604,6 @@ final class FITSImageCanvas: NSView {
         } else {
             onRegion?(selection)
         }
-        needsDisplay = true
     }
 
     // MARK: drawing
@@ -518,11 +631,20 @@ final class FITSImageCanvas: NSView {
             let cx = box.minX + l.cx * sx
             let cy = box.minY + (natSize.height - l.cy) * (box.height / natSize.height)
             let r = l.r * sx
-            let c = NSBezierPath(ovalIn: NSRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
-            c.lineWidth = 1.2
-            c.setLineDash([6, 5], count: 2, phase: 0)
-            NSColor(calibratedWhite: 1, alpha: 0.55).setStroke()
-            c.stroke()
+            let rect = NSRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r)
+            // A thin white dash alone vanishes against the bright limb. Lay a
+            // thick solid black line down first and overplot the dashed white on
+            // top, so the circle reads over corona AND over black sky.
+            let under = NSBezierPath(ovalIn: rect)
+            under.lineWidth = 3.5
+            NSColor(calibratedWhite: 0, alpha: 0.85).setStroke()
+            under.stroke()
+
+            let over = NSBezierPath(ovalIn: rect)
+            over.lineWidth = 1.2
+            over.setLineDash([6, 5], count: 2, phase: 0)
+            NSColor.white.setStroke()
+            over.stroke()
         }
 
         if let s = selection,
@@ -546,17 +668,20 @@ final class FITSImageCanvas: NSView {
         if let t = readout {
             chip(t, at: NSPoint(x: 8, y: bounds.height - 8),
                  font: .monospacedSystemFont(ofSize: 11, weight: .regular))
-        } else if let h = hint {
+        }
+        // The hint describes the gestures available RIGHT NOW. It also reappears
+        // while ⌘ is held — that is the moment you are asking "what does this do?"
+        if let h = hintText(), Date() < hintDeadline || cmdDown, readout == nil || cmdDown {
             let s = NSAttributedString(string: h, attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedWhite: 0.85, alpha: 1)])
+                .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
             let sz = s.size()
-            let r = NSRect(x: (bounds.width - sz.width) / 2 - 8,
+            let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
                            y: bounds.height - sz.height - 14,
-                           width: sz.width + 16, height: sz.height + 6)
-            NSColor(calibratedWhite: 0, alpha: 0.55).setFill()
-            NSBezierPath(roundedRect: r, xRadius: 9, yRadius: 9).fill()
-            s.draw(at: NSPoint(x: r.minX + 8, y: r.minY + 3))
+                           width: sz.width + 20, height: sz.height + 7)
+            NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
+            NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
+            s.draw(at: NSPoint(x: r.minX + 10, y: r.minY + 3.5))
         }
     }
 
@@ -588,19 +713,30 @@ final class FITSToolbar {
     /// - Parameter target: receives the actions; must implement the four selectors.
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
          tuneSel: Selector, stretchSel: Selector, resetSel: Selector) {
+        // These float over the image. A standard translucent bezel disappears
+        // against a bright solar disk, so draw them as solid, near-opaque chips.
         func mk(_ b: NSButton, _ title: String, _ tip: String, _ sel: Selector) {
             b.title = title
-            b.bezelStyle = .rounded
-            b.setButtonType(.momentaryPushIn)
+            b.isBordered = false
+            b.setButtonType(.momentaryChange)
+            b.wantsLayer = true
+            b.layer?.cornerRadius = 6
+            b.layer?.borderWidth = 1
             b.toolTip = tip
             b.target = target
             b.action = sel
+            b.translatesAutoresizingMaskIntoConstraints = false
+            b.widthAnchor.constraint(equalToConstant: 30).isActive = true
+            b.heightAnchor.constraint(equalToConstant: 26).isActive = true
         }
         mk(limb, "◯", "Show the solar limb — the photosphere's edge, from RSUN_OBS", limbSel)
         mk(diff, "Δ", "Running difference: this HDU minus the previous one — how CMEs, waves and dimmings are spotted", diffSel)
         mk(tune, "◐", "Adjust the brightness stretch (percentile clip, gamma, log)", tuneSel)
 
         panel.wantsLayer = true
+        // Dark appearance so the sliders/checkbox render with dark-mode contrast
+        // on our dark panel rather than washed-out light-mode controls.
+        panel.appearance = NSAppearance(named: .darkAqua)
         panel.layer?.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 0.97).cgColor
         panel.layer?.cornerRadius = 8
         panel.layer?.borderWidth = 1
@@ -662,13 +798,30 @@ final class FITSToolbar {
         sLo.doubleValue = 0.5; sHi.doubleValue = 99.5; sG.doubleValue = 0.5; cLog.state = .off
     }
 
+    /// Paint one chip: opaque dark when off, solid amber when on, dimmed when
+    /// unavailable. Drawn explicitly because a borderless button has no bezel to
+    /// tint, and these sit over a bright image.
+    private func paint(_ b: NSButton, on: Bool, enabled: Bool) {
+        b.isEnabled = enabled
+        let bg: NSColor = on ? NSColor(calibratedRed: 0.86, green: 0.63, blue: 0.20, alpha: 0.97)
+                             : NSColor(calibratedWhite: 0.11, alpha: 0.92)
+        let fg: NSColor = on ? .black : (enabled ? .white : NSColor(calibratedWhite: 1, alpha: 0.35))
+        b.layer?.backgroundColor = bg.withAlphaComponent(enabled ? bg.alphaComponent : 0.55).cgColor
+        b.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: on ? 0.5 : 0.28).cgColor
+        b.attributedTitle = NSAttributedString(string: b.title, attributes: [
+            .foregroundColor: fg,
+            .font: NSFont.systemFont(ofSize: 13),
+            .paragraphStyle: {
+                let p = NSMutableParagraphStyle(); p.alignment = .center; return p
+            }(),
+        ])
+    }
+
     /// Reflect model state in the controls.
     func sync(model: FITSPreviewModel) {
-        limb.contentTintColor = model.limbOn ? .systemOrange : nil
-        diff.contentTintColor = (model.mode == .diff) ? .systemOrange : nil
-        tune.contentTintColor = (model.mode == .stretch) ? .systemOrange : nil
-        limb.isEnabled = model.hasLimb
-        diff.isEnabled = model.canDiff
+        paint(limb, on: model.limbOn, enabled: model.hasLimb)
+        paint(diff, on: model.mode == .diff, enabled: model.canDiff)
+        paint(tune, on: model.mode == .stretch, enabled: true)
         panel.isHidden = (model.mode != .stretch)
     }
 }

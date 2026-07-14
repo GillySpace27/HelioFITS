@@ -44,12 +44,12 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 700))
         root.wantsLayer = true
+        root.appearance = NSAppearance(named: .darkAqua)   // dark-mode controls on a dark preview
         root.layer?.backgroundColor = NSColor(calibratedWhite: 0.07, alpha: 1).cgColor
 
         canvas.translatesAutoresizingMaskIntoConstraints = false
         canvas.onScrollStep = { [weak self] d in
             guard let self, self.model.step(d) else { return }
-            self.canvas.hint = nil
             self.refresh()
         }
         canvas.onHover = { [weak self] n in
@@ -123,14 +123,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             }
             DispatchQueue.main.async {
                 self.model = m
-                self.canvas.hint = m.count > 1
-                    ? "scroll ⇅ to blink HDUs" + (self.compact ? "" : "  ·  drag to measure")
-                    : (self.compact ? nil : "drag to measure a region")
+                self.canvas.pageCount = m.count
                 self.refresh()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
-                    self?.canvas.hint = nil
-                    self?.canvas.needsDisplay = true
-                }
+                self.canvas.flashHint(6)
                 self.logger.info("prepared \(m.count) HDU page(s)")
                 handler(nil)
             }
@@ -140,7 +135,6 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private func showCard(title: String, body: String) {
         canvas.image = nil
         canvas.caption = title
-        canvas.hint = nil
         let label = NSTextField(wrappingLabelWithString: body)
         label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         label.textColor = NSColor(calibratedWhite: 0.75, alpha: 1)
@@ -190,6 +184,11 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         if let p = model.page {
             canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }
+        // Quick Look sizes the preview panel to the view controller's preferred
+        // content size. Without this it keeps a default (landscape-ish) shape and
+        // a square Sun ends up pillarboxed in dark bars — which is not what the
+        // rest of the system does.
+        if let ideal = canvas.idealSize() { preferredContentSize = ideal }
         tools.sync(model: model)
         if compact { tools.panel.isHidden = true }
         canvas.needsDisplay = true

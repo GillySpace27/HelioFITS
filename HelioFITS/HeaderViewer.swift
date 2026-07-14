@@ -175,6 +175,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let popup = NSPopUpButton()
         let save = NSButton()
         let copy = NSButton()
+        var split: NSSplitView?           // so the image pane can be sized to the image
         var gen = 0                       // drops superseded background renders
         var scoped = false
         init(url: URL) { self.url = url }
@@ -202,14 +203,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                 self.populatePopup(c, headerText: text)
                 c.save.isEnabled = !m.isEmpty
                 c.copy.isEnabled = !m.isEmpty
-                c.canvas.hint = m.count > 1
-                    ? "scroll ⇅ to blink HDUs  ·  drag to measure  ·  ⌥scroll to zoom"
-                    : "drag to measure  ·  ⌥scroll to zoom"
+                c.canvas.pageCount = m.count
                 self.refresh(c)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 7) { [weak c] in
-                    c?.canvas.hint = nil
-                    c?.canvas.needsDisplay = true
-                }
+                self.fitWindow(win, to: c)
+                c.canvas.flashHint(7)
             }
         }
     }
@@ -255,7 +252,6 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.translatesAutoresizingMaskIntoConstraints = false
         c.canvas.onScrollStep = { [weak self, weak c] d in
             guard let self, let c, c.model.step(d) else { return }
-            c.canvas.hint = nil
             c.popup.selectItem(withTag: c.model.page?.hdu ?? 0)
             self.refresh(c)
         }
@@ -369,6 +365,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
         // ---- image | bar | header, with a draggable divider so the image grows ----
         let split = NSSplitView()
+        c.split = split
         split.isVertical = false
         split.dividerStyle = .thin
         split.addArrangedSubview(top)
@@ -394,8 +391,6 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             content.bottomAnchor.constraint(equalTo: root.bottomAnchor),
         ])
         win.contentView = root
-        // Give the image ~60% at first; the divider is draggable from there.
-        DispatchQueue.main.async { split.setPosition(540, ofDividerAt: 0) }
 
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -494,5 +489,24 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         }
         ctx.removeValue(forKey: ObjectIdentifier(w))
         windows.remove(w)
+    }
+}
+
+extension HeaderWindowController {
+    /// Size the window (and the divider) so the image pane matches the image's
+    /// aspect ratio — otherwise a square Sun sits in dark bars, which is not
+    /// what the rest of the system does. The user can still resize freely; the
+    /// image simply aspect-fits from then on, as in Preview.
+    private func fitWindow(_ win: NSWindow, to c: Ctx) {
+        // 660pt keeps an 80-column FITS card readable in the header below.
+        guard let ideal = c.canvas.idealSize(maxSide: 660) else { return }
+        let barH: CGFloat = 40
+        let headerH: CGFloat = 300
+        let width = max(660, ideal.width)
+        let height = min(ideal.height + barH + headerH,
+                         (win.screen ?? NSScreen.main)?.visibleFrame.height ?? 1000)
+        win.setContentSize(NSSize(width: width, height: height))
+        win.center()
+        c.split?.setPosition(ideal.height, ofDividerAt: 0)
     }
 }
