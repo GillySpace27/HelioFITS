@@ -278,6 +278,158 @@ enum FITSRenderer {
         cardVal(cards, key).flatMap(Double.init)
     }
 
+    /// Raw header cards for one HDU (nil if the HDU can't be read).
+    static func cards(path: String, hdu: Int) -> String? {
+        var p: UnsafeMutablePointer<CChar>? = nil
+        guard fitsshim_header_cards(path, hdu, &p) == 0, let c = p else { return nil }
+        defer { free(c) }
+        return String(cString: c)
+    }
+
+    /// Solar WCS — pixel → helioprojective, the ONE implementation. The Quick
+    /// Look preview's JS mirrors `hpc` exactly; both are pinned by WCSTests.
+    ///
+    /// This is a real spherical deprojection, not a flat approximation: PUNCH's
+    /// field is 45° across (HPLN-ARC), where treating the image plane as a
+    /// tangent plane misplaces Tx by several percent. SDO/TAN frames are a
+    /// fraction of a degree, so there the two agree to <0.01″.
+    ///
+    /// Units: `m*` are degrees/pixel (CDELT folded together with the PC matrix
+    /// or CROTA2); `cv*`/`lonpole` degrees; `rsun` arcsec. hpc() returns arcsec.
+    struct SolarWCS {
+        let m11, m12, m21, m22: Double      // CDELT · rotation, degrees per pixel
+        let cp1, cp2: Double                // CRPIX (1-based)
+        let cv1, cv2: Double                // CRVAL, degrees
+        let lonpole: Double                 // degrees (180 for zenithal solar frames)
+        let proj: String                    // TAN | ARC | SIN | CAR | "" (linear)
+        let rsun: Double                    // arcsec
+        let cx, cy: Double                  // disk-centre pixel  (limb overlay)
+        let rpx: Double                     // solar radius in pixels (limb overlay)
+
+        /// FITS pixel (1-based, y up) → helioprojective (Tx, Ty) in arcsec.
+        func hpc(_ fx: Double, _ fy: Double) -> (tx: Double, ty: Double) {
+            let d2r = Double.pi / 180
+            // 1. pixel → intermediate world coordinates (degrees in the plane)
+            let u = fx - cp1, v = fy - cp2
+            let x = m11 * u + m12 * v
+            let y = m21 * u + m22 * v
+
+            // Plate carrée (synoptic maps): the plane already IS lon/lat.
+            if proj == "CAR" { return ((cv1 + x) * 3600, (cv2 + y) * 3600) }
+
+            // 2. plane → native spherical (φ, θ) for the zenithal projections
+            let r = (x * x + y * y).squareRoot()          // degrees from the reference
+            guard r > 0 else { return (cv1 * 3600, cv2 * 3600) }
+            let theta: Double
+            switch proj {
+            case "TAN": theta = atan(1 / (r * d2r))        // gnomonic
+            case "ARC": theta = (90 - r) * d2r             // zenithal equidistant
+            case "SIN": theta = acos(min(1, r * d2r))      // orthographic
+            default:
+                // Unknown projection — fall back to the flat approximation
+                // rather than inventing a number.
+                return ((cv1 + x) * 3600, (cv2 + y) * 3600)
+            }
+            let phi = atan2(x, -y)
+
+            // 3. native → helioprojective. For zenithal projections the native
+            // pole sits at the fiducial point (Calabretta & Greisen 2002, eq. 2).
+            let dp = cv2 * d2r
+            let dphi = phi - lonpole * d2r
+            let st = sin(theta), ct = cos(theta)
+            let ty = asin(st * sin(dp) + ct * cos(dp) * cos(dphi))
+            let tx = cv1 * d2r + atan2(-ct * sin(dphi),
+                                        st * cos(dp) - ct * sin(dp) * cos(dphi))
+            return (tx / d2r * 3600, ty / d2r * 3600)
+        }
+
+        /// Everything the preview's JS needs — including the limb circle
+        /// precomputed here, so no coordinate math is duplicated in JS.
+        var dict: [String: Any] {
+            ["m11": m11, "m12": m12, "m21": m21, "m22": m22,
+             "cp1": cp1, "cp2": cp2, "cv1": cv1, "cv2": cv2,
+             "lonpole": lonpole, "proj": proj, "rsun": rsun,
+             "cx": cx, "cy": cy, "rpx": rpx]
+        }
+    }
+
+    /// Arcsec per CUNIT. CDELT/CRVAL are expressed in CUNIT, which is NOT always
+    /// arcsec: PUNCH ships CUNIT='deg' (CDELT 0.0225 deg = 81″/px), while
+    /// SDO/LASCO/STEREO use arcsec. Ignoring this scaled PUNCH's coordinates —
+    /// and its limb radius — by 3600×. Absent CUNIT ⇒ arcsec (the solar norm for
+    /// HPLN/HPLT; EIT and LASCO omit it).
+    private static func arcsecPerUnit(_ cunit: String?) -> Double {
+        switch (cunit ?? "arcsec").lowercased().trimmingCharacters(in: .whitespaces) {
+        case "deg", "degree", "degrees":  return 3600
+        case "arcmin", "amin":            return 60
+        case "rad", "radian", "radians":  return 206_264.806_247_1
+        default:                          return 1        // arcsec
+        }
+    }
+
+    static func solarWCS(cards: String, isSolar: Bool) -> SolarWCS? {
+        guard let cd1 = cardNum(cards, "CDELT1"), let cp1 = cardNum(cards, "CRPIX1"),
+              let cd2 = cardNum(cards, "CDELT2"), let cp2 = cardNum(cards, "CRPIX2"),
+              cd1 != 0, cd2 != 0 else { return nil }
+        let ct = cardVal(cards, "CTYPE1") ?? ""
+        guard ct.hasPrefix("HPLN") || (ct.isEmpty && isSolar) else { return nil }
+
+        // Everything downstream works in DEGREES; CUNIT says what CDELT/CRVAL
+        // are actually in (PUNCH: 'deg'; SDO/LASCO/STEREO: 'arcsec').
+        let f1 = arcsecPerUnit(cardVal(cards, "CUNIT1")) / 3600   // → degrees
+        let f2 = arcsecPerUnit(cardVal(cards, "CUNIT2")) / 3600
+        let d1 = cd1 * f1, d2 = cd2 * f2
+        let cv1 = (cardNum(cards, "CRVAL1") ?? 0) * f1
+        let cv2 = (cardNum(cards, "CRVAL2") ?? 0) * f2
+
+        // Fold CDELT together with the rotation — PC matrix if present (modern
+        // headers), else CROTA2 (SDO).
+        let m11, m12, m21, m22: Double
+        if let p11 = cardNum(cards, "PC1_1"), let p22 = cardNum(cards, "PC2_2") {
+            let p12 = cardNum(cards, "PC1_2") ?? 0, p21 = cardNum(cards, "PC2_1") ?? 0
+            (m11, m12, m21, m22) = (d1 * p11, d1 * p12, d2 * p21, d2 * p22)
+        } else {
+            let a = (cardNum(cards, "CROTA2") ?? 0) * .pi / 180
+            (m11, m12, m21, m22) = (d1 * cos(a), -d1 * sin(a), d2 * sin(a), d2 * cos(a))
+        }
+
+        var rsun = cardNum(cards, "RSUN_OBS") ?? cardNum(cards, "RSUN_ARC")
+        if rsun == nil, let dsun = cardNum(cards, "DSUN_OBS"), dsun > 0 {
+            rsun = 206_264.806 * 6.957e8 / dsun          // photospheric radius, arcsec
+        }
+
+        // Limb geometry, precomputed so the preview's JS draws a plain circle.
+        // The disk centre is where the world coords vanish; with the usual solar
+        // CRVAL=(0,0) that is exactly CRPIX.
+        let det = m11 * m22 - m12 * m21
+        var cx = cp1, cy = cp2
+        if det != 0, cv1 != 0 || cv2 != 0 {
+            cx = cp1 + (m22 * -cv1 - m12 * -cv2) / det
+            cy = cp2 + (m11 * -cv2 - m21 * -cv1) / det
+        }
+        let arcsecPerPixel = det != 0 ? abs(det).squareRoot() * 3600 : 0
+        let rpx = (arcsecPerPixel > 0 && (rsun ?? 0) > 0) ? (rsun! / arcsecPerPixel) : 0
+
+        // Projection code is the last 3 chars of CTYPE1 ("HPLN-ARC" → "ARC").
+        let proj = ct.count >= 3 ? String(ct.suffix(3)).uppercased() : ""
+        // LONPOLE defaults to 180° for zenithal projections whose fiducial point
+        // is off the pole — i.e. every solar frame with CRVAL2 != 90.
+        let lonpole = cardNum(cards, "LONPOLE") ?? 180
+
+        return SolarWCS(m11: m11, m12: m12, m21: m21, m22: m22,
+                        cp1: cp1, cp2: cp2, cv1: cv1, cv2: cv2,
+                        lonpole: lonpole, proj: proj, rsun: rsun ?? 0,
+                        cx: cx, cy: cy, rpx: rpx)
+    }
+
+    /// Shared readout formatting so the preview and the viewer never drift.
+    static func fmtValue(_ z: Float) -> String {
+        guard z.isFinite else { return "NaN" }
+        let a = abs(z)
+        return (a != 0 && (a >= 1e4 || a < 1e-2))
+            ? String(format: "%.3e", z) : String(format: "%.3f", z)
+    }
+
     /// Friendly card when a FITS file has NO image HDUs (tables, spectra, event
     /// lists) — a blank Quick Look failure reads as "app broken". Returns nil
     /// when the file has image HDUs or is unreadable (let the real error show).
@@ -357,7 +509,7 @@ enum FITSRenderer {
         else { startHDU = imageHDUs.contains(selected) ? selected : imageHDUs[0] } // auto first / explicit
 
         struct Page { let hdu: Int; let res: Result; let cards: String; let pill: String
-                      let lutB64: String; let wcs: [String: Any]? }
+                      let lutB64: String; let wcs: SolarWCS? }
         var pages: [Page] = []
         for h in imageHDUs {
             let r = try render(path: path, maxSide: h == startHDU ? 1024 : 768, hdu: h)
@@ -385,23 +537,9 @@ enum FITSRenderer {
             let pill = ([firstLine] + extras).joined(separator: "  ·  ")
                      + (cmap.map { "  ·  \($0)" } ?? "")
 
-            // Linear WCS for the hover readout + limb overlay. Solar-gated:
-            // HPLN CTYPE, or no CTYPE but a recognized solar instrument (so an
-            // RA/Dec sky image doesn't get bogus "arcsec from disk center").
-            var wcs: [String: Any]? = nil
-            if let cd1 = cardNum(cards, "CDELT1"), let cp1 = cardNum(cards, "CRPIX1"),
-               let cd2 = cardNum(cards, "CDELT2"), let cp2 = cardNum(cards, "CRPIX2"), cd1 != 0, cd2 != 0 {
-                let ct = cardVal(cards, "CTYPE1") ?? ""
-                if ct.hasPrefix("HPLN") || (ct.isEmpty && cmap != nil) {
-                    var rsun = cardNum(cards, "RSUN_OBS") ?? cardNum(cards, "RSUN_ARC")
-                    if rsun == nil, let dsun = cardNum(cards, "DSUN_OBS"), dsun > 0 {
-                        rsun = 206_264.806 * 6.957e8 / dsun   // photospheric radius, arcsec
-                    }
-                    wcs = ["cd1": cd1, "cd2": cd2, "cp1": cp1, "cp2": cp2,
-                           "cv1": cardNum(cards, "CRVAL1") ?? 0, "cv2": cardNum(cards, "CRVAL2") ?? 0,
-                           "rot": cardNum(cards, "CROTA2") ?? 0, "rsun": rsun ?? 0]
-                }
-            }
+            // Linear WCS for the hover readout + limb overlay (shared with the
+            // in-app viewer via FITSRenderer.solarWCS).
+            let wcs = solarWCS(cards: cards, isSolar: cmap != nil)
             let lutB64 = cmap.flatMap { FITSColormaps.lut($0) }
                              .map { Data($0).base64EncodedString() } ?? ""
             pages.append(Page(hdu: h, res: r, cards: cards, pill: pill, lutB64: lutB64, wcs: wcs))
@@ -443,7 +581,7 @@ enum FITSRenderer {
                                         "d": f32leBase64(p.res.vgrid),
                                         "u": headerVal(p.res.header, "BUNIT") ?? "",
                                         "lut": p.lutB64]
-                if let w = p.wcs { d["wcs"] = w }
+                if let w = p.wcs { d["wcs"] = w.dict }
                 return d
             }
             let d = (try? JSONSerialization.data(withJSONObject: arr)) ?? Data("[]".utf8)
@@ -586,11 +724,30 @@ enum FITSRenderer {
             else{dh=r.height;dw=r.height*ar;oy=0;ox=(r.width-dw)/2;}
             return {r:r,dw:dw,dh:dh,ox:ox,oy:oy};
           }
-          // linear WCS: FITS pixel → helioprojective (Tx,Ty) arcsec
+          // FITS pixel (1-based, y up) → helioprojective (Tx,Ty) arcsec.
+          // MIRRORS FITSRenderer.SolarWCS.hpc in PreviewProvider.swift — the
+          // spherical deprojection, not a flat approximation (PUNCH's field is
+          // 45° across). Both are pinned by HelioFITSTests/WCSTests.swift; keep
+          // them in step.
           function hpc(w,fx,fy){
-            var dx=(fx-w.cp1)*w.cd1, dy=(fy-w.cp2)*w.cd2, a=w.rot*Math.PI/180;
-            var c=Math.cos(a), s=Math.sin(a);
-            return [w.cv1+dx*c-dy*s, w.cv2+dx*s+dy*c];
+            var D=Math.PI/180;
+            var u=fx-w.cp1, v=fy-w.cp2;
+            var x=w.m11*u+w.m12*v, y=w.m21*u+w.m22*v;        // degrees in the plane
+            if(w.proj==='CAR')return [(w.cv1+x)*3600,(w.cv2+y)*3600];
+            var R=Math.sqrt(x*x+y*y);
+            if(R===0)return [w.cv1*3600, w.cv2*3600];
+            var th;
+            if(w.proj==='TAN')     th=Math.atan(1/(R*D));
+            else if(w.proj==='ARC')th=(90-R)*D;
+            else if(w.proj==='SIN')th=Math.acos(Math.min(1,R*D));
+            else return [(w.cv1+x)*3600,(w.cv2+y)*3600];     // unknown → flat
+            var phi=Math.atan2(x,-y);
+            var dp=w.cv2*D, dphi=phi-w.lonpole*D;
+            var st=Math.sin(th), ct=Math.cos(th);
+            var ty=Math.asin(st*Math.sin(dp)+ct*Math.cos(dp)*Math.cos(dphi));
+            var tx=w.cv1*D+Math.atan2(-ct*Math.sin(dphi),
+                                       st*Math.cos(dp)-ct*Math.sin(dp)*Math.cos(dphi));
+            return [tx/D*3600, ty/D*3600];
           }
           function toast(t){hint.textContent=t;hint.style.opacity=1;
             setTimeout(function(){hint.style.opacity=0;},2400);}
@@ -606,17 +763,16 @@ enum FITSRenderer {
             bLimb.style.display=(g.wcs&&g.wcs.rsun>0)?'':'none';
             bDiff.style.display=N>1?'':'none';
           }
+          // The disk-centre pixel (cx,cy) and solar radius in pixels (rpx) are
+          // computed in Swift, so no coordinate math lives here — just a circle.
           function updateLimb(){
             var g=PAGES[cur], w=g.wcs;
-            var ok=limbOn&&w&&w.rsun>0;
+            var ok=limbOn&&w&&w.rpx>0;
             limb.style.display=ok?'block':'none';
             if(!ok)return;
-            var d=dispRect(g), a=w.rot*Math.PI/180, c=Math.cos(a), s=Math.sin(a);
-            // disk-center pixel: invert T=0 → [dx,dy] = Rᵀ·[−cv1,−cv2]
-            var dx=( c*(-w.cv1)+s*(-w.cv2))/w.cd1, dy=(-s*(-w.cv1)+c*(-w.cv2))/w.cd2;
-            var px=w.cp1+dx, py=w.cp2+dy;
-            var x=d.ox+(px-0.5)/g.w*d.dw, y=d.oy+(1-(py-0.5)/g.h)*d.dh;
-            var r=Math.abs(w.rsun/w.cd1)/g.w*d.dw;
+            var d=dispRect(g);
+            var x=d.ox+(w.cx-0.5)/g.w*d.dw, y=d.oy+(1-(w.cy-0.5)/g.h)*d.dh;
+            var r=w.rpx/g.w*d.dw;
             limb.setAttribute('viewBox','0 0 '+d.r.width+' '+d.r.height);
             limbc.setAttribute('cx',x);limbc.setAttribute('cy',y);limbc.setAttribute('r',r);
           }

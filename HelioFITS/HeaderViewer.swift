@@ -140,6 +140,37 @@ private extension String {
 /// (pngData, filename) via `pngProvider` — nil until the first render lands.
 final class DraggablePNGView: NSImageView, NSDraggingSource, NSFilePromiseProviderDelegate {
     var pngProvider: (() -> (data: Data, filename: String)?)?
+    /// Cursor moved over the view (point in view coords), or nil on exit —
+    /// drives the (x,y)=z + helioprojective readout.
+    var onHover: ((NSPoint?) -> Void)?
+
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds,
+                               options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        onHover?(convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) { onHover?(nil) }
+
+    /// The drawn image's rect inside the view — NSImageView letterboxes a
+    /// proportionally-scaled image, exactly like CSS object-fit: contain.
+    func imageRect() -> NSRect? {
+        guard let sz = image?.size, sz.width > 0, sz.height > 0 else { return nil }
+        let ar = sz.width / sz.height, vr = bounds.width / bounds.height
+        let w = ar > vr ? bounds.width : bounds.height * ar
+        let h = ar > vr ? bounds.width / ar : bounds.height
+        return NSRect(x: (bounds.width - w) / 2, y: (bounds.height - h) / 2, width: w, height: h)
+    }
 
     override func mouseDown(with event: NSEvent) {}   // swallow; drag starts on movement
 
@@ -176,11 +207,14 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     private static let saveTag = 102
     private static let hduPopupTag = 103
     private static let copyPythonTag = 104
+    private static let readoutTag = 105
 
     private var windows = Set<NSWindow>()                 // retain until closed
     private var pngs = [ObjectIdentifier: Data]()         // rendered colormapped PNG per window (for export)
     private var sources = [ObjectIdentifier: URL]()       // source FITS per window
     private var scopedURLs = [ObjectIdentifier: URL]()    // security scope held while open (HDU switching re-reads)
+    private var renders = [ObjectIdentifier: FITSRenderer.Result]()   // value grid + native dims for the readout
+    private var wcs = [ObjectIdentifier: FITSRenderer.SolarWCS]()     // per displayed HDU (absent = non-solar)
 
     /// Show a native window with the colormapped image, an HDU switcher, the
     /// full header, and a "Save PNG…" button. The image is rendered in-app via
@@ -226,19 +260,65 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         renderHDU(in: win, url: fileURL, hdu: initial)
     }
 
-    /// Render one HDU on a background queue and swap it into the window.
+    /// Render one HDU on a background queue and swap it into the window, along
+    /// with the value grid + WCS that back the hover readout.
     private func renderHDU(in win: NSWindow, url: URL, hdu: Int) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self, weak win] in
             let result = try? FITSRenderer.render(path: url.path, maxSide: 4096, hdu: hdu)
             guard let r = result, let img = NSImage(data: r.png) else { return } // header still shown on failure
+            // The shim resolves -1/-2; ask it which HDU actually rendered so the
+            // WCS cards come from the HDU on screen, not the sentinel.
+            let shown = FITSRenderer.resolveAutoHDU(path: url.path, want: hdu)
+            let solarWCS = FITSRenderer.cards(path: url.path, hdu: max(shown, 0)).flatMap {
+                FITSRenderer.solarWCS(cards: $0,
+                                      isSolar: FITSRenderer.colormapKey(fromHeader: r.header) != nil)
+            }
             DispatchQueue.main.async {
                 guard let self, let win else { return }
-                self.pngs[ObjectIdentifier(win)] = r.png
+                let k = ObjectIdentifier(win)
+                self.pngs[k] = r.png
+                self.renders[k] = r
+                if let w = solarWCS { self.wcs[k] = w } else { self.wcs.removeValue(forKey: k) }
                 (win.contentView?.viewWithTag(Self.imageTag) as? NSImageView)?.image = img
                 (win.contentView?.viewWithTag(Self.saveTag) as? NSButton)?.isEnabled = true
                 (win.contentView?.viewWithTag(Self.copyPythonTag) as? NSButton)?.isEnabled = true
             }
         }
+    }
+
+    /// Hover → "(x, y) = z BUNIT / Tx,Ty = (…″, …″)  r = … R☉".
+    /// Mirrors the Quick Look preview's readout: same grid, same conventions
+    /// (FITS pixels are 1-based with y increasing upward).
+    private func updateReadout(win: NSWindow, imageView: DraggablePNGView, at p: NSPoint?) {
+        guard let label = win.contentView?.viewWithTag(Self.readoutTag) as? NSTextField else { return }
+        guard let p, let r = renders[ObjectIdentifier(win)], let box = imageView.imageRect(),
+              box.contains(p), r.vgw > 0, r.vgh > 0 else {
+            label.isHidden = true
+            return
+        }
+        // u,v are 0…1 from the image's top-left (AppKit y is up, so flip it).
+        let u = (p.x - box.minX) / box.width
+        let v = 1 - (p.y - box.minY) / box.height
+
+        let gx = min(r.vgw - 1, max(0, Int(u * Double(r.vgw))))
+        let gy = min(r.vgh - 1, max(0, Int(v * Double(r.vgh))))
+        let z = r.vgrid[gy * r.vgw + gx]
+
+        let fx = Int((u * Double(r.natW - 1)).rounded()) + 1
+        let fy = r.natH - Int((v * Double(r.natH - 1)).rounded())
+
+        let unit = FITSRenderer.headerVal(r.header, "BUNIT").map { " \($0)" } ?? ""
+        var text = "(\(fx), \(fy)) = \(FITSRenderer.fmtValue(z))\(unit)"
+        if let w = wcs[ObjectIdentifier(win)] {
+            let (tx, ty) = w.hpc(Double(fx), Double(fy))
+            text += String(format: "     Tx,Ty = (%.1f″, %.1f″)", tx, ty)
+            if w.rsun > 0 {
+                text += String(format: "   r = %.2f R☉", (tx * tx + ty * ty).squareRoot() / w.rsun)
+            }
+        }
+        label.stringValue = text
+        label.sizeToFit()
+        label.isHidden = false
     }
 
     @objc private func hduChanged(_ sender: NSPopUpButton) {
@@ -255,6 +335,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self
+        win.acceptsMouseMovedEvents = true          // required for the hover readout
+        // The window is a dark data viewer (black image band, near-black header).
+        // Pin it to darkAqua so the header-material bar and its controls render
+        // with dark-mode contrast instead of a light bar sandwiched in black.
+        win.appearance = NSAppearance(named: .darkAqua)
 
         let content = NSView(frame: NSRect(x: 0, y: 0, width: W, height: H))
 
@@ -270,13 +355,43 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             guard let self, let win else { return nil }
             return self.pngExport(for: win)
         }
+        iv.onHover = { [weak self, weak win, weak iv] p in
+            guard let self, let win, let iv else { return }
+            self.updateReadout(win: win, imageView: iv, at: p)
+        }
         content.addSubview(iv)
 
-        // action bar (middle) — HDU switcher (left), Save PNG button (right)
-        let bar = NSView(frame: NSRect(x: 0, y: H - imgH - barH, width: W, height: barH))
-        bar.wantsLayer = true
-        bar.layer?.backgroundColor = NSColor(calibratedRed: 0.09, green: 0.09, blue: 0.09, alpha: 1).cgColor
+        // readout overlay (bottom-left of the image band) — same content and
+        // conventions as the Quick Look preview's corner readout.
+        let readout = NSTextField(labelWithString: "")
+        readout.tag = Self.readoutTag
+        readout.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        readout.textColor = NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)
+        readout.drawsBackground = true
+        readout.backgroundColor = NSColor.black.withAlphaComponent(0.58)
+        readout.isBezeled = false
+        readout.isHidden = true
+        readout.frame = NSRect(x: 10, y: H - imgH + 8, width: 320, height: 17)
+        readout.autoresizingMask = [.minYMargin]        // pinned to the image band's bottom edge
+        content.addSubview(readout)
+
+        // action bar (middle) — HDU switcher (left), actions (right). A system
+        // header material (not near-black) so the popup and buttons render with
+        // their normal contrast; flat #171717 made the controls hard to read.
+        let bar = NSVisualEffectView(frame: NSRect(x: 0, y: H - imgH - barH, width: W, height: barH))
+        bar.material = .headerView
+        bar.blendingMode = .withinWindow
+        bar.state = .active
         bar.autoresizingMask = [.width, .minYMargin]
+        // hairline separators so the bar reads as a distinct band against the
+        // black image above and the near-black header below
+        for y in [CGFloat(0), barH - 1] {
+            let rule = NSView(frame: NSRect(x: 0, y: y, width: W, height: 1))
+            rule.wantsLayer = true
+            rule.layer?.backgroundColor = NSColor.separatorColor.cgColor
+            rule.autoresizingMask = [.width]
+            bar.addSubview(rule)
+        }
         let popup = NSPopUpButton(frame: NSRect(x: 12, y: (barH - 25) / 2, width: 230, height: 25),
                                   pullsDown: false)
         popup.tag = Self.hduPopupTag
@@ -379,6 +494,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             windows.remove(w)
             pngs.removeValue(forKey: ObjectIdentifier(w))
             sources.removeValue(forKey: ObjectIdentifier(w))
+            renders.removeValue(forKey: ObjectIdentifier(w))
+            wcs.removeValue(forKey: ObjectIdentifier(w))
             scopedURLs.removeValue(forKey: ObjectIdentifier(w))?.stopAccessingSecurityScopedResource()
         }
     }
