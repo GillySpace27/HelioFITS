@@ -41,14 +41,28 @@ any Apple-silicon Mac (app is arm64-only; vendored libcfitsio.a has no x86_64).
    “Data Not Collected”, price Free.
 6. Submit for review.
 
-**Review-risk flags (decide before submitting):**
-- The legacy Spotlight importer (`Contents/Library/Spotlight/*.mdimporter`,
-  CFPlugIn) is an uncommon payload for MAS; review may question it, and under
-  MAS rules every binary must be sandboxed. If it's rejected, Plan B: strip the
-  importer from the MAS build (one `rm -rf` before export — Info-panel metadata
-  then only ships in the direct build) and keep full functionality in Channel 1.
+**Payload questions — SETTLED by the pre-submission review (2026-07-14):**
+- The legacy Spotlight importer is **not in the Xcode project** — it's injected
+  only by `embed-importer.sh` (run from `ship.sh`) *after* archiving. So a plain
+  **Product → Archive already produces an importer-free, MAS-clean bundle.**
+  Do NOT run `ship.sh`/`embed-importer.sh` for the MAS build; there is nothing
+  to `rm`. The Info-panel metadata stays a Channel-1 perk.
+- The Automator Quick Actions (`QuickAction/*.workflow`) are standalone shell
+  scripts installed to `~/Library/Services`; they are not referenced by the app
+  and a sandboxed MAS app can't install them anyway. Ship them via Channel 1 or
+  a separate download. Nothing to do for MAS.
 - App name must render as “HelioFITS” only — no “Quick Look” in the marketing
   name (Apple trademark screening).
+
+**Verified ready (review + tests, 2026-07-14):**
+- App icon populated (Assets.car has all 10 mac sizes + 1024 — was empty; would
+  have failed ITMS-90236).
+- Helioprojective coordinates correct for wide-field data (PUNCH), pinned to
+  astropy by `HelioFITSTests/WCSTests.swift`.
+- Malformed-FITS crash and HDU-switch race fixed (`HeaderViewer.swift`), fuzzed
+  by `HelioFITSTests/FITSHeaderTests.swift`. `xcodebuild test` = 13 passing
+  (quit any running HelioFITS first — the unit tests are hosted in the app, and
+  a stale instance hangs the test runner).
 
 ## Recommendation
 Launch Channel 1 now (plus open-sourcing the repo when ready); start Channel 2
