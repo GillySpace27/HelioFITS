@@ -423,18 +423,21 @@ final class FITSImageCanvas: NSView {
             return
         }
         let now = Date()
+        // Scrolling DOWN advances to the next HDU (like paging down a document),
+        // so the step is the negated delta.
+        //
         // A trackpad reports PIXEL deltas (large, continuous); a mouse wheel
         // reports LINE deltas (±1-ish per notch). One threshold cannot serve
         // both — a wheel would never accumulate enough to step.
         guard e.hasPreciseScrollingDeltas else {
             guard e.scrollingDeltaY != 0, now.timeIntervalSince(lastStep) > 0.10 else { return }
-            onScrollStep?(e.scrollingDeltaY > 0 ? 1 : -1)     // one notch = one HDU
+            onScrollStep?(e.scrollingDeltaY > 0 ? -1 : 1)     // one notch = one HDU
             lastStep = now
             return
         }
         acc += e.scrollingDeltaY
         if abs(acc) >= 30, now.timeIntervalSince(lastStep) > 0.13 {
-            onScrollStep?(acc > 0 ? 1 : -1)
+            onScrollStep?(acc > 0 ? -1 : 1)
             acc = 0
             lastStep = now
         }
