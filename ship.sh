@@ -16,10 +16,18 @@ ZIP="build/HelioFITS.zip"
 rm -rf build && mkdir build
 
 echo "==> Archiving (Developer ID, hardened runtime, secure timestamp)"
-# arm64-only: the vendored libcfitsio.a is arm64 (no x86_64 slice).
+# The PROJECT signs automatically (Apple Distribution + App Store profiles), because
+# that is what the Mac App Store path needs. This script wants the OTHER identity —
+# Developer ID, for notarized direct download — so it asks for it explicitly here
+# rather than pinning the project to it and breaking the store upload.
+#
+# arm64-only: the vendored libcfitsio.a is arm64 (no x86_64 slice). EXCLUDED_ARCHS
+# is set in the project too, so a plain Xcode archive matches this.
 xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS \
   -configuration Release -destination 'platform=macOS,arch=arm64' \
   ARCHS=arm64 EXCLUDED_ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO \
+  CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=UB45PPC2JS \
+  CODE_SIGN_IDENTITY="Developer ID Application" \
   -archivePath "$ARCH" archive
 
 cp -R "$ARCH/Products/Applications/HelioFITS.app" "$APP"
