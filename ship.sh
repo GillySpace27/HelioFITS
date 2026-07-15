@@ -21,11 +21,13 @@ echo "==> Archiving (Developer ID, hardened runtime, secure timestamp)"
 # Developer ID, for notarized direct download — so it asks for it explicitly here
 # rather than pinning the project to it and breaking the store upload.
 #
-# arm64-only: the vendored libcfitsio.a is arm64 (no x86_64 slice). EXCLUDED_ARCHS
-# is set in the project too, so a plain Xcode archive matches this.
+# Universal (arm64 + x86_64): the vendored libcfitsio.a is a fat lib, so the app
+# runs on both Apple Silicon and Intel. A plain Xcode archive is already universal
+# (ARCHS_STANDARD, no EXCLUDED_ARCHS); we spell it out here for clarity.
+# Regenerate the fat CFITSIO lib with HelioFITSExtension/cfitsio/build-universal.sh.
 xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS \
-  -configuration Release -destination 'platform=macOS,arch=arm64' \
-  ARCHS=arm64 EXCLUDED_ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO \
+  -configuration Release -destination 'generic/platform=macOS' \
+  ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
   CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=UB45PPC2JS \
   CODE_SIGN_IDENTITY="Developer ID Application" \
   -archivePath "$ARCH" archive

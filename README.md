@@ -9,7 +9,7 @@
 **Solar FITS files, previewable in Finder — in the right colors, with real coordinates.**
 
 [![License: BSD-2-Clause](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](LICENSE)
-&nbsp;·&nbsp; macOS 14.5+ (Apple Silicon)
+&nbsp;·&nbsp; macOS 14.5+ (universal — Apple Silicon & Intel)
 &nbsp;·&nbsp; Free & open source
 &nbsp;·&nbsp; No network access
 
@@ -102,8 +102,8 @@ HDU you're looking at — a one‑click bridge back to Python.
 
 ## Install
 
-> **Requires an Apple Silicon Mac** (M1 or later) running macOS 14.5+. Intel Macs
-> are not yet supported — see [#1](https://github.com/GillySpace27/HelioFITS/issues/1).
+> **Runs on any Mac** — Apple Silicon or Intel — with macOS 14.5 or later. It's a
+> universal binary.
 
 **Direct download (available now).** Grab `HelioFITS.zip` from the
 [latest release](https://github.com/GillySpace27/HelioFITS/releases/latest), unzip,
