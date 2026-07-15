@@ -95,6 +95,13 @@ final class ControlPanelController {
     //     no window present, so we must NOT guard on window==nil — track the
     //     newest and hide it; documentMode keeps every one down.
     func capture(_ w: NSWindow) {
+        // A SwiftUI WindowGroup spawns a FRESH window on reopen/activation, and
+        // macOS state-restoration can bring back another — each runs capture(),
+        // and without this the user sees TWO Settings panels. Keep exactly one:
+        // the newest wins, the previous is closed. isRestorable stops restoration
+        // from resurrecting a duplicate on the next launch.
+        w.isRestorable = false
+        if let old = window, old !== w { old.close() }
         window = w
         w.title = "Settings"                     // it's settings, not the viewer
         w.orderOut(nil)                          // hidden until we decide (no flash)
