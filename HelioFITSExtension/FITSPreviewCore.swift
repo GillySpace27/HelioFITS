@@ -39,6 +39,7 @@ final class FITSPreviewModel {
 
     struct Page {
         let hdu: Int
+        let plane: Int                      // 0-based cube plane (e.g. Stokes); 0 for a plain 2D image
         let image: NSImage                  // baked, colormapped, default stretch
         let res: FITSRenderer.Result        // native dims + baked levels + header
         let wcs: FITSRenderer.SolarWCS?
@@ -49,6 +50,14 @@ final class FITSPreviewModel {
     enum Mode { case plain, stretch, diff }
 
     typealias Buffer = (w: Int, h: Int, pix: [Float])
+
+    /// Identifies one page's pixels for caching. A data cube's planes share an
+    /// HDU number, so keying the pixel cache by HDU alone — as a single-plane
+    /// file always was — would let two different Stokes planes silently
+    /// collide and hand back each other's buffer. Same bug class as the C
+    /// `fpixel` defect, one layer up; a plane-aware key rules it out by
+    /// construction.
+    private struct PageKey: Hashable { let hdu: Int; let plane: Int }
 
     private(set) var pages: [Page] = []
     private(set) var path = ""
@@ -66,31 +75,37 @@ final class FITSPreviewModel {
     /// Bounded to the two HDUs that can be on screen at once (the current one,
     /// and its predecessor for Δ), so a 4096² frame costs ~64 MB and a Δ ~128 MB
     /// rather than every HDU of the file at once.
-    private var buffers: [Int: Buffer] = [:]
-    private var loading: Set<Int> = []
+    private var buffers: [PageKey: Buffer] = [:]
+    private var loading: Set<PageKey> = []
     /// Fired on the main thread when a buffer lands (redraw hook).
     var onFullRes: (() -> Void)?
 
     var count: Int { pages.count }
     var isEmpty: Bool { pages.isEmpty }
     var page: Page? { pages.indices.contains(cur) ? pages[cur] : nil }
-    /// Δ needs a previous HDU of the same size.
+    /// Δ needs a previous page of the same size AND the same cube plane — tB
+    /// minus pB is not a meaningful difference even when their dimensions match.
     var canDiff: Bool {
         guard cur > 0, pages.indices.contains(cur) else { return false }
         return pages[cur].res.natW == pages[cur - 1].res.natW
             && pages[cur].res.natH == pages[cur - 1].res.natH
+            && pages[cur].plane == pages[cur - 1].plane
     }
     var hasLimb: Bool { (page?.wcs?.rpx ?? 0) > 0 }
 
-    /// The HDUs whose pixels we need resident: the one on screen, plus the one Δ
-    /// subtracts from it.
-    private var neededHDUs: [Int] {
+    /// The pages whose pixels we need resident: the one on screen, plus the one
+    /// Δ subtracts from it.
+    private var neededPages: [PageKey] {
         guard let p = page else { return [] }
-        guard mode == .diff, canDiff else { return [p.hdu] }
-        return [p.hdu, pages[cur - 1].hdu]
+        let cur = PageKey(hdu: p.hdu, plane: p.plane)
+        guard mode == .diff, canDiff else { return [cur] }
+        let prev = pages[self.cur - 1]
+        return [cur, PageKey(hdu: prev.hdu, plane: prev.plane)]
     }
 
-    /// Render every image HDU. Call OFF the main thread.
+    /// Render every image HDU, and every plane of any data cube among them
+    /// (e.g. PUNCH PAM's 3 Stokes planes) as its own page. Call OFF the main
+    /// thread.
     static func load(path: String, maxSide: Int = 1024) -> FITSPreviewModel {
         let m = FITSPreviewModel()
         m.path = path
@@ -98,58 +113,75 @@ final class FITSPreviewModel {
         let total = Int(fitsshim_image_hdus(path, &idx, Int32(FITSRenderer.maxPagerHDUs)))
         let hdus = total > 0 ? Array(idx[0..<min(total, FITSRenderer.maxPagerHDUs)]) : []
 
+        // (hdu, plane) pairs first, so `of total` in the caption counts every
+        // page up front rather than growing as planes are discovered.
+        var slots: [(hdu: Int, plane: Int)] = []
         for h in hdus {
-            guard let r = try? FITSRenderer.render(path: path, maxSide: maxSide, hdu: h),
+            let n = max(1, FITSRenderer.planeCount(path: path, hdu: h))
+            for p in 0..<n { slots.append((h, p)) }
+        }
+
+        for (h, plane) in slots {
+            guard let r = try? FITSRenderer.render(path: path, maxSide: maxSide, hdu: h, plane: plane),
                   let img = NSImage(data: r.png) else { continue }
             let cards = FITSRenderer.cards(path: path, hdu: h) ?? ""
             let key = FITSRenderer.colormapKey(fromHeader: r.header)
             m.pages.append(Page(
-                hdu: h, image: img, res: r,
+                hdu: h, plane: plane, image: img, res: r,
                 wcs: FITSRenderer.solarWCS(cards: cards, isSolar: key != nil),
                 caption: FITSRenderer.caption(res: r, cards: cards,
-                                              index: m.pages.count + 1, of: hdus.count),
+                                              index: m.pages.count + 1, of: slots.count),
                 lut: key.flatMap { FITSColormaps.lut($0) }))
         }
-        // Start on the HDU the folder rule / global default selects.
+        // Start on the HDU the folder rule / global default selects (plane 0).
         let want = FITSRenderer.resolveAutoHDU(path: path,
                                                want: FITSRenderer.selectedHDU(forFileAt: path))
         m.cur = m.pages.firstIndex { $0.hdu == want } ?? 0
         return m
     }
 
-    func select(hdu: Int) { if let i = pages.firstIndex(where: { $0.hdu == hdu }) { cur = i } }
+    /// Jump to an HDU's first plane (a cube's other planes are reached by
+    /// scrolling, same as any other page).
+    func select(hdu: Int) { if let i = pages.firstIndex(where: { $0.hdu == hdu && $0.plane == 0 }) { cur = i } }
+
+    /// Jump straight to a page by its index — what the viewer's HDU/plane
+    /// popup uses, since a cube's planes share an `hdu` that alone can no
+    /// longer identify one page.
+    func select(page: Int) { if pages.indices.contains(page) { cur = page } }
 
     /// Fetch the pixels the current view needs, in the background. Cheap to call
-    /// on every refresh — it no-ops for HDUs already resident, and evicts the
+    /// on every refresh — it no-ops for pages already resident, and evicts the
     /// ones no longer reachable so the cache stays at two buffers.
     func prefetchFullRes() {
-        let want = neededHDUs
-        for h in buffers.keys where !want.contains(h) { buffers[h] = nil }
+        let want = neededPages
+        for k in buffers.keys where !want.contains(k) { buffers[k] = nil }
 
-        for hdu in want where buffers[hdu] == nil && !loading.contains(hdu) {
-            loading.insert(hdu)
+        for key in want where buffers[key] == nil && !loading.contains(key) {
+            loading.insert(key)
             let path = self.path
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-                let f = FITSRenderer.pixels(path: path, hdu: hdu)
+                let f = FITSRenderer.pixels(path: path, hdu: key.hdu, plane: key.plane)
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    self.loading.remove(hdu)
-                    guard let f, self.neededHDUs.contains(hdu) else { return }   // superseded
-                    self.buffers[hdu] = f
+                    self.loading.remove(key)
+                    guard let f, self.neededPages.contains(key) else { return }   // superseded
+                    self.buffers[key] = f
                     self.onFullRes?()
                 }
             }
         }
     }
 
-    /// True once the current HDU's pixels are resident, so the readout, the
+    /// True once the current page's pixels are resident, so the readout, the
     /// statistics and the live stretch can all answer exactly.
     var fullResReady: Bool { buffer(cur) != nil }
 
     /// Full-resolution pixels for a page, if resident.
     private func buffer(_ i: Int) -> Buffer? {
-        guard pages.indices.contains(i), let b = buffers[pages[i].hdu],
-              b.w == pages[i].res.natW, b.h == pages[i].res.natH else { return nil }
+        guard pages.indices.contains(i) else { return nil }
+        let p = pages[i]
+        guard let b = buffers[PageKey(hdu: p.hdu, plane: p.plane)],
+              b.w == p.res.natW, b.h == p.res.natH else { return nil }
         return b
     }
 

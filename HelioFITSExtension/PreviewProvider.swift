@@ -136,12 +136,21 @@ enum FITSRenderer {
         return idx[min(total, maxPagerHDUs) - 1]
     }
 
-    static func render(path: String, maxSide: Int = FITSRenderer.maxSide, hdu: Int? = nil) throws -> Result {
+    /// Number of selectable planes in an image HDU: 1 for a plain 2D image, or
+    /// the length of a data cube's 3rd axis (e.g. PUNCH PAM's 3 Stokes/
+    /// polarization planes). 0 if `hdu` isn't an image HDU at all.
+    static func planeCount(path: String, hdu: Int) -> Int {
+        max(0, Int(fitsshim_image_planes(path, hdu)))
+    }
+
+    static func render(path: String, maxSide: Int = FITSRenderer.maxSide, hdu: Int? = nil,
+                       plane: Int = 0) throws -> Result {
         var w: Int = 0, h: Int = 0
         var pixPtr: UnsafeMutablePointer<Float>? = nil
         var hdrPtr: UnsafeMutablePointer<CChar>? = nil
         let want = hdu ?? selectedHDU(forFileAt: path)
-        let rc = fitsshim_read_image(path, resolveAutoHDU(path: path, want: want), &w, &h, &pixPtr, &hdrPtr)
+        let rc = fitsshim_read_image(path, resolveAutoHDU(path: path, want: want), plane,
+                                     &w, &h, &pixPtr, &hdrPtr)
         guard rc == 0, let pix = pixPtr, w > 0, h > 0 else {
             throw NSError(domain: "FITS", code: Int(rc),
                           userInfo: [NSLocalizedDescriptionKey: "No readable image HDU (CFITSIO \(rc))"])
@@ -240,11 +249,11 @@ enum FITSRenderer {
     ///
     /// ~w*h*4 bytes (64 MB for 4096²), so the caller holds only the HDUs on
     /// screen. Call OFF the main thread.
-    static func pixels(path: String, hdu: Int) -> (w: Int, h: Int, pix: [Float])? {
+    static func pixels(path: String, hdu: Int, plane: Int = 0) -> (w: Int, h: Int, pix: [Float])? {
         var w: Int = 0, h: Int = 0
         var pixPtr: UnsafeMutablePointer<Float>? = nil
         var hdrPtr: UnsafeMutablePointer<CChar>? = nil
-        guard fitsshim_read_image(path, hdu, &w, &h, &pixPtr, &hdrPtr) == 0,
+        guard fitsshim_read_image(path, hdu, plane, &w, &h, &pixPtr, &hdrPtr) == 0,
               let pix = pixPtr, w > 0, h > 0 else { return nil }
         defer { free(pixPtr); free(hdrPtr) }
 

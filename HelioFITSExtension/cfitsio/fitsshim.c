@@ -4,7 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 
-int fitsshim_read_image(const char *path, long hdu_wanted,
+int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
                         long *width, long *height,
                         float **pixels, char **header) {
     fitsfile *fptr = NULL;
@@ -31,14 +31,25 @@ int fitsshim_read_image(const char *path, long hdu_wanted,
         status = 0;
         fits_get_img_dim(fptr, &naxis, &status);
         int is_image = 0;
+        long cube_planes = 1;
         if (status == 0 && naxis >= 2) {
             fits_get_img_size(fptr, 2, ax, &status);
-            if (status == 0 && ax[0] > 0 && ax[1] > 0) is_image = 1;
+            if (status == 0 && ax[0] > 0 && ax[1] > 0) {
+                is_image = 1;
+                if (naxis >= 3) {
+                    long ax3[3] = {0, 0, 0}; int s4 = 0;
+                    fits_get_img_size(fptr, 3, ax3, &s4);
+                    if (s4 == 0 && ax3[2] > 0) cube_planes = ax3[2];
+                }
+            }
         }
 
         const char *kind = is_image ? "image"
                          : (htype == ASCII_TBL || htype == BINARY_TBL) ? "table" : "empty";
-        if (is_image)
+        if (is_image && cube_planes > 1)
+            snprintf(line, sizeof(line), "  %d: image %ld × %ld ×%ld planes%s%s\n",
+                     i - 1, ax[0], ax[1], cube_planes, extname[0] ? "  " : "", extname);
+        else if (is_image)
             snprintf(line, sizeof(line), "  %d: image %ld × %ld%s%s\n",
                      i - 1, ax[0], ax[1], extname[0] ? "  " : "", extname);
         else
@@ -57,28 +68,65 @@ int fitsshim_read_image(const char *path, long hdu_wanted,
 
     int htype = 0; status = 0;
     fits_movabs_hdu(fptr, chosen, &htype, &status);
-    long naxes[2] = {0, 0};
-    fits_get_img_size(fptr, 2, naxes, &status);
+
+    // Real dimensionality of the chosen HDU. A plain 2D image has naxis==2; a
+    // data cube (e.g. PUNCH's PAM: Stokes/polarization planes) has naxis==3+.
+    // Capped at 4 — nobody ships a FITS image with a meaningful 4th axis here,
+    // and it keeps the fixed-size arrays below simple.
+    int naxis = 0; status = 0;
+    fits_get_img_dim(fptr, &naxis, &status);
+    if (status || naxis < 2) naxis = 2;
+    if (naxis > 4) naxis = 4;
+
+    long naxes[4] = {0, 0, 0, 0};
+    status = 0;
+    fits_get_img_size(fptr, naxis, naxes, &status);
     if (status || naxes[0] <= 0 || naxes[1] <= 0) {
         int s = 0; fits_close_file(fptr, &s); return status ? status : -1;
     }
+
+    long nplanes = (naxis >= 3 && naxes[2] > 0) ? naxes[2] : 1;
+    long plane = (plane_wanted >= 0 && plane_wanted < nplanes) ? plane_wanted : 0;
 
     long npix = naxes[0] * naxes[1];
     float *buf = (float *)malloc(sizeof(float) * (size_t)npix);
     if (!buf) { int s = 0; fits_close_file(fptr, &s); return -2; }
 
-    long fpixel[2] = {1, 1};
+    // THE FIX: fpixel needs one entry per axis of the HDU, not a hardcoded 2.
+    // The old code passed a 2-element array to an HDU that could have 3+ axes,
+    // so CFITSIO read one uninitialized stack value past the array's end as
+    // the starting index on the 3rd (Stokes/cube) axis — undefined behavior:
+    // sometimes an out-of-range value CFITSIO rejects outright (status
+    // BAD_ELEM_NUM=308), sometimes a silently wrong plane. Sizing fpixel to
+    // `naxis` and setting the cube axis explicitly reads exactly the
+    // requested plane, and nothing else, every time.
+    long fpixel[4] = {1, 1, 1, 1};
+    fpixel[2] = plane + 1;     /* CFITSIO pixel indices are 1-based */
     int anynul = 0; status = 0;
     float nulval = 0.0f;   /* NaN/blank -> 0 so scaling ignores them */
     if (fits_read_pix(fptr, TFLOAT, fpixel, npix, &nulval, buf, &anynul, &status)) {
         free(buf); int s = 0; fits_close_file(fptr, &s); return status;
     }
 
+    // Plane label: PUNCH cubes carry it in OBSLAYR<n> (1-based), e.g.
+    // OBSLAYR1='Polar_B', OBSLAYR2='Polar_pB', OBSLAYR3='Polar_pBp'. Fall back
+    // to a bare "plane i/n" when the convention isn't present.
+    char planeLabel[80] = "";
+    if (nplanes > 1) {
+        char key[16]; snprintf(key, sizeof(key), "OBSLAYR%ld", plane + 1);
+        char val[FLEN_VALUE] = ""; int s5 = 0;
+        fits_read_key(fptr, TSTRING, key, val, NULL, &s5);
+        if (s5 == 0 && val[0])
+            snprintf(planeLabel, sizeof(planeLabel), "  ·  %s (%ld/%ld)", val, plane + 1, nplanes);
+        else
+            snprintf(planeLabel, sizeof(planeLabel), "  ·  plane %ld/%ld", plane + 1, nplanes);
+    }
+
     char *hdr = (char *)malloc(4096); hdr[0] = 0;
     char extname[FLEN_VALUE] = ""; int s3 = 0;
     fits_read_key(fptr, TSTRING, "EXTNAME", extname, NULL, &s3);
-    snprintf(line, sizeof(line), "HDU %d%s%s — %ld × %ld pixels%s\n",
-             chosen - 1, extname[0] ? " " : "", extname, naxes[0], naxes[1],
+    snprintf(line, sizeof(line), "HDU %d%s%s — %ld × %ld pixels%s%s\n",
+             chosen - 1, extname[0] ? " " : "", extname, naxes[0], naxes[1], planeLabel,
              (hdu_wanted >= 0 && !wanted_ok) ? "  (requested HDU has no image; auto)" : "");
     strlcat(hdr, line, 4096);
     const char *keys[] = {"TELESCOP","INSTRUME","DETECTOR","OBSRVTRY","WAVELNTH",
@@ -120,6 +168,23 @@ int fitsshim_image_hdus(const char *path, long *indices, int max_indices) {
     }
     int s = 0; fits_close_file(fptr, &s);
     return found;
+}
+
+int fitsshim_image_planes(const char *path, long hdu) {
+    fitsfile *fptr = NULL;
+    int status = 0;
+    if (fits_open_file(&fptr, path, READONLY, &status)) return -status;
+    int htype = 0;
+    fits_movabs_hdu(fptr, (int)hdu + 1, &htype, &status);
+    int naxis = 0; status = 0;
+    fits_get_img_dim(fptr, &naxis, &status);
+    if (status || naxis < 2) { int s = 0; fits_close_file(fptr, &s); return 0; }
+    if (naxis > 4) naxis = 4;
+    long naxes[4] = {0, 0, 0, 0};
+    fits_get_img_size(fptr, naxis, naxes, &status);
+    int s = 0; fits_close_file(fptr, &s);
+    if (status || naxes[0] <= 0 || naxes[1] <= 0) return 0;
+    return (naxis >= 3 && naxes[2] > 0) ? (int)naxes[2] : 1;
 }
 
 int fitsshim_header_cards(const char *path, long hdu, char **cards) {

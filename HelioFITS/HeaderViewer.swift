@@ -227,12 +227,24 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         }
         c.popup.removeAllItems()
         guard c.model.count > 1 else { c.popup.isHidden = true; return }
+
+        // A data cube (e.g. PUNCH PAM's Stokes planes) puts several pages under
+        // the SAME hdu, so "HDU h" alone no longer names one page — tag each
+        // item by its page index instead, and disambiguate the label whenever
+        // more than one page shares an hdu.
+        var pagesPerHDU: [Int: Int] = [:]
+        for pg in c.model.pages { pagesPerHDU[pg.hdu, default: 0] += 1 }
+
         for p in 0..<c.model.count {
-            let h = c.model.pages[p].hdu
-            c.popup.addItem(withTitle: names[h].map { "HDU \(h) — \($0)" } ?? "HDU \(h)")
-            c.popup.lastItem?.tag = h
+            let pg = c.model.pages[p]
+            var title = names[pg.hdu].map { "HDU \(pg.hdu) — \($0)" } ?? "HDU \(pg.hdu)"
+            if (pagesPerHDU[pg.hdu] ?? 1) > 1 {
+                title += "  (plane \(pg.plane + 1)/\(pagesPerHDU[pg.hdu]!))"
+            }
+            c.popup.addItem(withTitle: title)
+            c.popup.lastItem?.tag = p
         }
-        c.popup.selectItem(withTag: c.model.page?.hdu ?? 0)
+        c.popup.selectItem(withTag: c.model.cur)
         c.popup.sizeToFit()
     }
 
@@ -411,7 +423,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     @objc private func hduChanged(_ sender: NSPopUpButton) {
         guard let c = ctx(for: sender) else { return }
-        c.model.select(hdu: sender.selectedTag())
+        c.model.select(page: sender.selectedTag())
         refresh(c)
     }
 
