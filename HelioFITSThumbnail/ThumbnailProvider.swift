@@ -36,8 +36,22 @@ class ThumbnailProvider: QLThumbnailProvider {
                 return true
             }, nil)
         } catch {
-            self.log.error("thumbnail FAILED: \(String(describing: error), privacy: .public)")
-            handler(nil, error)
+            // No renderable image. If the file is still a valid FITS — a table,
+            // spectrum, or event-list HDU — draw a "FITS table" placeholder so it
+            // reads as tabular FITS data rather than falling back to the anonymous
+            // generic document icon. Only genuinely unreadable files pass the
+            // error through (Finder then shows generic, which is correct).
+            if FITSRenderer.isTableOnlyFITS(path: request.fileURL.path) {
+                self.log.info("no image HDU — drawing table placeholder")
+                handler(QLThumbnailReply(contextSize: request.maximumSize) { ctx in
+                    FITSRenderer.drawTablePlaceholder(
+                        in: ctx, pixels: CGSize(width: ctx.width, height: ctx.height))
+                    return true
+                }, nil)
+            } else {
+                self.log.error("thumbnail FAILED: \(String(describing: error), privacy: .public)")
+                handler(nil, error)
+            }
         }
     }
 }

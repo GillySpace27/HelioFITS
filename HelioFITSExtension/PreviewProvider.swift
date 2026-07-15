@@ -502,6 +502,58 @@ enum FITSRenderer {
 
     /// Human summary of a FITS file that has NO image HDUs (tables, spectra,
     /// event lists) — shown instead of a blank Quick Look failure.
+    /// True when `path` is a readable FITS that has HDUs but NO renderable image
+    /// (a table / spectrum / event-list file) — the case where render() throws
+    /// yet the file is perfectly valid. fitsshim_image_hdus returns the image-HDU
+    /// count (0 here) on a good open, or a negative status when the file can't be
+    /// opened at all (corrupt / not FITS), which must still fall through to the
+    /// generic icon.
+    static func isTableOnlyFITS(path: String) -> Bool {
+        var idx = [Int](repeating: 0, count: maxPagerHDUs)
+        return fitsshim_image_hdus(path, &idx, Int32(maxPagerHDUs)) == 0
+    }
+
+    /// Draw a recognizable "FITS table" placeholder — a small spreadsheet glyph
+    /// on the app's charcoal card — into `ctx` at its pixel size. Used for the
+    /// thumbnail of a table-only FITS so it reads as tabular FITS data instead
+    /// of an anonymous generic document. Glyph only (no text): it stays legible
+    /// down to icon sizes where a label would not.
+    static func drawTablePlaceholder(in ctx: CGContext, pixels: CGSize) {
+        let w = pixels.width, h = pixels.height
+        let s = min(w, h)
+
+        // charcoal rounded card, matching the dark image thumbnails
+        ctx.setFillColor(CGColor(srgbRed: 0.11, green: 0.11, blue: 0.13, alpha: 1))
+        ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: w, height: h),
+                           cornerWidth: s * 0.16, cornerHeight: s * 0.16, transform: nil))
+        ctx.fillPath()
+
+        // centered table: light body with a gold header row (brand tie-in)
+        let tw = w * 0.58, th = h * 0.58
+        let tx = (w - tw) / 2, ty = (h - th) / 2
+        let rows = 4, cols = 3
+        let cellH = th / CGFloat(rows)
+
+        ctx.setFillColor(CGColor(gray: 0.90, alpha: 1))
+        ctx.fill(CGRect(x: tx, y: ty, width: tw, height: th))
+        ctx.setFillColor(CGColor(srgbRed: 0.98, green: 0.75, blue: 0.20, alpha: 1))
+        ctx.fill(CGRect(x: tx, y: ty + th - cellH, width: tw, height: cellH))   // top row (origin BL)
+
+        // grid lines in the card colour
+        ctx.setStrokeColor(CGColor(srgbRed: 0.11, green: 0.11, blue: 0.13, alpha: 1))
+        ctx.setLineWidth(max(1, s * 0.015))
+        for r in 0...rows {
+            let yy = ty + CGFloat(r) * cellH
+            ctx.move(to: CGPoint(x: tx, y: yy)); ctx.addLine(to: CGPoint(x: tx + tw, y: yy))
+        }
+        let cellW = tw / CGFloat(cols)
+        for c in 0...cols {
+            let xx = tx + CGFloat(c) * cellW
+            ctx.move(to: CGPoint(x: xx, y: ty)); ctx.addLine(to: CGPoint(x: xx, y: ty + th))
+        }
+        ctx.strokePath()
+    }
+
     static func noImageSummary(path: String) -> String {
         var lines = ["No image to display — this FITS file contains table or non-image data.", ""]
         var h = 0
