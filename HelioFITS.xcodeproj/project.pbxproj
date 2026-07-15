@@ -744,7 +744,7 @@
 				);
 				INFOPLIST_FILE = HelioFITS/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Christopher Gilly. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -794,7 +794,7 @@
 				);
 				INFOPLIST_FILE = HelioFITS/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Christopher Gilly. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -918,7 +918,7 @@
 				);
 				INFOPLIST_FILE = HelioFITSExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HelioFITSExtension;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Christopher Gilly. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -964,7 +964,7 @@
 				);
 				INFOPLIST_FILE = HelioFITSExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HelioFITSExtension;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Christopher Gilly. All rights reserved.";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
