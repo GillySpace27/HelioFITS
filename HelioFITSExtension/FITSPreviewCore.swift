@@ -232,6 +232,9 @@ final class FITSPreviewModel {
         guard let p = page, let s = sample(u: u, v: v) else { return nil }
         let unit = FITSRenderer.headerVal(p.res.header, "BUNIT").map { " \($0)" } ?? ""
 
+        // A BLANK/off-disk pixel is NaN — say so rather than print "nan Gauss".
+        guard s.z.isFinite else { return "(\(s.fx), \(s.fy)) = no data" }
+
         var t = "(\(s.fx), \(s.fy)) = \(FITSRenderer.fmtValue(s.z))\(unit)"
         if let w = p.wcs {
             let (tx, ty) = w.hpc(Double(s.fx), Double(s.fy))

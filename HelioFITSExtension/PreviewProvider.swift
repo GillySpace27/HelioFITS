@@ -92,7 +92,16 @@ enum FITSRenderer {
             return "sdoaia\(nearest([94, 131, 171, 193, 211, 304, 335, 1600, 1700, 4500]))"
         }
         if tel.contains("SDO/HMI") || inst.hasPrefix("HMI") {
-            return (val("BUNIT") ?? "").uppercased().contains("GAUSS") ? "hmimag" : nil
+            // Line-of-sight magnetograms are in Gauss; the synoptic radial-field
+            // charts are in Mx/cm² (numerically equivalent for B_r) and label
+            // themselves via CONTENT ("… Br Field"). Both are signed magnetic
+            // maps and want the diverging red/grey/blue table — the synoptic
+            // chart used to fall through to grayscale.
+            let bunit = (val("BUNIT") ?? "").uppercased()
+            let content = (val("CONTENT") ?? "").uppercased()
+            let isMagnetic = bunit.contains("GAUSS") || bunit.contains("MX/CM")
+                          || content.contains("MAGNET") || content.contains("BR FIELD")
+            return isMagnetic ? "hmimag" : nil
         }
         if inst.contains("SUVI") || tel.contains("GOES-R SERIES") {
             return "goes-rsuvi\(nearest([94, 131, 171, 195, 284, 304]))"
@@ -175,7 +184,11 @@ enum FITSRenderer {
             let drow = oy * ow
             for ox in 0..<ow {
                 let v = pix[srow + ox * factor]
-                let t = max(0, min(1, (v - lo) / span))
+                // NaN = a BLANK/off-disk pixel (see fitsshim_read_image). Map it
+                // to the low end (background) — and NEVER let it reach UInt8(),
+                // which traps on a non-finite Float.
+                var t = (v - lo) / span
+                t = t.isFinite ? max(0, min(1, t)) : 0
                 bytes[drow + ox] = UInt8(powf(t, gam) * 255.0)
             }
         }

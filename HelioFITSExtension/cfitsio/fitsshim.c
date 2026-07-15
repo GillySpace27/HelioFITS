@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <math.h>
 
 int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
                         long *width, long *height,
@@ -90,23 +91,35 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
 
     long npix = naxes[0] * naxes[1];
     float *buf = (float *)malloc(sizeof(float) * (size_t)npix);
-    if (!buf) { int s = 0; fits_close_file(fptr, &s); return -2; }
+    char *nulls = (char *)malloc((size_t)npix);
+    if (!buf || !nulls) { free(buf); free(nulls); int s = 0; fits_close_file(fptr, &s); return -2; }
 
-    // THE FIX: fpixel needs one entry per axis of the HDU, not a hardcoded 2.
-    // The old code passed a 2-element array to an HDU that could have 3+ axes,
-    // so CFITSIO read one uninitialized stack value past the array's end as
-    // the starting index on the 3rd (Stokes/cube) axis — undefined behavior:
+    // fpixel needs one entry per axis of the HDU, not a hardcoded 2. The old
+    // code passed a 2-element array to an HDU that could have 3+ axes, so
+    // CFITSIO read one uninitialized stack value past the array's end as the
+    // starting index on the 3rd (Stokes/cube) axis — undefined behavior:
     // sometimes an out-of-range value CFITSIO rejects outright (status
     // BAD_ELEM_NUM=308), sometimes a silently wrong plane. Sizing fpixel to
-    // `naxis` and setting the cube axis explicitly reads exactly the
-    // requested plane, and nothing else, every time.
+    // `naxis` and setting the cube axis explicitly reads exactly the requested
+    // plane, and nothing else, every time.
     long fpixel[4] = {1, 1, 1, 1};
     fpixel[2] = plane + 1;     /* CFITSIO pixel indices are 1-based */
     int anynul = 0; status = 0;
-    float nulval = 0.0f;   /* NaN/blank -> 0 so scaling ignores them */
-    if (fits_read_pix(fptr, TFLOAT, fpixel, npix, &nulval, buf, &anynul, &status)) {
-        free(buf); int s = 0; fits_close_file(fptr, &s); return status;
+
+    // fits_read_pixnull, not fits_read_pix: for a scaled INTEGER image (e.g. an
+    // HMI magnetogram, BITPIX=32 BSCALE=0.1 BLANK=-2^31) fits_read_pix's nulval
+    // substitution does NOT catch the BLANK — it scales the sentinel straight
+    // through as a real value (-2^31*0.1 = -2.1e8). Off-disk pixels (26% of an
+    // HMI frame) then dominate the percentile clip, blowing the display scale
+    // to ±2e8 so the whole disk collapses to the colormap midpoint (a flat grey
+    // disk — the reported bug). The `nullarray` mask marks exactly which pixels
+    // were undefined; we set those to NaN, which every downstream consumer
+    // (levels/readout/stats/render) already treats as "no data" and skips.
+    if (fits_read_pixnull(fptr, TFLOAT, fpixel, npix, buf, nulls, &anynul, &status)) {
+        free(buf); free(nulls); int s = 0; fits_close_file(fptr, &s); return status;
     }
+    if (anynul) for (long i = 0; i < npix; i++) if (nulls[i]) buf[i] = NAN;
+    free(nulls);
 
     // Plane label: PUNCH cubes carry it in OBSLAYR<n> (1-based), e.g.
     // OBSLAYR1='Polar_B', OBSLAYR2='Polar_pB', OBSLAYR3='Polar_pBp'. Fall back
