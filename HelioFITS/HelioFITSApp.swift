@@ -30,6 +30,16 @@ struct HelioFITSApp: App {
                 }
         }
         .commands {
+            // Put the settings panel where every Mac app keeps it: the App menu's
+            // "Settings…" item (⌘,). This is the whole window's identity — it is
+            // settings, NOT the viewer — so reaching it the standard way makes
+            // that obvious. The panel is a normal window (not a SwiftUI Settings
+            // scene) because ControlPanelController already manages its
+            // launch/document/Dock-click lifecycle; this just adds the menu item.
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings…") { ControlPanelController.shared.reveal() }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
             // With no telemetry, GitHub is the only feedback channel — so the
             // app has to point at it. Both items are plain browser handoffs
             // (sandbox-safe; needs no network entitlement). "Check for
@@ -86,6 +96,7 @@ final class ControlPanelController {
     //     newest and hide it; documentMode keeps every one down.
     func capture(_ w: NSWindow) {
         window = w
+        w.title = "Settings"                     // it's settings, not the viewer
         w.orderOut(nil)                          // hidden until we decide (no flash)
         guard !documentMode else { return }      // came up for a document → stay hidden
         // Plain launch: reveal after long enough to catch a COLD document event
@@ -111,6 +122,7 @@ final class ControlPanelController {
 
     func reveal() {
         documentMode = false
+        window?.title = "Settings"
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

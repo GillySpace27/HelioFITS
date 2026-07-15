@@ -25,9 +25,9 @@ struct HelioFITSView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("HelioFITS")
+            Text("HelioFITS Settings")
                 .font(.title2).bold()
-            Text("Choose which HDU Finder previews display. A folder rule applies to every FITS file in that folder — the same HDU everywhere, for apples-to-apples comparison.")
+            Text("A FITS file can stack several images as separate Header Data Units (HDUs) — also called extensions, each labelled by its EXTNAME (e.g. the raw frame, a processed layer, an uncertainty map). Choose which one Finder shows in previews and thumbnails. A folder rule applies the same choice to every FITS file in that folder, so a whole directory previews apples-to-apples.")
                 .font(.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -41,7 +41,7 @@ struct HelioFITSView: View {
                 .labelsHidden().frame(width: 170)
             }
 
-            Text("Previews are interactive everywhere — scroll to blink between HDUs; hover for pixel values and coordinates.")
+            Text("To use HelioFITS, select a FITS file in Finder and press the spacebar — no need to open it here. Previews are interactive everywhere: scroll to blink between HDUs, hover for pixel values and coordinates, drag for region statistics.")
                 .font(.footnote).foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -156,6 +156,11 @@ struct HelioFITSView: View {
             guard resp == .OK, let url = panel.url else { return }
             dirRules[url.path] = 0
             save()
+            // Confirm the pin AND point at the next step — a first-time user who
+            // just picked a folder gets no other signal that anything happened,
+            // and nothing tells them the app's actual UI lives in Finder.
+            let name = url.lastPathComponent
+            status = "Pinned “\(name)” to HDU 0. Open it in Finder and press the spacebar on a FITS file to preview it."
         }
     }
 
