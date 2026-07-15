@@ -66,7 +66,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
         tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb), diffSel: #selector(toggleDiff),
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
-                            resetSel: #selector(resetStretch))
+                            resetSel: #selector(resetStretch), filterSel: #selector(filterChanged))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -155,6 +155,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     @objc private func toggleLimb() { model.limbOn.toggle(); refresh() }
     @objc private func toggleDiff() { model.mode = (model.mode == .diff) ? .plain : .diff; refresh() }
     @objc private func toggleTune() { model.mode = (model.mode == .stretch) ? .plain : .stretch; refresh() }
+    @objc private func filterChanged() { model.filter = tools.readFilter(); refresh() }
     @objc private func stretchChanged() {
         model.stretch = tools.readStretch()
         if model.mode == .stretch { refresh() }

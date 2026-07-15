@@ -502,6 +502,46 @@ enum FITSRenderer {
 
     /// Human summary of a FITS file that has NO image HDUs (tables, spectra,
     /// event lists) — shown instead of a blank Quick Look failure.
+    /// The core of the Radial Histogram Equalizing Filter (Gilly & Cranmer 2025,
+    /// Solar Phys. 300, 174): bin pixels into equally-spaced radial annuli, rank
+    /// each annulus's finite values to a percentile in (0,1], then apply the
+    /// `upsilon` double-sided gamma about the bin's mean rank. Ported from the
+    /// author's sunkit-image `radial.rhef` (ordinal ranking = its `method="numpy"`,
+    /// the fast path). Returns values in [0,1]; NaN where the pixel is non-finite
+    /// or its radius falls outside the bins. Pure and deterministic — pinned in
+    /// the test suite against a sunkit-image reference.
+    static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
+                             nbins: Int, upsilon: Double) -> [Float] {
+        let n = values.count
+        var out = [Float](repeating: .nan, count: n)
+        guard n > 0, nbins > 0, maxRadius > 0 else { return out }
+        let binW = maxRadius / Double(nbins)
+
+        var bins = [[Int]](repeating: [], count: nbins)
+        for i in 0..<n where values[i].isFinite {
+            var b = Int(radii[i] / binW)
+            if b >= nbins { b = nbins - 1 }
+            if b >= 0 { bins[b].append(i) }
+        }
+
+        for bin in bins where !bin.isEmpty {
+            let sorted = bin.sorted { values[$0] < values[$1] }
+            let m = Double(sorted.count)
+            var mean = 0.0
+            for (rank, idx) in sorted.enumerated() {
+                let pr = Double(rank + 1) / m
+                out[idx] = Float(pr); mean += pr
+            }
+            mean /= m
+            for idx in bin {
+                let v = Double(out[idx])
+                out[idx] = Float(v < mean ? pow(2 * v, upsilon) / 2
+                                          : 1 - pow(2 - 2 * v, upsilon) / 2)
+            }
+        }
+        return out
+    }
+
     /// True when `path` is a readable FITS that has HDUs but NO renderable image
     /// (a table / spectrum / event-list file) — the case where render() throws
     /// yet the file is perfectly valid. fitsshim_image_hdus returns the image-HDU

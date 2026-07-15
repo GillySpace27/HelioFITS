@@ -49,6 +49,16 @@ final class FITSPreviewModel {
 
     enum Mode { case plain, stretch, diff }
 
+    /// Enhancement filters applied to the displayed image (not the data — the
+    /// readout and statistics always report raw values). RHEF is the Radial
+    /// Histogram Equalizing Filter (Gilly & Cranmer 2025, Solar Phys. 300, 174),
+    /// ported from the author's sunkit-image implementation. MGN/WOW are stubs
+    /// for now.
+    enum Filter: Int, CaseIterable { case none, rhef, mgn, wow
+        var label: String { ["None", "RHEF", "MGN", "WOW"][rawValue] }
+    }
+    var filter: Filter = .none
+
     typealias Buffer = (w: Int, h: Int, pix: [Float])
 
     /// Identifies one page's pixels for caching. A data cube's planes share an
@@ -212,13 +222,24 @@ final class FITSPreviewModel {
         return p.caption + (mode == .diff && canDiff ? "   ·   Δ − previous HDU" : "")
     }
 
-    /// The image to draw for the current HDU + mode.
+    /// The image to draw for the current HDU + mode. A filter, when set, wins
+    /// over the plain/stretch/diff mode — it's a distinct way of looking at the
+    /// same HDU.
     func image() -> NSImage? {
         guard let p = page else { return nil }
+        if filter != .none, let img = filtered() { return img }
         switch mode {
         case .plain:   return p.image
         case .stretch: return stretched() ?? p.image
         case .diff:    return difference() ?? p.image
+        }
+    }
+
+    private func filtered() -> NSImage? {
+        switch filter {
+        case .none: return nil
+        case .rhef: return rhef()
+        case .mgn, .wow: return nil   // TODO
         }
     }
 
@@ -402,6 +423,74 @@ final class FITSPreviewModel {
             let s = UInt8(max(0, min(255, Int((1 - abs(t)) * 255))))
             if t < 0 { rgba[j * 4] = s;   rgba[j * 4 + 1] = s; rgba[j * 4 + 2] = 255 }
             else      { rgba[j * 4] = 255; rgba[j * 4 + 1] = s; rgba[j * 4 + 2] = s }
+        }
+        return Self.image(rgba: &rgba, w: ow, h: oh)
+    }
+
+    /// Radial Histogram Equalizing Filter (Gilly & Cranmer 2025, Solar Phys.
+    /// 300, 174), ported from the author's sunkit-image `radial.rhef`. It removes
+    /// the steep radial brightness gradient of the corona so faint off-limb
+    /// structure at every height is revealed at once: bin the pixels into
+    /// concentric annuli about disk centre, rank each annulus's intensities to a
+    /// percentile in (0,1], then apply the `upsilon` double-sided gamma.
+    ///
+    /// Runs on the display-decimated grid (fast — the "fast RHEF" path uses
+    /// ordinal ranking, sunkit-image's `method="numpy"`, visually identical to
+    /// the average-rank default for continuous data). Disk centre and radius come
+    /// from the same WCS the readout uses; with no limb it falls back to the
+    /// image centre so the filter still applies.
+    private func rhef(upsilon: Double = 0.35) -> NSImage? {
+        guard let p = page, let f = buffer(cur) else { return nil }
+        let r = p.res
+        let ow = r.width, oh = r.height, k = r.factor
+        let n = ow * oh
+
+        // Disk centre in the full-res display buffer (row 0 = top). The WCS gives
+        // the centre as a 1-based, y-up FITS pixel; buffer pixel (bx,by) is FITS
+        // (bx+1, f.h-by), so the centre lands at (cx-1, f.h-cy).
+        let cx: Double, cy: Double
+        if let w = p.wcs, w.rpx > 0 {
+            cx = w.cx - 1; cy = Double(f.h) - w.cy
+        } else {
+            cx = Double(f.w) / 2; cy = Double(f.h) / 2
+        }
+
+        // Sample values + pixel radii at the decimated grid, tracking max radius.
+        var vals = [Float](repeating: 0, count: n)
+        var rad = [Double](repeating: 0, count: n)
+        var maxR = 1e-9
+        for oy in 0..<oh {
+            let by = Self.sourceRow(oy, oh: oh, k: k, h: f.h)
+            let srow = by * f.w
+            let dy = Double(by) - cy
+            for ox in 0..<ow {
+                let bx = min(f.w - 1, ox * k)
+                let i = oy * ow + ox
+                vals[i] = f.pix[srow + bx]
+                let dx = Double(bx) - cx
+                let d = (dx * dx + dy * dy).squareRoot()
+                rad[i] = d
+                if d > maxR { maxR = d }
+            }
+        }
+
+        // The equalization itself (bin → rank → upsilon), extracted so it can be
+        // pinned against sunkit-image numerically.
+        let nbins = max(1, oh / 2)
+        let out = FITSRenderer.rhefEqualize(values: vals, radii: rad, maxRadius: maxR,
+                                            nbins: nbins, upsilon: upsilon)
+
+        // Map the equalized [0,1] through the instrument colormap; fill = black.
+        var rgba = [UInt8](repeating: 255, count: n * 4)
+        for i in 0..<n {
+            let i4 = i * 4
+            guard out[i].isFinite else { rgba[i4] = 0; rgba[i4 + 1] = 0; rgba[i4 + 2] = 0; continue }
+            let v = max(0, min(255, Int(out[i] * 255)))
+            if let lut = p.lut {
+                rgba[i4] = lut[v * 3]; rgba[i4 + 1] = lut[v * 3 + 1]; rgba[i4 + 2] = lut[v * 3 + 2]
+            } else {
+                rgba[i4] = UInt8(v); rgba[i4 + 1] = UInt8(v); rgba[i4 + 2] = UInt8(v)
+            }
         }
         return Self.image(rgba: &rgba, w: ow, h: oh)
     }
@@ -906,14 +995,15 @@ final class FITSImageCanvas: NSView {
 /// theirs from here so the controls, tooltips and behaviour can't diverge.
 final class FITSToolbar {
     let limb = NSButton(), diff = NSButton(), tune = NSButton()
+    let filterMenu = NSPopUpButton(frame: .zero, pullsDown: false)
     let panel = NSView()
     let sLo = NSSlider(), sHi = NSSlider(), sG = NSSlider()
     let cLog = NSButton(checkboxWithTitle: "log", target: nil, action: nil)
     let reset = NSButton(title: "Reset", target: nil, action: nil)
 
-    /// - Parameter target: receives the actions; must implement the four selectors.
+    /// - Parameter target: receives the actions; must implement the selectors.
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
-         tuneSel: Selector, stretchSel: Selector, resetSel: Selector) {
+         tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector) {
         // These float over the image. A standard translucent bezel disappears
         // against a bright solar disk, so draw them as solid, near-opaque chips.
         func mk(_ b: NSButton, _ title: String, _ tip: String, _ sel: Selector) {
@@ -933,6 +1023,22 @@ final class FITSToolbar {
         mk(limb, "◯", "Show the solar limb — the photosphere's edge, from RSUN_OBS", limbSel)
         mk(diff, "Δ", "Running difference: this HDU minus the previous one — how CMEs, waves and dimmings are spotted", diffSel)
         mk(tune, "◐", "Adjust the brightness stretch (percentile clip, gamma, log)", tuneSel)
+
+        // Enhancement filter picker. RHEF (Radial Histogram Equalizing Filter,
+        // Gilly & Cranmer 2025) removes the corona's radial brightness gradient
+        // to reveal faint off-limb structure at every height. MGN/WOW are coming.
+        filterMenu.appearance = NSAppearance(named: .darkAqua)
+        filterMenu.translatesAutoresizingMaskIntoConstraints = false
+        filterMenu.bezelStyle = .rounded
+        filterMenu.controlSize = .regular
+        filterMenu.toolTip = "Enhancement filter"
+        for f in FITSPreviewModel.Filter.allCases {
+            filterMenu.addItem(withTitle: f.label)
+            if f == .mgn || f == .wow { filterMenu.lastItem?.isEnabled = false }  // coming soon
+        }
+        filterMenu.target = target
+        filterMenu.action = filterSel
+        filterMenu.heightAnchor.constraint(equalToConstant: 26).isActive = true
 
         panel.wantsLayer = true
         // Dark appearance so the sliders/checkbox render with dark-mode contrast
@@ -986,13 +1092,17 @@ final class FITSToolbar {
     }
 
     var stack: NSStackView {
-        let s = NSStackView(views: [limb, diff, tune])
+        let s = NSStackView(views: [filterMenu, limb, diff, tune])
         s.spacing = 6
         return s
     }
 
     func readStretch() -> (lo: Double, hi: Double, gamma: Double, log: Bool) {
         (sLo.doubleValue, sHi.doubleValue, sG.doubleValue, cLog.state == .on)
+    }
+
+    func readFilter() -> FITSPreviewModel.Filter {
+        FITSPreviewModel.Filter(rawValue: filterMenu.indexOfSelectedItem) ?? .none
     }
 
     func resetStretch() {
@@ -1024,5 +1134,8 @@ final class FITSToolbar {
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
         paint(tune, on: model.mode == .stretch, enabled: true)
         panel.isHidden = (model.mode != .stretch)
+        if filterMenu.indexOfSelectedItem != model.filter.rawValue {
+            filterMenu.selectItem(at: model.filter.rawValue)
+        }
     }
 }

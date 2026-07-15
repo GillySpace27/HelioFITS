@@ -296,7 +296,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
         c.tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb(_:)),
                               diffSel: #selector(toggleDiff(_:)), tuneSel: #selector(toggleTune(_:)),
-                              stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)))
+                              stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)),
+                              filterSel: #selector(filterChanged(_:)))
         let toolStack = c.tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -440,6 +441,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     @objc private func toggleTune(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
         c.model.mode = (c.model.mode == .stretch) ? .plain : .stretch; refresh(c)
+    }
+
+    @objc private func filterChanged(_ s: NSPopUpButton) {
+        guard let c = ctx(for: s) else { return }
+        c.model.filter = c.tools.readFilter(); refresh(c)
     }
 
     @objc private func stretchChanged(_ s: NSControl) {
