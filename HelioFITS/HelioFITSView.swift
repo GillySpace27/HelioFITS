@@ -25,51 +25,52 @@ struct HelioFITSView: View {
     private var suite: UserDefaults? { UserDefaults(suiteName: appGroup) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 20) {
             Text("HelioFITS Settings")
-                .font(.title2).bold()
+                .font(.system(size: 30, weight: .bold))
             Text("A FITS file can stack several images as separate Header Data Units (HDUs) — also called extensions, each labelled by its EXTNAME (e.g. the raw frame, a processed layer, an uncertainty map). Choose which one Finder shows in previews and thumbnails. A folder rule applies the same choice to every FITS file in that folder, so a whole directory previews apples-to-apples.")
-                .font(.callout).foregroundStyle(.secondary)
+                .font(.system(size: 18)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack {
-                Text("Default HDU:")
+                Text("Default HDU:").font(.system(size: 18))
                 Picker("", selection: $defaultHDU) {
                     Text("Auto (first image)").tag(-1)
                     Text("Auto (last image)").tag(-2)
                     ForEach(0..<10, id: \.self) { Text("HDU \($0)").tag($0) }
                 }
-                .labelsHidden().frame(width: 170)
+                .labelsHidden().frame(width: 220).font(.system(size: 18))
             }
 
             Text("To use HelioFITS, select a FITS file in Finder and press the spacebar — no need to open it here. Previews are interactive everywhere: scroll to blink between HDUs, hover for pixel values and coordinates, drag for region statistics.")
-                .font(.footnote).foregroundStyle(.secondary)
+                .font(.system(size: 16)).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack {
+            HStack(spacing: 12) {
                 Button(action: openWithViewer) {
                     Label("Open File with Viewer…", systemImage: "doc.text.magnifyingglass")
+                        .font(.system(size: 17))
                 }
                 Text("Opens a FITS file in the full viewer — the same as double-clicking it in Finder.")
-                    .font(.footnote).foregroundStyle(.secondary)
+                    .font(.system(size: 16)).foregroundStyle(.secondary)
             }
 
             Divider()
 
             HStack {
-                Text("Folder rules").font(.headline)
+                Text("Folder rules").font(.system(size: 21, weight: .semibold))
                 Spacer()
-                Button("Add Folder…", action: addFolder)
+                Button("Add Folder…", action: addFolder).font(.system(size: 17))
             }
 
             if dirRules.isEmpty {
                 Text("No folder rules. Add a folder to pin its HDU.")
-                    .font(.callout).foregroundStyle(.tertiary)
+                    .font(.system(size: 17)).foregroundStyle(.tertiary)
             } else {
                 ForEach(dirRules.keys.sorted(), id: \.self) { dir in
-                    HStack(spacing: 8) {
+                    HStack(spacing: 10) {
                         Text((dir as NSString).abbreviatingWithTildeInPath)
-                            .font(.system(.callout, design: .monospaced))
+                            .font(.system(size: 16, design: .monospaced))
                             .truncationMode(.middle).lineLimit(1)
                         Spacer()
                         Picker("", selection: Binding(
@@ -80,22 +81,24 @@ struct HelioFITSView: View {
                             Text("Auto (last)").tag(-2)
                             ForEach(0..<10, id: \.self) { Text("HDU \($0)").tag($0) }
                         }
-                        .labelsHidden().frame(width: 130)
+                        .labelsHidden().frame(width: 165).font(.system(size: 16))
                         Button("Refresh icons") { refreshIcons(in: dir) }
+                            .font(.system(size: 16))
                             .help("Touches the FITS files so Finder regenerates their thumbnails with the new HDU.")
                         Button(role: .destructive) {
                             dirRules.removeValue(forKey: dir); save()
-                        } label: { Image(systemName: "minus.circle") }
+                        } label: { Image(systemName: "minus.circle").font(.system(size: 20)) }
                         .buttonStyle(.borderless)
                     }
                 }
             }
 
             Spacer()
-            Text(status).font(.footnote).foregroundStyle(.secondary)
+            Text(status).font(.system(size: 16)).foregroundStyle(.secondary)
         }
-        .padding(20)
-        .frame(minWidth: 560, minHeight: 380, alignment: .topLeading)
+        .controlSize(.large)
+        .padding(28)
+        .frame(minWidth: 760, minHeight: 540, alignment: .topLeading)
         .onAppear(perform: load)
         .onChange(of: defaultHDU) { save() }
         .onReceive(NotificationCenter.default.publisher(
