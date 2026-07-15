@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 PROFILE="HelioFITS-notary"
 ARCH="build/HelioFITS.xcarchive"
 APP="build/HelioFITS.app"
-ZIP="build/HelioFITS.zip"
+# ZIP is derived from the built app's version, after the archive.
 
 rm -rf build && mkdir build
 
@@ -31,6 +31,12 @@ xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS \
   -archivePath "$ARCH" archive
 
 cp -R "$ARCH/Products/Applications/HelioFITS.app" "$APP"
+
+# Versioned artifact name, so two releases' zips can never be confused and the
+# GitHub Release upload can't grab a stale file.
+VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist")
+ZIP="build/HelioFITS-${VER}-b${BUILD}.zip"
 
 echo "==> Embedding FITS Spotlight importer"
 ./embed-importer.sh "$APP" --timestamp
@@ -55,3 +61,4 @@ rm -f "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
 ./lsclean.sh
 
 echo "==> Done. Ship: $APP  (or the re-zipped $ZIP)"
+echo "==> To publish:  gh release create v${VER}-build.${BUILD} $ZIP --title \"HelioFITS ${VER} (${BUILD})\" --generate-notes"

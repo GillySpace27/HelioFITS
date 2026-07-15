@@ -61,8 +61,9 @@ BACK TO PYTHON IN ONE CLICK
 Copy a sunpy snippet that loads exactly the HDU you are looking at. Export any
 HDU to PNG for slides and papers, or convert a whole folder at once.
 
-Free. No account, no network, no telemetry — HelioFITS has no networking code at
-all. Sandboxed, and it only ever reads the files you point it at.
+Free. No account, no network, no telemetry — HelioFITS has no network
+entitlement, so the macOS sandbox denies it all internet access. It only ever
+reads the files you point it at.
 ```
 
 ## Keywords (100 char max, comma-separated, no spaces)
@@ -111,16 +112,14 @@ Suggested set, in order:
 
 ---
 
-## Positioning note (internal)
+## Positioning
 
-Position *for* solar/heliophysics science — do not position against
-astrophotographers. QuickFits serves astrophotography (debayer camera frames,
-export TIFF); HelioFITS serves calibrated solar science data, where the colormap
-and header metadata carry physical meaning. Different jobs; both are good tools.
-We adopt the canonical `gov.nasa.gsfc.fits` type so the two coexist on one Mac.
+HelioFITS serves calibrated solar science data, where the colormap and header
+metadata carry physical meaning. It complements — not competes with —
+astrophotography tools like QuickFits (debayer camera frames, export TIFF):
+different jobs, both good tools. We adopt the canonical `gov.nasa.gsfc.fits`
+type so they coexist on one Mac.
 
 ## Price
 
-Free. The audience is a few thousand researchers worldwide; reach and reputation
-are worth more than revenue, and a price is friction in front of exactly the
-senior scientists we most want using it.
+Free.

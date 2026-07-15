@@ -1,0 +1,46 @@
+# CI: run the unit tests + an ad-hoc Release build on every push/PR.
+#
+# Runner must be arm64 (macos-14 or later): the vendored libcfitsio.a has no
+# x86_64 slice, so Intel runners cannot link. Tests are HOSTED in the GUI app;
+# GitHub's macOS runners have a window server, so the host app can launch.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run unit tests (ad-hoc signing)
+        run: |
+          xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS \
+            -destination 'platform=macOS,arch=arm64' \
+            -resultBundlePath TestResults.xcresult \
+            DEVELOPMENT_TEAM=UB45PPC2JS CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES
+      - name: Upload result bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults.xcresult
+          path: TestResults.xcresult
+
+  release-build:
+    # Mirrors what an archive compiles (Release config, arm64) so a
+    # release-only build break can't hide until ship day.
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Release build (ad-hoc signing)
+        run: |
+          xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS \
+            -configuration Release -destination 'platform=macOS,arch=arm64' \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM="" \
+            build

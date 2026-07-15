@@ -1,8 +1,6 @@
 //
-//  HelioFITSTests.swift
-//  HelioFITSTests
-//
-//  Created by Gilbert, Gilly on 11/12/24.
+//  HelioFITSTests.swift — cross-cutting smoke checks. The real suites live in
+//  WCSTests, FITSHeaderTests, ReadoutTests and StretchTests.
 //
 
 import Testing
@@ -10,8 +8,14 @@ import Testing
 
 struct HelioFITSTests {
 
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    @Test("Every declared instrument colormap decodes to a 256-entry RGB LUT")
+    func colormapsDecode() {
+        // The LUTs are base64 blobs generated from sunpy; a truncated or
+        // corrupted entry would silently fall back to grayscale in the UI.
+        for key in ["sdoaia171", "sdoaia304", "hmimag", "soholasco2", "punch", "kcor"] {
+            let lut = FITSColormaps.lut(key)
+            #expect(lut != nil, "\(key) missing")
+            #expect(lut?.count == 256 * 3, "\(key) is not 256×RGB")
+        }
     }
-
 }

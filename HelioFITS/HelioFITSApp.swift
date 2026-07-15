@@ -29,6 +29,28 @@ struct HelioFITSApp: App {
                     }
                 }
         }
+        .commands {
+            // With no telemetry, GitHub is the only feedback channel — so the
+            // app has to point at it. Both items are plain browser handoffs
+            // (sandbox-safe; needs no network entitlement). "Check for
+            // Updates…" is the honest answer to the direct-download build
+            // never self-updating: the Releases page IS the update channel.
+            CommandGroup(replacing: .help) {
+                Button("HelioFITS Help (README)") {
+                    NSWorkspace.shared.open(
+                        URL(string: "https://github.com/GillySpace27/HelioFITS#readme")!)
+                }
+                Divider()
+                Button("Report a Bug…") {
+                    NSWorkspace.shared.open(
+                        URL(string: "https://github.com/GillySpace27/HelioFITS/issues/new")!)
+                }
+                Button("Check for Updates…") {
+                    NSWorkspace.shared.open(
+                        URL(string: "https://github.com/GillySpace27/HelioFITS/releases/latest")!)
+                }
+            }
+        }
     }
 }
 
