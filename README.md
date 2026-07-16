@@ -132,6 +132,8 @@ The repo ships no data. Any solar `.fits` file works — free sources include
 
 ## Settings
 
+<img src="docs/settings.png" width="640" alt="The HelioFITS Settings panel: a Default HDU picker, an Open File with Viewer button, and per-folder HDU pinning rules"/>
+
 Open **HelioFITS ▸ Settings…** (⌘,). A FITS file can stack several images as
 separate **Header Data Units (HDUs)** — also called *extensions*, each labelled by
 its `EXTNAME` (say, a raw frame, a processed layer, and an uncertainty map).
