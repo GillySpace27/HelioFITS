@@ -71,8 +71,11 @@ pane):
   at full native resolution, with a live histogram.
 - **Scroll** to blink between HDUs (a FITS file's stacked image extensions),
   pixel‑registered, to compare processing levels or filters.
-- **Toggle** the solar limb, a running difference between HDUs, or a live stretch
-  (percentile clip, gamma, log) — none of which touches the file.
+- **Toggle** the solar limb, a running difference between HDUs, a live stretch
+  (percentile clip, gamma, log), or the **RHEF** filter — a radial histogram
+  equalization ([Gilly & Cranmer 2025](https://doi.org/10.1007/s11207-025-02578-x))
+  that flattens the steep coronal falloff to reveal faint off‑limb structure at
+  every height. None of it touches the file.
 - **⌥‑scroll** to zoom about the cursor.
 
 The world‑coordinate math does the real spherical deprojection (TAN, ARC, SIN,
@@ -105,12 +108,12 @@ HDU you're looking at — a one‑click bridge back to Python.
 > **Runs on any Mac** — Apple Silicon or Intel — with macOS 14.5 or later. It's a
 > universal binary.
 
-**Direct download (available now).** Grab `HelioFITS.zip` from the
-[latest release](https://github.com/GillySpace27/HelioFITS/releases/latest), unzip,
-and drag `HelioFITS.app` into `/Applications`. It's notarized by Apple, so it opens
-with no security warnings. Launch it once so macOS registers the Finder extensions,
-then press the spacebar on any `.fits` file. (If a thumbnail still looks generic,
-relaunch Finder or log out and back in.)
+**Direct download (available now).** Grab `HelioFITS.zip` from
+**[gilly.space/heliofits](https://gilly.space/heliofits)** (the always-latest
+release), unzip, and drag `HelioFITS.app` into `/Applications`. It's notarized by
+Apple, so it opens with no security warnings. Launch it once so macOS registers the
+Finder extensions, then press the spacebar on any `.fits` file. (If a thumbnail still
+looks generic, relaunch Finder or log out and back in.)
 
 **Mac App Store.** A build is in review; the link will appear here once it's live.
 
