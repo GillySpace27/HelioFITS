@@ -33,8 +33,7 @@ without opening anything.
 It's built by a solar physicist, for the archive already sitting on your disk. It
 recognizes SDO/AIA, HMI magnetograms, LASCO, SUVI, EIT, STEREO, PUNCH, K‑Cor,
 TRACE, and XRT straight from the header — nothing to configure. There is no
-account, no telemetry, and no network access of any kind: the app is sandboxed
-and only ever reads the files you point it at.
+account, no telemetry, and no network access of any kind.
 
 ## Three ways it makes Finder understand FITS
 
