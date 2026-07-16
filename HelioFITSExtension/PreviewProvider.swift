@@ -514,30 +514,49 @@ enum FITSRenderer {
                              nbins: Int, upsilon: Double) -> [Float] {
         let n = values.count
         var out = [Float](repeating: .nan, count: n)
-        guard n > 0, nbins > 0, maxRadius > 0 else { return out }
+        guard n > 0, nbins > 0, maxRadius > 0, n < (1 << 23) else { return out }
         let binW = maxRadius / Double(nbins)
 
-        var bins = [[Int]](repeating: [], count: nbins)
+        // Pack (bin, sortable-value, pixel-index) into one UInt64 and sort with
+        // the built-in INTEGER sort, then rank each contiguous bin run. The
+        // obvious array-of-arrays + per-bin closure sort was ~6 s on a 2048²
+        // frame — the closure comparator dominated; this is a plain [UInt64]
+        // sort. Layout: bin[63:53] · value[52:23] · index[22:0].
+        //   value → a monotonic UInt32 (the standard float radix trick: flip the
+        //   sign bit for positives, invert everything for negatives), kept to its
+        //   top 30 bits so it fits — a rounding that only reorders values already
+        //   within 2 mantissa bits, invisible to a rank.
+        func sortableBits(_ v: Float) -> UInt32 {
+            let b = v.bitPattern
+            return (b >> 31) == 1 ? ~b : (b | 0x8000_0000)
+        }
+        var keys = [UInt64](); keys.reserveCapacity(n)
         for i in 0..<n where values[i].isFinite {
             var b = Int(radii[i] / binW)
             if b >= nbins { b = nbins - 1 }
-            if b >= 0 { bins[b].append(i) }
+            if b < 0 { continue }
+            let vb = UInt64(sortableBits(values[i]) >> 2)          // 30-bit value
+            keys.append((UInt64(b) << 53) | (vb << 23) | UInt64(i))
         }
+        keys.sort()
 
-        for bin in bins where !bin.isEmpty {
-            let sorted = bin.sorted { values[$0] < values[$1] }
-            let m = Double(sorted.count)
-            var mean = 0.0
-            for (rank, idx) in sorted.enumerated() {
-                let pr = Double(rank + 1) / m
-                out[idx] = Float(pr); mean += pr
+        let idxMask: UInt64 = (1 << 23) - 1
+        var start = 0
+        while start < keys.count {
+            let bin = keys[start] >> 53
+            var end = start + 1
+            while end < keys.count, keys[end] >> 53 == bin { end += 1 }
+            let m = Double(end - start)
+            // ordinal percentile ranks are 1/m … m/m, so their mean is exactly
+            // (m+1)/(2m) — no need to sum them. upsilon splits about that mean.
+            let mean = (m + 1) / (2 * m)
+            for r in start..<end {
+                let idx = Int(keys[r] & idxMask)
+                let pr = Double(r - start + 1) / m
+                out[idx] = Float(pr < mean ? pow(2 * pr, upsilon) / 2
+                                           : 1 - pow(2 - 2 * pr, upsilon) / 2)
             }
-            mean /= m
-            for idx in bin {
-                let v = Double(out[idx])
-                out[idx] = Float(v < mean ? pow(2 * v, upsilon) / 2
-                                          : 1 - pow(2 - 2 * v, upsilon) / 2)
-            }
+            start = end
         }
         return out
     }

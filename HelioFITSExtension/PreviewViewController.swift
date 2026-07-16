@@ -123,6 +123,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             }
             DispatchQueue.main.async {
                 self.model = m
+                // Off-main renders (full-res buffer, RHEF filter) call this when
+                // they land — repaint so the filtered image actually swaps in.
+                m.onFullRes = { [weak self] in self?.refresh() }
                 self.canvas.pageCount = m.count
                 self.refresh()
                 self.canvas.flashHint(6)

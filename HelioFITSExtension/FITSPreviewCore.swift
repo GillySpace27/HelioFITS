@@ -87,7 +87,10 @@ final class FITSPreviewModel {
     /// rather than every HDU of the file at once.
     private var buffers: [PageKey: Buffer] = [:]
     private var loading: Set<PageKey> = []
-    /// Fired on the main thread when a buffer lands (redraw hook).
+    /// Filtered images (RHEF, …) rendered off-main, keyed "cur:filter".
+    private var filterCache: [String: NSImage] = [:]
+    private var filterLoading: Set<String> = []
+    /// Fired on the main thread when a buffer or a filtered image lands (redraw).
     var onFullRes: (() -> Void)?
 
     var count: Int { pages.count }
@@ -224,10 +227,16 @@ final class FITSPreviewModel {
 
     /// The image to draw for the current HDU + mode. A filter, when set, wins
     /// over the plain/stretch/diff mode — it's a distinct way of looking at the
-    /// same HDU.
+    /// same HDU. Filters are EXPENSIVE (RHEF is seconds on a big frame), so they
+    /// render off the main thread into a cache: until the filtered image is
+    /// ready this returns the plain/mode image, then onFullRes fires and the
+    /// filtered image swaps in — the UI never freezes.
     func image() -> NSImage? {
         guard let p = page else { return nil }
-        if filter != .none, let img = filtered() { return img }
+        if filter != .none {
+            if let img = filterCache[filterKey] { return img }
+            requestFilter()
+        }
         switch mode {
         case .plain:   return p.image
         case .stretch: return stretched() ?? p.image
@@ -235,11 +244,26 @@ final class FITSPreviewModel {
         }
     }
 
-    private func filtered() -> NSImage? {
-        switch filter {
-        case .none: return nil
-        case .rhef: return rhef()
-        case .mgn, .wow: return nil   // TODO
+    private var filterKey: String { "\(cur):\(filter.rawValue)" }
+
+    /// Kick off the current filter's render on a background queue, snapshotting
+    /// everything it needs on the main thread first so the worker touches no
+    /// shared mutable state. The result is cached and a redraw requested.
+    private func requestFilter() {
+        let key = filterKey
+        guard filter == .rhef,                       // only RHEF for now
+              filterCache[key] == nil, !filterLoading.contains(key),
+              let p = page, let f = buffer(cur) else { return }
+        filterLoading.insert(key)
+        let res = p.res, wcs = p.wcs, lut = p.lut
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let img = FITSPreviewModel.rhefImage(buffer: f, res: res, wcs: wcs, lut: lut)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.filterLoading.remove(key)
+                if let img { self.filterCache[key] = img }
+                if self.filterKey == key { self.onFullRes?() }   // still wanted → redraw
+            }
         }
     }
 
@@ -439,33 +463,35 @@ final class FITSPreviewModel {
     /// the average-rank default for continuous data). Disk centre and radius come
     /// from the same WCS the readout uses; with no limb it falls back to the
     /// image centre so the filter still applies.
-    private func rhef(upsilon: Double = 0.35) -> NSImage? {
-        guard let p = page, let f = buffer(cur) else { return nil }
-        let r = p.res
-        let ow = r.width, oh = r.height, k = r.factor
-        let n = ow * oh
+    /// Pure RHEF render from a snapshot — safe to call off the main thread.
+    /// Caps the working grid at 1024/side (RHEF is a display filter; finer than
+    /// any window and it keeps a big frame from costing seconds).
+    static func rhefImage(buffer f: Buffer, res: FITSRenderer.Result,
+                          wcs: FITSRenderer.SolarWCS?, lut: [UInt8]?,
+                          upsilon: Double = 0.35) -> NSImage? {
+        let cap = 1024
+        let scale = max(1, (max(f.w, f.h) + cap - 1) / cap)   // full-res px per grid cell
+        let gw = f.w / scale, gh = f.h / scale
+        guard gw > 0, gh > 0 else { return nil }
+        let n = gw * gh
 
-        // Disk centre in the full-res display buffer (row 0 = top). The WCS gives
-        // the centre as a 1-based, y-up FITS pixel; buffer pixel (bx,by) is FITS
-        // (bx+1, f.h-by), so the centre lands at (cx-1, f.h-cy).
+        // Disk centre in the buffer's display coords (row 0 = top): the WCS gives
+        // a 1-based y-up FITS pixel, and buffer pixel (bx,by) is FITS (bx+1,f.h-by),
+        // so the centre lands at (cx-1, f.h-cy). No limb → the image centre.
         let cx: Double, cy: Double
-        if let w = p.wcs, w.rpx > 0 {
-            cx = w.cx - 1; cy = Double(f.h) - w.cy
-        } else {
-            cx = Double(f.w) / 2; cy = Double(f.h) / 2
-        }
+        if let w = wcs, w.rpx > 0 { cx = w.cx - 1; cy = Double(f.h) - w.cy }
+        else { cx = Double(f.w) / 2; cy = Double(f.h) / 2 }
 
-        // Sample values + pixel radii at the decimated grid, tracking max radius.
         var vals = [Float](repeating: 0, count: n)
         var rad = [Double](repeating: 0, count: n)
         var maxR = 1e-9
-        for oy in 0..<oh {
-            let by = Self.sourceRow(oy, oh: oh, k: k, h: f.h)
+        for gy in 0..<gh {
+            let by = gy * scale
             let srow = by * f.w
             let dy = Double(by) - cy
-            for ox in 0..<ow {
-                let bx = min(f.w - 1, ox * k)
-                let i = oy * ow + ox
+            for gx in 0..<gw {
+                let bx = gx * scale
+                let i = gy * gw + gx
                 vals[i] = f.pix[srow + bx]
                 let dx = Double(bx) - cx
                 let d = (dx * dx + dy * dy).squareRoot()
@@ -474,25 +500,22 @@ final class FITSPreviewModel {
             }
         }
 
-        // The equalization itself (bin → rank → upsilon), extracted so it can be
-        // pinned against sunkit-image numerically.
-        let nbins = max(1, oh / 2)
+        let nbins = max(1, gh / 2)
         let out = FITSRenderer.rhefEqualize(values: vals, radii: rad, maxRadius: maxR,
                                             nbins: nbins, upsilon: upsilon)
 
-        // Map the equalized [0,1] through the instrument colormap; fill = black.
         var rgba = [UInt8](repeating: 255, count: n * 4)
         for i in 0..<n {
             let i4 = i * 4
             guard out[i].isFinite else { rgba[i4] = 0; rgba[i4 + 1] = 0; rgba[i4 + 2] = 0; continue }
             let v = max(0, min(255, Int(out[i] * 255)))
-            if let lut = p.lut {
+            if let lut {
                 rgba[i4] = lut[v * 3]; rgba[i4 + 1] = lut[v * 3 + 1]; rgba[i4 + 2] = lut[v * 3 + 2]
             } else {
                 rgba[i4] = UInt8(v); rgba[i4 + 1] = UInt8(v); rgba[i4 + 2] = UInt8(v)
             }
         }
-        return Self.image(rgba: &rgba, w: ow, h: oh)
+        return image(rgba: &rgba, w: gw, h: gh)
     }
 
     private static func image(rgba: inout [UInt8], w: Int, h: Int) -> NSImage? {
@@ -511,10 +534,38 @@ final class FITSPreviewModel {
     /// and anyone who "fixes" that with m[0] is quietly reading a different HDU
     /// than the one on screen.
     func pythonSnippet(path: String) -> String {
-        let hdu = page.map { ", hdus=\($0.hdu)" } ?? ""
+        guard let p = page else {
+            return "import sunpy.map\nm = sunpy.map.Map(\"\(path)\")\nm.peek()"
+        }
+        // A PUNCH-style data cube (NAXIS=3, e.g. Polar_B/pB/pBp) is 3-D; sunpy.map
+        // wants 2-D data, so Map(path, hdus=…) raises on it. Slice out the shown
+        // plane and build the Map from that 2-D array + the HDU header instead.
+        // FITS NAXIS3 is the slowest axis, so astropy reads it as data[plane].
+        if FITSRenderer.planeCount(path: path, hdu: p.hdu) > 1 {
+            return """
+            import sunpy.map
+            import matplotlib.pyplot as plt
+            from astropy.io import fits
+            from astropy.visualization import ImageNormalize, PowerStretch, AsymmetricPercentileInterval
+
+            with fits.open("\(path)") as hdul:
+                hdu = hdul[\(p.hdu)]                 # 3-D cube
+                data = hdu.data[\(p.plane)]            # plane shown in HelioFITS
+                header = hdu.header
+            m = sunpy.map.Map((data, header))
+
+            # Coronagraph data spans a huge dynamic range; a plain linear scale
+            # floors the faint structure to background. Match HelioFITS with a
+            # percentile clip + gamma (power) stretch so the corona is visible.
+            norm = ImageNormalize(m.data, interval=AsymmetricPercentileInterval(0.5, 99.5),
+                                  stretch=PowerStretch(0.5))
+            m.plot(norm=norm)
+            plt.show()
+            """
+        }
         return """
         import sunpy.map
-        m = sunpy.map.Map("\(path)"\(hdu))
+        m = sunpy.map.Map("\(path)", hdus=\(p.hdu))
         m.peek()
         """
     }
@@ -705,10 +756,33 @@ final class FITSImageCanvas: NSView {
 
     // MARK: geometry
 
-    /// Chrome around the drawn image: just the caption strip. No side margins —
-    /// they would show as dead bars once the host sizes itself to our content.
+    /// Caption text style — centred and word-wrapping so a long HDU/EXTNAME name
+    /// stays fully readable even in a narrow Get Info / column-pane preview.
+    private var captionAttrs: [NSAttributedString.Key: Any] {
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        para.lineBreakMode = .byWordWrapping
+        return [.font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1),
+                .paragraphStyle: para]
+    }
+
+    /// Height the wrapped caption needs at the current width (0 when hidden).
+    private func captionHeight() -> CGFloat {
+        guard showsCaption, !caption.isEmpty, bounds.width > 12 else { return 0 }
+        let r = NSAttributedString(string: caption, attributes: captionAttrs)
+            .boundingRect(with: NSSize(width: bounds.width - 12, height: 1000),
+                          options: [.usesLineFragmentOrigin, .usesFontLeading])
+        // boundingRect under-measures the last fragment vs the leading draw(in:)
+        // actually uses, clipping the final line — pad by a line's worth.
+        return ceil(r.height) + 4
+    }
+
+    /// Chrome around the drawn image: just the caption strip, sized to the
+    /// (possibly wrapped) caption. No side margins — they would show as dead bars
+    /// once the host sizes itself to our content.
     var chromeInsets: NSEdgeInsets {
-        NSEdgeInsets(top: showsCaption ? 22 : 0, left: 0, bottom: 0, right: 0)
+        NSEdgeInsets(top: showsCaption ? captionHeight() + 8 : 0, left: 0, bottom: 0, right: 0)
     }
 
     /// Area available to the image.
@@ -903,11 +977,8 @@ final class FITSImageCanvas: NSView {
         bounds.fill()
 
         if showsCaption, !caption.isEmpty {
-            let s = NSAttributedString(string: caption, attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)])
-            let w = min(s.size().width, bounds.width - 12)
-            s.draw(in: NSRect(x: (bounds.width - w) / 2, y: 5, width: w, height: 15))
+            NSAttributedString(string: caption, attributes: captionAttrs)
+                .draw(in: NSRect(x: 6, y: 4, width: bounds.width - 12, height: captionHeight()))
         }
 
         guard let img = image, let box = imageRect() else { return }
@@ -1033,8 +1104,9 @@ final class FITSToolbar {
         filterMenu.controlSize = .regular
         filterMenu.toolTip = "Enhancement filter"
         for f in FITSPreviewModel.Filter.allCases {
-            filterMenu.addItem(withTitle: f.label)
-            if f == .mgn || f == .wow { filterMenu.lastItem?.isEnabled = false }  // coming soon
+            let soon = (f == .mgn || f == .wow)
+            filterMenu.addItem(withTitle: soon ? "\(f.label) (soon)" : f.label)
+            if soon { filterMenu.lastItem?.isEnabled = false }   // greyed until implemented
         }
         filterMenu.target = target
         filterMenu.action = filterSel

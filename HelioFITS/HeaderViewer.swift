@@ -204,6 +204,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             DispatchQueue.main.async {
                 guard let self, let win, let c = self.ctx[ObjectIdentifier(win)], c.gen == gen else { return }
                 c.model = m
+                // Off-main renders (full-res buffer, RHEF filter) call this when
+                // they land — repaint so the filtered image actually swaps in.
+                m.onFullRes = { [weak self, weak win] in
+                    guard let self, let win, let c = self.ctx[ObjectIdentifier(win)] else { return }
+                    self.refresh(c)
+                }
                 self.populatePopup(c, headerText: text)
                 c.save.isEnabled = !m.isEmpty
                 c.copy.isEnabled = !m.isEmpty
@@ -480,7 +486,13 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
               let rep = NSBitmapImageRep(data: tiff),
               let png = rep.representation(using: .png, properties: [:]) else { return nil }
         let base = c.url.deletingPathExtension().lastPathComponent
-        let suffix = c.model.count > 1 ? "_hdu\(c.model.page?.hdu ?? 0)" : ""
+        var suffix = ""
+        if let p = c.model.page, c.model.count > 1 {
+            // A cube's planes share an HDU number, so "_hdu1" alone would name all
+            // of Polar_B/pB/pBp the same file — tag the plane too so they differ.
+            let isCube = c.model.pages.filter { $0.hdu == p.hdu }.count > 1
+            suffix = "_hdu\(p.hdu)" + (isCube ? "_p\(p.plane)" : "")
+        }
         return (png, base + suffix + ".png")
     }
 
