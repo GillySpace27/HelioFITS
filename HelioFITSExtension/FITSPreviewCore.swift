@@ -533,9 +533,17 @@ final class FITSPreviewModel {
     /// hands back a LIST of every image HDU — .peek() then raises AttributeError,
     /// and anyone who "fixes" that with m[0] is quietly reading a different HDU
     /// than the one on screen.
+    /// Python string literal for a path — escape `\` and `"` so a filename
+    /// containing either can't produce a broken snippet (panel: unescaped).
+    private static func pyStr(_ s: String) -> String {
+        "\"" + s.replacingOccurrences(of: "\\", with: "\\\\")
+                 .replacingOccurrences(of: "\"", with: "\\\"") + "\""
+    }
+
     func pythonSnippet(path: String) -> String {
+        let q = Self.pyStr(path)   // safely-quoted absolute path
         guard let p = page else {
-            return "import sunpy.map\nm = sunpy.map.Map(\"\(path)\")\nm.peek()"
+            return "import sunpy.map\nm = sunpy.map.Map(\(q))\nm.peek()  # opens a quick-look plot"
         }
         // A PUNCH-style data cube (NAXIS=3, e.g. Polar_B/pB/pBp) is 3-D; sunpy.map
         // wants 2-D data, so Map(path, hdus=…) raises on it. Slice out the shown
@@ -548,7 +556,8 @@ final class FITSPreviewModel {
             from astropy.io import fits
             from astropy.visualization import ImageNormalize, PowerStretch, AsymmetricPercentileInterval
 
-            with fits.open("\(path)") as hdul:
+            path = \(q)   # edit if you move or share this file
+            with fits.open(path) as hdul:
                 hdu = hdul[\(p.hdu)]                 # 3-D cube
                 data = hdu.data[\(p.plane)]            # plane shown in HelioFITS
                 header = hdu.header
@@ -560,13 +569,13 @@ final class FITSPreviewModel {
             norm = ImageNormalize(m.data, interval=AsymmetricPercentileInterval(0.5, 99.5),
                                   stretch=PowerStretch(0.5))
             m.plot(norm=norm)
-            plt.show()
+            plt.show()   # opens a plot window
             """
         }
         return """
         import sunpy.map
-        m = sunpy.map.Map("\(path)", hdus=\(p.hdu))
-        m.peek()
+        m = sunpy.map.Map(\(q), hdus=\(p.hdu))   # edit path if you move or share this file
+        m.peek()  # opens a quick-look plot
         """
     }
 }
@@ -593,8 +602,8 @@ final class FITSStatsCard: NSView {
         bg.stroke()
 
         NSAttributedString(string: text, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .regular),
-            .foregroundColor: NSColor(calibratedRed: 0.8, green: 0.93, blue: 0.87, alpha: 1),
+            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+            .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.97, blue: 0.93, alpha: 1),
         ]).draw(in: NSRect(x: 9, y: 7, width: bounds.width - 18, height: bounds.height - 60))
 
         guard !histogram.isEmpty else { return }
@@ -625,6 +634,10 @@ final class FITSImageCanvas: NSView {
     var pageCount = 1                              // drives the gesture hint
     var limb: (cx: Double, cy: Double, r: Double)?
     var natSize: CGSize = .zero
+    /// Column/compact pane hides the toolbar (Finder won't deliver clicks there).
+    /// When set, the gesture hint stays up and names the way out — otherwise the
+    /// pane reads as a dead, non-interactive image (panel feedback).
+    var compactMode = false { didSet { needsDisplay = true } }
     /// Selection in normalized image coords (0…1, top-left origin) so it stays
     /// pinned to the data when the view resizes or zooms.
     var selection: (u0: Double, v0: Double, u1: Double, v1: Double)?
@@ -646,6 +659,9 @@ final class FITSImageCanvas: NSView {
     override func accessibilityRole() -> NSAccessibility.Role? { .image }
     override func accessibilityLabel() -> String? { caption.isEmpty ? "FITS image" : caption }
     override func accessibilityValue() -> Any? { readout }
+    override func accessibilityHelp() -> String? {
+        "Up and Down arrows blink between layers. Command plus, minus, and 0 zoom. Command-C copies the pixel readout."
+    }
 
     private(set) var zoom: CGFloat = 1              // 1 = fit
     private var pan = CGPoint.zero                  // in view points, at current zoom
@@ -694,14 +710,15 @@ final class FITSImageCanvas: NSView {
     /// self-documenting rather than something you have to be told once.
     private func hintText() -> String? {
         var parts: [String] = []
-        if pageCount > 1 { parts.append("scroll ⇅ blink HDUs") }
+        if compactMode { parts.append("press Space for the full interactive preview") }
+        if pageCount > 1 { parts.append("scroll (or ↑↓) to blink layers") }
         if isZoomed {
-            parts.append("drag ✋ pan")
-            parts.append("⌘-drag ✛ measure")
-            parts.append("double-click to fit")
+            parts.append("drag to pan")
+            parts.append("⌘ Command-drag to measure")
+            parts.append("double-click or ⌘0 to fit")
         } else {
-            parts.append("drag ✛ measure")
-            parts.append("⌥-scroll to zoom")
+            parts.append("drag to measure")
+            parts.append("⌥ Option-scroll (or ⌘ +/−) to zoom")
         }
         return parts.isEmpty ? nil : parts.joined(separator: "   ·   ")
     }
@@ -833,6 +850,47 @@ final class FITSImageCanvas: NSView {
         zoom = 1; pan = .zero
         onZoomChanged?()
         needsDisplay = true
+    }
+
+    // MARK: keyboard
+    //
+    // The preview was mouse-only — no way to blink layers, zoom, or read the
+    // pixel value without a pointing device (panel: the #1 gap for both the
+    // keyboard-first and the VoiceOver tester). Arrows blink layers, ⌘ +/−/0
+    // zoom, ⌘C copies the current readout, "?" re-shows the gesture hint. The
+    // viewer makes the canvas first responder; the Quick Look host leaves key
+    // handling to Finder, so this is fully live in the viewer window.
+    override var acceptsFirstResponder: Bool { true }
+
+    private func zoomStep(_ factor: CGFloat) {
+        setZoom(zoom * factor, about: NSPoint(x: bounds.midX, y: bounds.midY))
+    }
+
+    override func keyDown(with e: NSEvent) {
+        let chars = e.charactersIgnoringModifiers ?? ""
+        if e.modifierFlags.contains(.command) {
+            switch chars {
+            case "+", "=": zoomStep(1.25); return
+            case "-", "_": zoomStep(1 / 1.25); return
+            case "0":      resetZoom(); return
+            case "c", "C":
+                if let t = readout {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(t, forType: .string)
+                }
+                return
+            default: break
+            }
+        }
+        if pageCount > 1, let scalar = chars.unicodeScalars.first {
+            switch Int(scalar.value) {
+            case NSUpArrowFunctionKey, NSRightArrowFunctionKey:   onScrollStep?(1);  return
+            case NSDownArrowFunctionKey, NSLeftArrowFunctionKey:  onScrollStep?(-1); return
+            default: break
+            }
+        }
+        if chars == "?" { flashHint(); return }
+        super.keyDown(with: e)
     }
 
     /// Zoom about a fixed view point so the pixel under the cursor stays put.
@@ -1024,15 +1082,17 @@ final class FITSImageCanvas: NSView {
 
         if isZoomed {
             chip(String(format: "%.1f×", zoom), at: NSPoint(x: bounds.width - 8, y: 30),
-                 font: .monospacedSystemFont(ofSize: 10, weight: .regular), rightAligned: true)
+                 font: .monospacedSystemFont(ofSize: 12, weight: .regular), rightAligned: true)
         }
         if let t = readout {
+            // The readout IS the product for a scientist — it was the smallest type
+            // on screen. Bumped to 13pt (panel feedback: unreadable at 11).
             chip(t, at: NSPoint(x: 8, y: bounds.height - 8),
-                 font: .monospacedSystemFont(ofSize: 11, weight: .regular))
+                 font: .monospacedSystemFont(ofSize: 13, weight: .regular))
         }
         // The hint describes the gestures available RIGHT NOW. It also reappears
         // while ⌘ is held — that is the moment you are asking "what does this do?"
-        if let h = hintText(), Date() < hintDeadline || cmdDown, readout == nil || cmdDown {
+        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown, readout == nil || cmdDown {
             let s = NSAttributedString(string: h, attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
@@ -1088,12 +1148,18 @@ final class FITSToolbar {
             b.target = target
             b.action = sel
             b.translatesAutoresizingMaskIntoConstraints = false
-            b.widthAnchor.constraint(equalToConstant: 30).isActive = true
+            b.widthAnchor.constraint(equalToConstant: 58).isActive = true
             b.heightAnchor.constraint(equalToConstant: 26).isActive = true
         }
-        mk(limb, "◯", "Show the solar limb — the photosphere's edge, from RSUN_OBS", limbSel)
-        mk(diff, "Δ", "Running difference: this HDU minus the previous one — how CMEs, waves and dimmings are spotted", diffSel)
-        mk(tune, "◐", "Adjust the brightness stretch (percentile clip, gamma, log)", tuneSel)
+        // Text labels, not glyphs: Quick Look does not fire tooltips, so a ◯/Δ/◐
+        // was undecodable there (and read as "black circle" to VoiceOver). The
+        // word is the label; the tooltip carries the fuller explanation.
+        mk(limb, "Limb", "Show the solar limb — the photosphere's edge, from RSUN_OBS", limbSel)
+        mk(diff, "Diff", "Running difference: this HDU minus the previous one — how CMEs, waves and dimmings are spotted", diffSel)
+        mk(tune, "Stretch", "Adjust the brightness stretch (percentile clip, gamma, log)", tuneSel)
+        limb.setAccessibilityLabel("Show solar limb")
+        diff.setAccessibilityLabel("Running difference with previous layer")
+        tune.setAccessibilityLabel("Adjust brightness stretch")
 
         // Enhancement filter picker. RHEF (Radial Histogram Equalizing Filter,
         // Gilly & Cranmer 2025) removes the corona's radial brightness gradient
@@ -1103,10 +1169,12 @@ final class FITSToolbar {
         filterMenu.bezelStyle = .rounded
         filterMenu.controlSize = .regular
         filterMenu.toolTip = "Enhancement filter"
-        for f in FITSPreviewModel.Filter.allCases {
-            let soon = (f == .mgn || f == .wow)
-            filterMenu.addItem(withTitle: soon ? "\(f.label) (soon)" : f.label)
-            if soon { filterMenu.lastItem?.isEnabled = false }   // greyed until implemented
+        filterMenu.setAccessibilityLabel("Enhancement filter")
+        // Only ship implemented filters — greyed "(soon)" items read as unfinished
+        // (panel feedback). Descriptive titles so the bare acronym isn't the whole
+        // story where tooltips don't fire. Menu index still maps to Filter.rawValue.
+        for f in FITSPreviewModel.Filter.allCases where f == .none || f == .rhef {
+            filterMenu.addItem(withTitle: f == .rhef ? "RHEF — reveal faint corona" : "No filter")
         }
         filterMenu.target = target
         filterMenu.action = filterSel
@@ -1186,6 +1254,7 @@ final class FITSToolbar {
     /// tint, and these sit over a bright image.
     private func paint(_ b: NSButton, on: Bool, enabled: Bool) {
         b.isEnabled = enabled
+        b.setAccessibilityValue(on ? "on" : "off")   // state is otherwise only a fill colour
         let bg: NSColor = on ? NSColor(calibratedRed: 0.86, green: 0.63, blue: 0.20, alpha: 0.97)
                              : NSColor(calibratedWhite: 0.11, alpha: 0.92)
         let fg: NSColor = on ? .black : (enabled ? .white : NSColor(calibratedWhite: 1, alpha: 0.35))

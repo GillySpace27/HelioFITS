@@ -99,6 +99,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         let isCompact = view.bounds.width < 380
         guard isCompact != compact else { return }
         compact = isCompact
+        canvas.compactMode = isCompact          // keeps a "press Space" hint up in the column pane
         toolStack.isHidden = isCompact
         if isCompact { tools.panel.isHidden = true; stats.isHidden = true }
         refresh()

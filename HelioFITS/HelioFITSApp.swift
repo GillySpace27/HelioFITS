@@ -103,7 +103,7 @@ final class ControlPanelController {
         w.isRestorable = false
         if let old = window, old !== w { old.close() }
         window = w
-        w.title = "Settings"                     // it's settings, not the viewer
+        w.title = "HelioFITS Extension"
         w.orderOut(nil)                          // hidden until we decide (no flash)
         guard !documentMode else { return }      // came up for a document → stay hidden
         // Plain launch: reveal after long enough to catch a COLD document event
@@ -129,7 +129,7 @@ final class ControlPanelController {
 
     func reveal() {
         documentMode = false
-        window?.title = "Settings"
+        window?.title = "HelioFITS Extension"
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

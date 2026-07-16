@@ -60,26 +60,28 @@ the way a folder of photos is.
 </table>
 
 Select a `.fits` file and press the **spacebar** — the standard macOS Quick Look —
-and HelioFITS draws the image live. This is not a static picture; the preview is
-interactive everywhere it appears (the spacebar panel, gallery view, and the column
-pane):
+and HelioFITS draws the image live. This is not a static picture; it's fully
+interactive in the spacebar panel and gallery view. (Finder's narrow column pane
+gives you scroll‑to‑blink; press space there for the full controls.)
 
-- **Hover** any pixel to read its value together with its helioprojective
-  coordinate (Tx, Ty) and distance from disk center in solar radii.
+- **Hover** any pixel to read its value together with its *helioprojective*
+  coordinate — **Tx, Ty**, the arcsecond offset east/west and north/south from the
+  center of the Sun's disk — and its distance from disk center in solar radii (**R☉**).
 - **Drag a box** for region statistics — mean, median, σ, sum, min, max — computed
   at full native resolution, with a live histogram.
-- **Scroll** to blink between HDUs (a FITS file's stacked image extensions),
-  pixel‑registered, to compare processing levels or filters.
+- **Scroll** (or press **↑/↓**) to blink between HDUs (a FITS file's stacked image
+  extensions), pixel‑registered, to compare processing levels or filters.
 - **Toggle** the solar limb, a running difference between HDUs, a live stretch
   (percentile clip, gamma, log), or the **RHEF** filter — a radial histogram
   equalization ([Gilly & Cranmer 2025](https://doi.org/10.1007/s11207-025-02578-x))
   that flattens the steep coronal falloff to reveal faint off‑limb structure at
   every height. None of it touches the file.
-- **⌥‑scroll** to zoom about the cursor.
+- **⌥‑scroll** (or **⌘ +/−/0**) to zoom.
 
-The world‑coordinate math does the real spherical deprojection (TAN, ARC, SIN,
-CAR), honors CUNIT, the PC and CD matrices, and CROTA2, and is pinned against
-astropy in the test suite. When it meets a projection it can't handle, it shows no
+The coordinate math is computed the same way astropy and sunpy do it, and verified
+against astropy pixel‑for‑pixel in the test suite — so you can trust the numbers. (For
+the experts: real spherical deprojection for TAN/ARC/SIN/CAR, honoring CUNIT, the
+PC/CD matrices, and CROTA2.) When it meets a projection it can't handle, it shows no
 coordinate rather than a plausible wrong one.
 
 ### 3 · Metadata, in Get Info and Spotlight
@@ -145,11 +147,22 @@ the same layer for apples‑to‑apples comparison.
 
 AIA · HMI (line‑of‑sight magnetograms and synoptic B_r charts) · LASCO C2/C3 ·
 SUVI · EIT · STEREO/SECCHI (EUVI, COR, HI) · PUNCH (including its polarized Stokes
-cubes) · K‑Cor · TRACE · XRT. Instrument is recognized from
-`TELESCOP`/`INSTRUME`/`DETECTOR`; anything unrecognized falls back to a sensible
-grayscale stretch. Missing one?
+cubes — a stack of polarization measurements in one file) · K‑Cor · TRACE · XRT.
+Instrument is recognized from `TELESCOP`/`INSTRUME`/`DETECTOR`; anything
+unrecognized falls back to a sensible grayscale stretch. Missing one?
 [Open an issue](https://github.com/GillySpace27/HelioFITS/issues) — colormaps are
 easy to add.
+
+## Accessibility
+
+The **viewer** window is keyboard‑ and VoiceOver‑friendly: the HDU picker and
+Copy/Save buttons are labeled and reachable, the FITS header is a selectable,
+VoiceOver‑navigable, ⌘F‑searchable text pane, and in the image the **↑/↓** arrows
+blink between layers, **⌘ +/−/0** zoom, and **⌘C** copies the pixel readout. Toolbar
+toggles announce their name and on/off state. Work still to do: a keyboard cursor
+for the hover readout and drag‑box statistics (today those are mouse‑driven), and
+honoring the system Larger‑Text setting. Feedback from assistive‑technology users is
+very welcome via the issue tracker.
 
 ## Reporting bugs
 

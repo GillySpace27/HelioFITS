@@ -614,17 +614,26 @@ enum FITSRenderer {
     }
 
     static func noImageSummary(path: String) -> String {
-        var lines = ["No image to display — this FITS file contains table or non-image data.", ""]
+        var hdus: [(h: Int, xt: String, nm: String, naxis: Int)] = []
         var h = 0
         while h < 32 {
             guard let c = cards(path: path, hdu: h) else { break }
             let xt = h == 0 ? "primary" : (cardVal(c, "XTENSION") ?? "?")
             let nm = cardVal(c, "EXTNAME").map { " — \($0)" } ?? ""
-            lines.append("HDU \(h): \(xt)\(nm)   (NAXIS \(cardVal(c, "NAXIS") ?? "0"))")
+            let naxis = Int(cardVal(c, "NAXIS") ?? "0") ?? 0
+            hdus.append((h, xt, nm, naxis))
             h += 1
         }
+        // Don't confidently call a file a "table" when it may just have failed to
+        // render (panel: the same message was shown for corrupt / unsupported
+        // files). An HDU with NAXIS ≥ 2 means image data is present.
+        let hasImage = hdus.contains { $0.naxis >= 2 }
+        var lines = [hasImage
+            ? "This FITS file has image data, but HelioFITS couldn’t render it — possibly an unusual BITPIX or a damaged file."
+            : "No image to display — this FITS file holds only tables or non-image data.", ""]
+        for u in hdus { lines.append("HDU \(u.h): \(u.xt)\(u.nm)   (NAXIS \(u.naxis))") }
         lines.append("")
-        lines.append("Right-click → Quick Actions → “View HDU header” shows the full header.")
+        lines.append("Double-click the file to open the viewer and read the full header.")
         return lines.joined(separator: "\n")
     }
 

@@ -216,6 +216,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                 c.canvas.pageCount = m.count
                 self.refresh(c)
                 self.fitWindow(win, to: c)
+                win.makeFirstResponder(c.canvas)   // arrows blink layers, ⌘±/0 zoom, ⌘C copies readout
                 c.canvas.flashHint(7)
             }
         }
