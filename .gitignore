@@ -14,3 +14,4 @@ ship.log
 # stray object files (fitsshim.c is vendored; .a provides it)
 *.o
 __.SYMDEF*
+.venv/

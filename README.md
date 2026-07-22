@@ -54,8 +54,8 @@ the way a folder of photos is.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/preview-quicklook.png" alt="A Quick Look preview of a solar image"/></td>
-<td width="50%"><img src="docs/interactive-stats.png" alt="The preview with the solar limb drawn and region statistics shown"/></td>
+<td width="50%"><img src="docs/preview-quicklook.png" alt="A Quick Look preview of an AIA image with the pixel value and coordinate readout, the RHEF filter, and the Limb/Diff/Stretch controls"/></td>
+<td width="50%"><img src="docs/interactive-stats.png" alt="The preview with the solar limb drawn and a region selected for statistics"/></td>
 </tr>
 </table>
 
