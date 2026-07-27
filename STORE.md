@@ -13,8 +13,19 @@ generator and a Spotlight importer — its job is teaching Finder a file type.
 ## Subtitle (30 char max)
 
 ```
-Solar FITS previews in Finder
+Instant solar FITS previews
 ```
+
+> **Do not put "Finder" (or any Apple product/service name) in the subtitle.**
+> Submission 1.2 (6) was rejected 2026‑07‑27 under **Guideline 5.2.5 — Legal:
+> Intellectual Property** for exactly that: the subtitle read *"Solar FITS
+> previews in Finder"*. Apple treats the name/subtitle as branding real estate,
+> so Apple trademarks are not allowed there. Referential use in the **description
+> body** ("works with Finder", "teaches Finder to read…") was NOT flagged and is
+> normal practice — only the subtitle had to change.
+>
+> Alternates that fit: `Preview solar FITS files` (24) ·
+> `Solar FITS previews on Mac` (26) · `See your solar FITS instantly` (29)
 
 ## Promotional text (170 char max — editable without a new build)
 
