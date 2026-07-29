@@ -8,6 +8,8 @@
 
 **Solar FITS files, previewable in Finder — in the right colors, with real coordinates.**
 
+### [**Get it free on the Mac App Store →**](https://apps.apple.com/app/id6790952544)
+
 [![License: BSD-2-Clause](https://img.shields.io/badge/License-BSD--2--Clause-blue.svg)](LICENSE)
 &nbsp;·&nbsp; macOS 14.5+ (universal — Apple Silicon & Intel)
 &nbsp;·&nbsp; Free & open source
@@ -109,19 +111,25 @@ HDU you're looking at — a one‑click bridge back to Python.
 > **Runs on any Mac** — Apple Silicon or Intel — with macOS 14.5 or later. It's a
 > universal binary.
 
-**Direct download (available now).** Grab `HelioFITS.zip` from
-**[gilly.space/heliofits](https://gilly.space/heliofits)** (the always-latest
-release), unzip, and drag `HelioFITS.app` into `/Applications`. It's notarized by
-Apple, so it opens with no security warnings. Launch it once so macOS registers the
-Finder extensions, then press the spacebar on any `.fits` file. (If a thumbnail still
-looks generic, relaunch Finder or log out and back in.)
+### [**Get it on the Mac App Store →**](https://apps.apple.com/app/id6790952544)
 
-**Mac App Store.** A build is in review; the link will appear here once it's live.
+That's the whole install: it's free, it updates itself, and macOS registers the
+Finder extensions for you. Then press the **spacebar** on any `.fits` file. (If a
+thumbnail still looks generic at first, relaunch Finder or log out and back in —
+macOS caches icons.)
 
-> The direct-download build does **not** self-update. Watch the
-> [Releases page](https://github.com/GillySpace27/HelioFITS/releases) (or its
-> [feed](https://github.com/GillySpace27/HelioFITS/releases.atom)) for new versions.
-> The App Store build updates automatically.
+<details>
+<summary>If you can't use the App Store</summary>
+
+Some managed and institutional Macs block it. The notarized build is also attached
+to each [GitHub release](https://github.com/GillySpace27/HelioFITS/releases):
+download the zip, unzip it, drag `HelioFITS.app` into `/Applications`, and launch it
+once so the extensions register. It opens without security warnings, but it does
+**not** self-update — watch the
+[releases feed](https://github.com/GillySpace27/HelioFITS/releases.atom) for new
+versions. The App Store is the supported channel; this is a fallback.
+
+</details>
 
 ### Getting FITS files to try
 
