@@ -143,8 +143,22 @@ importer is NOT in the store build; don't mention it):
   Verify with `lipo -archs`.
 - ASC listing text lives in `STORE.md`; screenshots regenerate via
   `make-screenshots.sh` (App Store sizes only accept 1280×800 / 1440×900 /
-  2560×1600 / 2880×1800). **Re-shoot screenshots whenever the UI changes** —
-  the v1.0 set showed the pre-redesign window and had to be replaced.
+  2560×1600 / 2880×1800). It captures a live window *or* composites an image you
+  already have (`--compose`), and puts a **caption** on each — a bare window
+  screenshot sells nothing. The set that shipped with 1.2:
+
+      rm -rf build/screenshots
+      CAPTIONS="Finder learns to read solar FITS files" ./make-screenshots.sh   # app window, "How it works" expanded
+      CAPTIONS="Image, full header, and a ready-to-run sunpy snippet" ./make-screenshots.sh sun.fits
+      ./make-screenshots.sh --compose docs/before-after.png       "From grey icons to the Sun"
+      ./make-screenshots.sh --compose docs/colormaps.png          "Your data folder, in the right instrument colors"
+      ./make-screenshots.sh --compose docs/spotlight-metadata.png "Telescope, instrument, wavelength — searchable"
+
+  For the onboarding shot, expand the "How it works" disclosure first — it
+  collapses after first run, and collapsed it hides the whole capability list:
+  `defaults write "$HOME/Library/Group Containers/UB45PPC2JS.com.gillyspace27.fits/Library/Preferences/UB45PPC2JS.com.gillyspace27.fits" howItWorks -bool true`
+- **Re-shoot screenshots whenever the UI changes** — the v1.0 set showed the
+  pre-redesign window and had to be replaced wholesale before 1.2 went out.
 - **Reinstalling a locally re-signed build churns TCC**: the code signature
   changes, so macOS re-prompts for file access every time. Notarization
   (Gatekeeper) and the file-access prompt (TCC) are unrelated systems. Install
