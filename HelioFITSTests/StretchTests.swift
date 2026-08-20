@@ -187,3 +187,41 @@ private extension String {
         count >= n ? self : String(repeating: " ", count: n - count) + self
     }
 }
+
+// MARK: - Log clip sliders
+
+@Suite("Clip slider mapping") @MainActor
+struct ClipSliderTests {
+    /// The sliders are logarithmic in distance from their end of the
+    /// distribution. The defaults MUST round-trip exactly: `stretchIsDefault`
+    /// compares against FITSRenderer.pLow/pHigh to decide whether to reuse the
+    /// baked image, and a 0.4999999 would silently re-render the picture the
+    /// moment the panel opened.
+    @Test("resetStretch round-trips to the exact defaults")
+    func defaultsRoundTripExactly() {
+        final class Dummy: NSObject { @objc func noop() {} }
+        let d = Dummy()
+        let t = FITSToolbar(target: d, limbSel: #selector(Dummy.noop), diffSel: #selector(Dummy.noop),
+                            tuneSel: #selector(Dummy.noop), stretchSel: #selector(Dummy.noop),
+                            resetSel: #selector(Dummy.noop), filterSel: #selector(Dummy.noop))
+        t.resetStretch()
+        let s = t.readStretch()
+        #expect(s.lo == Double(FITSRenderer.pLow), "low clip did not round-trip: \(s.lo)")
+        #expect(s.hi == Double(FITSRenderer.pHigh), "high clip did not round-trip: \(s.hi)")
+    }
+
+    @Test("slider travel spreads the heavy tail instead of crowding it")
+    func travelIsSpread() {
+        final class Dummy: NSObject { @objc func noop() {} }
+        let d = Dummy()
+        let t = FITSToolbar(target: d, limbSel: #selector(Dummy.noop), diffSel: #selector(Dummy.noop),
+                            tuneSel: #selector(Dummy.noop), stretchSel: #selector(Dummy.noop),
+                            resetSel: #selector(Dummy.noop), filterSel: #selector(Dummy.noop))
+        // Half travel should already be deep into the tail; a linear 90–100
+        // slider would only reach 95% here.
+        t.sHi.doubleValue = 0.5
+        #expect(t.readStretch().hi > 99.0, "high slider is not logarithmic")
+        t.sHi.doubleValue = 1.0
+        #expect(t.readStretch().hi < 100.0, "high slider should stop short of the outlier max")
+    }
+}

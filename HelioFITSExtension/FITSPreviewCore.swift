@@ -1432,8 +1432,10 @@ final class FITSToolbar {
         let bottom = NSStackView(views: [cLog, reset])
         bottom.spacing = 10
         let stack = NSStackView(views: [
-            row("Low", sLo, 0, 10, 0.5, "Clip everything below this percentile to black"),
-            row("High", sHi, 90, 100, 99.5, "Clip everything above this percentile to white"),
+            row("Low", sLo, 0, 1, Self.posLow(FITSRenderer.pLow),
+                "Clip the darkest pixels to black. Logarithmic: fine control near 0%"),
+            row("High", sHi, 0, 1, Self.posHigh(FITSRenderer.pHigh),
+                "Clip the brightest pixels to white. Logarithmic: fine control near 100%, where a solar image's tail lives"),
             row("Gamma", sG, 0.1, 2, 0.5, "Below 1 brightens faint structure; above 1 darkens it"),
             limitsLabel,
             bottom,
@@ -1457,8 +1459,31 @@ final class FITSToolbar {
         return s
     }
 
+    // The clip sliders are LOGARITHMIC in distance from their end of the
+    // distribution, not linear in percentile. Solar images have a heavy tail:
+    // on a typical AIA frame 90–99.5% moves the white point 461→2096 while
+    // 99.5–100% moves it 2096→14966, so a linear percentile slider spends 95%
+    // of its travel doing almost nothing and the last 5% doing everything.
+    // Mapping travel to log(distance-from-the-end) gives even control instead.
+    //
+    // Positions are 0…1; percentiles are rounded so the defaults round-trip
+    // EXACTLY, which `stretchIsDefault` depends on to keep the baked image.
+    private static func pctLow(_ t: Double) -> Double {
+        (pow(10, -2 + 3 * min(max(t, 0), 1)) * 1000).rounded() / 1000      // 0.01 … 10 %
+    }
+    private static func posLow(_ pct: Double) -> Double {
+        (Foundation.log10(max(pct, 0.01)) + 2) / 3
+    }
+    private static func pctHigh(_ t: Double) -> Double {
+        ((100 - pow(10, 1 - 3 * min(max(t, 0), 1))) * 1000).rounded() / 1000  // 90 … 99.99 %
+    }
+    private static func posHigh(_ pct: Double) -> Double {
+        (1 - Foundation.log10(max(100 - pct, 0.01))) / 3
+    }
+
     func readStretch() -> (lo: Double, hi: Double, gamma: Double, log: Bool) {
-        (sLo.doubleValue, sHi.doubleValue, sG.doubleValue, cLog.state == .on)
+        (Self.pctLow(sLo.doubleValue), Self.pctHigh(sHi.doubleValue),
+         sG.doubleValue, cLog.state == .on)
     }
 
     func readFilter() -> FITSPreviewModel.Filter {
@@ -1466,7 +1491,10 @@ final class FITSToolbar {
     }
 
     func resetStretch() {
-        sLo.doubleValue = 0.5; sHi.doubleValue = 99.5; sG.doubleValue = 0.5; cLog.state = .off
+        sLo.doubleValue = Self.posLow(FITSRenderer.pLow)
+        sHi.doubleValue = Self.posHigh(FITSRenderer.pHigh)
+        sG.doubleValue = 0.5
+        cLog.state = .off
     }
 
     /// Paint one chip: opaque dark when off, solid amber when on, dimmed when

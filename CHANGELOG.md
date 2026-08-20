@@ -33,6 +33,13 @@ First release driven entirely by reports from other people. Thanks to
 
 ### Changed
 
+- **The clip sliders are now logarithmic** in distance from their end of the
+  distribution. A solar image has a heavy tail, so a linear percentile slider
+  spent almost all of its travel doing nothing and the last fraction doing
+  everything: on a typical AIA frame the final quarter of the High slider moved
+  the white point by 13,925 counts while the first three quarters moved it by
+  579 between them. Each quarter now moves it by a comparable amount.
+
 - **The pixel readout is pinned to the top-left** instead of the bottom-left,
   where it grew into the filter menu and the Limb/Diff/Stretch buttons. Region
   statistics moved to the top-right to make room.
