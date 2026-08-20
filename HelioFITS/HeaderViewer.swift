@@ -285,6 +285,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                            styleMask: [.titled, .closable, .resizable, .miniaturizable],
                            backing: .buffered, defer: false)
         win.title = title
+        // Below this the on-image chrome starts overlapping: the statistics card
+        // covers the pixel readout under ~645 pt of width, and the stretch panel
+        // and toolbar under ~400 pt of height. The card hides itself when there
+        // is no room, but a floor keeps the window out of the awkward band.
+        win.contentMinSize = NSSize(width: 660, height: 420)
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self

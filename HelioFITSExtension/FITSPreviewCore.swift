@@ -754,6 +754,12 @@ final class FITSStatsCard: NSView {
     private let axisH: CGFloat = 13
     private let histH: CGFloat = 46
 
+    /// Click-through. The card is a 292×168 sibling sitting ON the image, and
+    /// without this it swallows every gesture underneath it: no measure-drag, no
+    /// scroll-to-blink (the only gesture Finder delivers to the column pane), no
+    /// hover readout, and no way to dismiss it since clicking it does nothing.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
     override func draw(_ dirty: NSRect) {
         NSColor(calibratedWhite: 0.07, alpha: 0.96).setFill()
         let bg = NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8)
@@ -918,8 +924,15 @@ final class FITSImageCanvas: NSView {
     /// The hint describes the CURRENT gestures, so the behaviour is
     /// self-documenting rather than something you have to be told once.
     private func hintText() -> String? {
+        // The column pane gets ONE short line. Finder delivers no clicks, no
+        // hover and no modifier keys there, so advertising drag-to-measure or
+        // ⌥-scroll is false; and the full string measured 728 pt in a pane that
+        // is by definition under 380, so it was drawn clipped off the left edge
+        // with "press Space" — the only actionable part — entirely off-screen.
+        if compactMode {
+            return pageCount > 1 ? "press Space  ·  scroll to blink layers" : "press Space"
+        }
         var parts: [String] = []
-        if compactMode { parts.append("press Space for the full interactive preview") }
         if pageCount > 1 { parts.append("scroll (or ↑↓) to blink layers") }
         if isZoomed {
             parts.append("drag to pan")
@@ -1314,8 +1327,10 @@ final class FITSImageCanvas: NSView {
         NSGraphicsContext.current?.restoreGraphicsState()
 
         if isZoomed {
-            chip(String(format: "%.1f×", zoom), at: NSPoint(x: bounds.width - 8, y: 30),
-                 font: .monospacedSystemFont(ofSize: 12, weight: .regular), rightAligned: true)
+            // Bottom-LEFT: top-right now belongs to the statistics card, and the
+            // top strip already holds the caption.
+            chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
+                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
         }
         if let t = readout {
             // The readout IS the product for a scientist — it was the smallest type
@@ -1330,11 +1345,16 @@ final class FITSImageCanvas: NSView {
         }
         // The hint describes the gestures available RIGHT NOW. It also reappears
         // while ⌘ is held — that is the moment you are asking "what does this do?"
-        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown, readout == nil || cmdDown {
+        // The readout is top-left and the hint is bottom-centre, so they cannot
+        // collide; suppressing the hint whenever a readout was live meant the
+        // flash on zoom never appeared at all, because zooming requires the
+        // pointer to be over the image.
+        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
             let s = NSAttributedString(string: h, attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
-            let sz = s.size()
+            var sz = s.size()
+            sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
             // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
             // is pinned to the bottom of the host. The hint used to be drawn
             // straight over those controls. The column pane hides the toolbar,
@@ -1345,7 +1365,8 @@ final class FITSImageCanvas: NSView {
                            width: sz.width + 20, height: sz.height + 7)
             NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
             NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
-            s.draw(at: NSPoint(x: r.minX + 10, y: r.minY + 3.5))
+            s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
+                              width: sz.width, height: sz.height + 2))
         }
     }
 
