@@ -316,7 +316,9 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             c.canvas.trailingAnchor.constraint(equalTo: top.trailingAnchor),
             c.canvas.topAnchor.constraint(equalTo: top.topAnchor),
             c.canvas.bottomAnchor.constraint(equalTo: top.bottomAnchor),
-            c.stats.leadingAnchor.constraint(equalTo: top.leadingAnchor, constant: 10),
+            // top-RIGHT: the pixel readout owns the top-left corner, and both
+            // can be visible at once (hover a pixel, then drag a region).
+            c.stats.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
             c.stats.topAnchor.constraint(equalTo: top.topAnchor, constant: 28),
             c.stats.widthAnchor.constraint(equalToConstant: 210),
             c.stats.heightAnchor.constraint(equalToConstant: 118),

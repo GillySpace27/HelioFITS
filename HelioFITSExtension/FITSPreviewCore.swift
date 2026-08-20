@@ -1127,8 +1127,13 @@ final class FITSImageCanvas: NSView {
         if let t = readout {
             // The readout IS the product for a scientist — it was the smallest type
             // on screen. Bumped to 13pt (panel feedback: unreadable at 11).
-            chip(t, at: NSPoint(x: 8, y: bounds.height - 8),
-                 font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+            // Pinned to the top-left of the image area: the readout is two lines
+            // and grows with the value, so at the bottom it collided with the
+            // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
+            // below the caption strip, so this clears that too.
+            chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
+                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+                 anchorTop: true)
         }
         // The hint describes the gestures available RIGHT NOW. It also reappears
         // while ⌘ is held — that is the moment you are asking "what does this do?"
@@ -1147,13 +1152,18 @@ final class FITSImageCanvas: NSView {
     }
 
     /// Dark chip anchored by its BOTTOM-left (or bottom-right) corner.
-    private func chip(_ text: String, at origin: NSPoint, font: NSFont, rightAligned: Bool = false) {
+    /// - Parameter anchorTop: anchor by the TOP-left instead of the bottom-left,
+    ///   so the chip grows downward. The view is flipped, so a bottom-anchored
+    ///   chip pinned near the bottom edge grows up into the toolbar.
+    private func chip(_ text: String, at origin: NSPoint, font: NSFont,
+                      rightAligned: Bool = false, anchorTop: Bool = false) {
         let s = NSAttributedString(string: text, attributes: [
             .font: font,
             .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)])
         let sz = s.size()
         let x = rightAligned ? origin.x - sz.width - 12 : origin.x
-        let r = NSRect(x: x, y: origin.y - sz.height - 6, width: sz.width + 12, height: sz.height + 6)
+        let y = anchorTop ? origin.y : origin.y - sz.height - 6
+        let r = NSRect(x: x, y: y, width: sz.width + 12, height: sz.height + 6)
         NSColor(calibratedWhite: 0, alpha: 0.58).setFill()
         NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
         s.draw(at: NSPoint(x: r.minX + 6, y: r.minY + 3))

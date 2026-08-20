@@ -78,7 +78,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             canvas.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             canvas.topAnchor.constraint(equalTo: root.topAnchor),
             canvas.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            stats.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 10),
+            // top-RIGHT: the pixel readout owns the top-left corner, and both
+            // can be visible at once (hover a pixel, then drag a region).
+            stats.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
             stats.topAnchor.constraint(equalTo: root.topAnchor, constant: 28),
             stats.widthAnchor.constraint(equalToConstant: 210),
             stats.heightAnchor.constraint(equalToConstant: 118),
