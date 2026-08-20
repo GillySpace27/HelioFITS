@@ -106,6 +106,29 @@ enum FITSRenderer {
         if inst.contains("SUVI") || tel.contains("GOES-R SERIES") {
             return "goes-rsuvi\(nearest([94, 131, 171, 195, 284, 304]))"
         }
+        // Solar Orbiter/EUI (#10, David Berghmans). FSI174 and HRI_EUV use the
+        // AIA 171 table and FSI304 the AIA 304 table; HRI_LYA has its own, from
+        // the table he attached. DETECTOR is spelled FSI / HRI_EUV / HRI_LYA in
+        // the L2 files, so underscores are stripped before matching.
+        if inst.contains("EUI") || tel.contains("EUI") {
+            let d = det.replacingOccurrences(of: "_", with: "")
+            if d.contains("HRILYA") { return "euihrilya" }
+            if d.contains("HRIEUV") { return "sdoaia171" }
+            return wav > 0 && nearest([174, 304]) == 304 ? "sdoaia304" : "sdoaia171"
+        }
+        // Proba-3/ASPIICS (#9, Nawin). Tables are from the SIDC colour-table page;
+        // sunpy does not carry them yet. UNVERIFIED against a real file: no
+        // ASPIICS data was available when this was written, so the keyword match
+        // below is a best guess and the FILTER values may need correcting.
+        if inst.contains("ASPIICS") || tel.contains("ASPIICS") || tel.contains("PROBA-3")
+            || tel.contains("PROBA3") || obs.contains("PROBA-3") || obs.contains("PROBA3") {
+            let f = ((val("FILTER") ?? "") + " " + (val("FILTNAM1") ?? "")).uppercased()
+            if f.contains("FE") { return "aspiicsfe" }
+            if f.contains("HE") { return "aspiicshe" }
+            if f.contains("POL") || f.contains("PB") { return "aspiicsp" }
+            if f.contains("NE") { return "aspiicsne" }
+            return "aspiicswb"        // wide-band is the default product
+        }
         if inst.contains("EIT") { return "sohoeit\(nearest([171, 195, 284, 304]))" }
         if det == "C2" { return "soholasco2" }
         if det == "C3" { return "soholasco3" }
