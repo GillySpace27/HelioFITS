@@ -1072,10 +1072,15 @@ final class FITSImageCanvas: NSView {
     private func setZoom(_ z: CGFloat, about p: NSPoint) {
         let old = imageRect()
         let wasZoomed = isZoomed
+        let z0 = zoom
         let anchor = old.map { (u: (p.x - $0.minX) / $0.width, v: (p.y - $0.minY) / $0.height) }
         zoom = max(1, min(20, z))
-        // Crossing fit<->zoomed changes what a drag does, so re-advertise it.
-        if isZoomed != wasZoomed { flashHint(4); stateChanged() }
+        // Crossing fit<->zoomed changes what a drag does, so re-advertise it —
+        // and keep re-advertising while zooming in, because ⌘-drag-to-measure
+        // exists ONLY in the zoomed state and the hint is the only place it is
+        // ever mentioned.
+        if isZoomed != wasZoomed { stateChanged() }
+        if isZoomed != wasZoomed || zoom > z0 { flashHint(4) }
         if zoom == 1 { pan = .zero } else if let a = anchor, let r = imageRect() {
             let now = NSPoint(x: r.minX + a.u * r.width, y: r.minY + a.v * r.height)
             pan.x += p.x - now.x
@@ -1294,8 +1299,13 @@ final class FITSImageCanvas: NSView {
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
             let sz = s.size()
+            // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
+            // is pinned to the bottom of the host. The hint used to be drawn
+            // straight over those controls. The column pane hides the toolbar,
+            // so there it can sit low.
+            let toolbarClearance: CGFloat = compactMode ? 14 : 56
             let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
-                           y: bounds.height - sz.height - 14,
+                           y: bounds.height - sz.height - toolbarClearance,
                            width: sz.width + 20, height: sz.height + 7)
             NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
             NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
