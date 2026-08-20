@@ -46,6 +46,11 @@ First release driven entirely by reports from other people. Thanks to
 
 ### Added
 
+- **File ▸ Open… (⌘O).** The app could always open a FITS file, but only by
+  double-clicking one in Finder. It replaces SwiftUI's "New Window" item, which
+  did nothing useful: the only window the app owns is the settings panel, and
+  that already has its own item at ⌘,.
+
 - **Solar Orbiter/EUI colormaps.** FSI 174 and HRI_EUV use the AIA 171 table,
   FSI 304 uses AIA 304, and HRI_LYA has its own, from the table David Berghmans
   supplied. ([#10](https://github.com/GillySpace27/HelioFITS/issues/10))

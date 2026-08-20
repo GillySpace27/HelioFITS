@@ -190,6 +190,28 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     // MARK: present
 
+    /// Ask for a FITS file and open it in the viewer.
+    ///
+    /// Lives here rather than in the settings view because BOTH the File ▸ Open…
+    /// menu item and the settings window's button need it, and two copies of an
+    /// NSOpenPanel would drift in their allowed types. The open panel also
+    /// confers the sandbox read grant, which is why opening this way works at
+    /// all for a file outside the app container.
+    func runOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = ["fits", "fts", "fit", "fz"]
+            .compactMap { UTType(filenameExtension: $0) }
+        panel.prompt = "Open"
+        panel.message = "Choose a FITS file to open in the viewer."
+        panel.begin { [weak self] resp in
+            guard resp == .OK, let url = panel.url else { return }
+            self?.present(fileURL: url)
+        }
+    }
+
     func present(fileURL: URL) {
         let c = Ctx(url: fileURL)
         c.scoped = fileURL.startAccessingSecurityScopedResource()
