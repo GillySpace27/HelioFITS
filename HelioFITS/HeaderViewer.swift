@@ -190,6 +190,28 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     // MARK: present
 
+    /// Ask for a FITS file and open it in the viewer.
+    ///
+    /// Lives here rather than in the settings view because BOTH the File ▸ Open…
+    /// menu item and the settings window's button need it, and two copies of an
+    /// NSOpenPanel would drift in their allowed types. The open panel also
+    /// confers the sandbox read grant, which is why opening this way works at
+    /// all for a file outside the app container.
+    func runOpenPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = ["fits", "fts", "fit", "fz"]
+            .compactMap { UTType(filenameExtension: $0) }
+        panel.prompt = "Open"
+        panel.message = "Choose a FITS file to open in the viewer."
+        panel.begin { [weak self] resp in
+            guard resp == .OK, let url = panel.url else { return }
+            self?.present(fileURL: url)
+        }
+    }
+
     func present(fileURL: URL) {
         let c = Ctx(url: fileURL)
         c.scoped = fileURL.startAccessingSecurityScopedResource()
@@ -210,6 +232,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                     guard let self, let win, let c = self.ctx[ObjectIdentifier(win)] else { return }
                     self.refresh(c)
                 }
+                c.tools.adoptStretch(m.stretch)   // panel opens on the baked mapping
                 self.populatePopup(c, headerText: text)
                 c.save.isEnabled = !m.isEmpty
                 c.copy.isEnabled = !m.isEmpty
@@ -262,6 +285,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                            styleMask: [.titled, .closable, .resizable, .miniaturizable],
                            backing: .buffered, defer: false)
         win.title = title
+        // Below this the on-image chrome starts overlapping: the statistics card
+        // covers the pixel readout under ~645 pt of width, and the stretch panel
+        // and toolbar under ~400 pt of height. The card hides itself when there
+        // is no room, but a floor keeps the window out of the awkward band.
+        win.contentMinSize = NSSize(width: 660, height: 420)
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self
@@ -275,8 +303,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.translatesAutoresizingMaskIntoConstraints = false
         c.canvas.onScrollStep = { [weak self, weak c] d in
             guard let self, let c, c.model.step(d) else { return }
-            c.popup.selectItem(withTag: c.model.page?.hdu ?? 0)
-            self.refresh(c)
+            // populatePopup tags items with the PAGE INDEX, not the HDU number —
+            // they differ as soon as a file has several image HDUs, and a data
+            // cube gives many pages the same hdu.
+            c.popup.selectItem(withTag: c.model.cur)
+            self.pageChanged(c)
         }
         c.canvas.onHover = { [weak c] n in
             guard let c else { return }
@@ -290,7 +321,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                 return
             }
             c.stats.text = s.text
-            c.stats.histogram = s.histogram
+            c.stats.stats = s
             c.stats.isHidden = false
             c.stats.needsDisplay = true
             _ = self
@@ -316,10 +347,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             c.canvas.trailingAnchor.constraint(equalTo: top.trailingAnchor),
             c.canvas.topAnchor.constraint(equalTo: top.topAnchor),
             c.canvas.bottomAnchor.constraint(equalTo: top.bottomAnchor),
-            c.stats.leadingAnchor.constraint(equalTo: top.leadingAnchor, constant: 10),
+            // top-RIGHT: the pixel readout owns the top-left corner, and both
+            // can be visible at once (hover a pixel, then drag a region).
+            c.stats.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
             c.stats.topAnchor.constraint(equalTo: top.topAnchor, constant: 28),
-            c.stats.widthAnchor.constraint(equalToConstant: 210),
-            c.stats.heightAnchor.constraint(equalToConstant: 118),
+            c.stats.widthAnchor.constraint(equalToConstant: 292),
+            c.stats.heightAnchor.constraint(equalToConstant: 168),
             toolStack.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
             toolStack.bottomAnchor.constraint(equalTo: top.bottomAnchor, constant: -10),
             c.tools.panel.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
@@ -432,7 +465,17 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     @objc private func hduChanged(_ sender: NSPopUpButton) {
         guard let c = ctx(for: sender) else { return }
         c.model.select(page: sender.selectedTag())
+        pageChanged(c)
+    }
+
+    /// Refresh after the displayed layer changes. The readout and any measured
+    /// region describe the PREVIOUS layer, and neither is invalidated by a
+    /// mouse event, so both have to be dealt with explicitly.
+    private func pageChanged(_ c: Ctx) {
+        c.canvas.selection = nil
+        c.stats.isHidden = true
         refresh(c)
+        c.canvas.refreshReadout()
     }
 
     @objc private func toggleLimb(_ s: NSButton) {
@@ -463,7 +506,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     @objc private func resetStretch(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.tools.resetStretch()
+        c.tools.resetStretch(cmapKey: c.model.page?.res.cmapKey)
         c.model.stretch = c.tools.readStretch()
         if c.model.mode == .stretch { refresh(c) }
     }

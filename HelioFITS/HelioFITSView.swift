@@ -254,19 +254,7 @@ struct HelioFITSView: View {
     /// "Open With ▸ HelioFITS" takes (HeaderWindowController.present), including
     /// the powerbox read grant the open panel confers. Does NOT hide this
     /// Settings panel: the user asked for the viewer from here, so both stay up.
-    private func openWithViewer() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.allowedContentTypes = fitsExtensions.compactMap { UTType(filenameExtension: $0) }
-        panel.prompt = "Open"
-        panel.message = "Choose a FITS file to open in the viewer."
-        panel.begin { resp in
-            guard resp == .OK, let url = panel.url else { return }
-            HeaderWindowController.shared.present(fileURL: url)
-        }
-    }
+    private func openWithViewer() { HeaderWindowController.shared.runOpenPanel() }
 
     private func addFolder() {
         let panel = NSOpenPanel()

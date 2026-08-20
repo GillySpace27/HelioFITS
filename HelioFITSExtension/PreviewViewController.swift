@@ -40,6 +40,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private var tools: FITSToolbar!
     private var toolStack = NSStackView()
     private var compact = false
+    private var statsFits = true
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 700))
@@ -50,7 +51,13 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         canvas.translatesAutoresizingMaskIntoConstraints = false
         canvas.onScrollStep = { [weak self] d in
             guard let self, self.model.step(d) else { return }
+            // A different layer is now under the cursor and under any measured
+            // region, so neither the readout nor the statistics describe what is
+            // on screen any more.
+            self.canvas.selection = nil
+            self.stats.isHidden = true
             self.refresh()
+            self.canvas.refreshReadout()
         }
         canvas.onHover = { [weak self] n in
             guard let self else { return }
@@ -78,10 +85,12 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             canvas.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             canvas.topAnchor.constraint(equalTo: root.topAnchor),
             canvas.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            stats.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 10),
+            // top-RIGHT: the pixel readout owns the top-left corner, and both
+            // can be visible at once (hover a pixel, then drag a region).
+            stats.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
             stats.topAnchor.constraint(equalTo: root.topAnchor, constant: 28),
-            stats.widthAnchor.constraint(equalToConstant: 210),
-            stats.heightAnchor.constraint(equalToConstant: 118),
+            stats.widthAnchor.constraint(equalToConstant: 292),
+            stats.heightAnchor.constraint(equalToConstant: 168),
             toolStack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
             toolStack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
             tools.panel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
@@ -96,6 +105,11 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         // Finder never delivers clicks or mouse-move to a hosted extension view
         // in the COLUMN pane — only scroll. Hide controls that could never be
         // used there and lean on scroll-to-blink.
+        // The card needs ~645 pt of width before it stops covering the readout,
+        // and ~400 pt of height before it stops covering the stretch panel and
+        // the toolbar. Below that the image matters more than the statistics.
+        statsFits = view.bounds.width >= 645 && view.bounds.height >= 400
+        if !statsFits { stats.isHidden = true }
         let isCompact = view.bounds.width < 380
         guard isCompact != compact else { return }
         compact = isCompact
@@ -127,6 +141,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                 // Off-main renders (full-res buffer, RHEF filter) call this when
                 // they land — repaint so the filtered image actually swaps in.
                 m.onFullRes = { [weak self] in self?.refresh() }
+                self.tools.adoptStretch(m.stretch)   // panel opens on the baked mapping
                 self.canvas.pageCount = m.count
                 self.refresh()
                 self.canvas.flashHint(6)
@@ -165,19 +180,19 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         if model.mode == .stretch { refresh() }
     }
     @objc private func resetStretch() {
-        tools.resetStretch()
+        tools.resetStretch(cmapKey: model.page?.res.cmapKey)
         model.stretch = tools.readStretch()
         if model.mode == .stretch { refresh() }
     }
 
     private func region(_ r: (u0: Double, v0: Double, u1: Double, v1: Double)?) {
-        guard !compact, let r,
+        guard !compact, statsFits, let r,
               let s = model.statistics(u0: r.u0, v0: r.v0, u1: r.u1, v1: r.v1) else {
             stats.isHidden = true
             return
         }
         stats.text = s.text
-        stats.histogram = s.histogram
+        stats.stats = s
         stats.isHidden = false
         stats.needsDisplay = true
     }

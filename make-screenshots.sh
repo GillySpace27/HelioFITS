@@ -13,6 +13,9 @@
 #   # live HelioFITS windows, one caption each (pipe-separated, in window order)
 #   CAPTIONS="Image, header, and a sunpy snippet" ./make-screenshots.sh sun.fits
 #
+#   # whatever HelioFITS already has open (e.g. the settings window)
+#   CAPTIONS="Finder learns to read solar FITS" ./make-screenshots.sh
+#
 #   # a Finder window (a folder of coloured FITS thumbnails is the whole pitch)
 #   OWNER=Finder CAPTIONS="Your data folder, in the right colors" ./make-screenshots.sh
 #
@@ -44,8 +47,7 @@ if [ "${1:-}" = "--compose" ]; then
 fi
 
 # ---- capture mode: live windows ---------------------------------------------
-if [ "$OWNER" = "HelioFITS" ]; then
-    [ $# -ge 1 ] || { echo "usage: $0 <file.fits> [...]   (or OWNER=Finder $0, or $0 --compose IMG CAPTION)"; exit 1; }
+if [ "$OWNER" = "HelioFITS" ] && [ $# -ge 1 ]; then
     for f in "$@"; do
         [ -f "$f" ] || { echo "no such file: $f"; exit 1; }
         open -a HelioFITS "$f"
@@ -54,6 +56,10 @@ if [ "$OWNER" = "HelioFITS" ]; then
     # long enough for the gesture hint to fade — it otherwise sits over the
     # toolbar in the shot
     sleep 9
+elif [ "$OWNER" = "HelioFITS" ]; then
+    # No file given: capture whatever HelioFITS already has open. This is how
+    # the settings/onboarding window gets shot, since it is not a document.
+    echo "==> capturing already-open HelioFITS windows"
 else
     echo "==> capturing $OWNER windows (arrange them first)"
 fi

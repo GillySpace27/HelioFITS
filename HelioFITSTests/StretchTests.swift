@@ -144,3 +144,120 @@ struct StretchTests {
         return url.path
     }
 }
+
+// MARK: - #12: the percentile sliders' effect in real data units
+
+@Suite("Display limits (#12)") @MainActor
+struct DisplayLimitsTests {
+    /// A tiny synthetic FITS so the limits are known exactly.
+    private func fixture() throws -> String {
+        let path = NSTemporaryDirectory() + "limits_probe.fits"
+        var hdr = "SIMPLE  =                    T"
+        hdr += String(repeating: " ", count: 80 - hdr.count)
+        for (k, v) in [("BITPIX", "-32"), ("NAXIS", "2"), ("NAXIS1", "16"), ("NAXIS2", "16")] {
+            var c = "\(k.padding(toLength: 8, withPad: " ", startingAt: 0))= \(v.leftPad(20))"
+            c += String(repeating: " ", count: 80 - c.count); hdr += c
+        }
+        var end = "END"; end += String(repeating: " ", count: 80 - end.count); hdr += end
+        hdr += String(repeating: " ", count: 2880 - hdr.count % 2880)
+        var data = Data(hdr.utf8)
+        for i in 0..<(16 * 16) {                     // 0…255 ramp, big-endian float32
+            withUnsafeBytes(of: Float(i).bitPattern.bigEndian) { data.append(contentsOf: $0) }
+        }
+        data.append(Data(repeating: 0, count: 2880 - data.count % 2880))
+        try data.write(to: URL(fileURLWithPath: path))
+        return path
+    }
+
+    @Test("limits are reported in data units, not percentiles")
+    func limitsAreDataValues() throws {
+        let m = FITSPreviewModel.load(path: try fixture(), maxSide: 64)
+        try #require(!m.isEmpty)
+        let l = try #require(m.displayLimits())
+        // The ramp runs 0…255, so a 0.5–99.5% clip must land inside that range
+        // and be ordered — the point is that these are VALUES, not 0.5 and 99.5.
+        #expect(l.lo >= 0 && l.lo < 128, "low limit \(l.lo) is not a data value")
+        #expect(l.hi > l.lo && l.hi <= 255, "high limit \(l.hi) is not a data value")
+        #expect(l.lo != 0.5 && l.hi != 99.5, "reported the percentiles instead of the data values")
+    }
+}
+
+private extension String {
+    func leftPad(_ n: Int) -> String {
+        count >= n ? self : String(repeating: " ", count: n - count) + self
+    }
+}
+
+// MARK: - Log clip sliders
+
+@Suite("Clip slider mapping") @MainActor
+struct ClipSliderTests {
+    /// The sliders are logarithmic in distance from their end of the
+    /// distribution. The defaults MUST round-trip exactly: `stretchIsDefault`
+    /// compares against FITSRenderer.pLow/pHigh to decide whether to reuse the
+    /// baked image, and a 0.4999999 would silently re-render the picture the
+    /// moment the panel opened.
+    @Test("resetStretch round-trips to the exact defaults")
+    func defaultsRoundTripExactly() {
+        final class Dummy: NSObject { @objc func noop() {} }
+        let d = Dummy()
+        let t = FITSToolbar(target: d, limbSel: #selector(Dummy.noop), diffSel: #selector(Dummy.noop),
+                            tuneSel: #selector(Dummy.noop), stretchSel: #selector(Dummy.noop),
+                            resetSel: #selector(Dummy.noop), filterSel: #selector(Dummy.noop))
+        t.resetStretch()
+        let s = t.readStretch()
+        #expect(s.lo == Double(FITSRenderer.pLow), "low clip did not round-trip: \(s.lo)")
+        #expect(s.hi == Double(FITSRenderer.pHigh), "high clip did not round-trip: \(s.hi)")
+    }
+
+    @Test("slider travel spreads the heavy tail instead of crowding it")
+    func travelIsSpread() {
+        final class Dummy: NSObject { @objc func noop() {} }
+        let d = Dummy()
+        let t = FITSToolbar(target: d, limbSel: #selector(Dummy.noop), diffSel: #selector(Dummy.noop),
+                            tuneSel: #selector(Dummy.noop), stretchSel: #selector(Dummy.noop),
+                            resetSel: #selector(Dummy.noop), filterSel: #selector(Dummy.noop))
+        // Half travel should already be deep into the tail; a linear 90–100
+        // slider would only reach 95% here.
+        t.sHi.doubleValue = 0.5
+        #expect(t.readStretch().hi > 99.0, "high slider is not logarithmic")
+        t.sHi.doubleValue = 1.0
+        #expect(t.readStretch().hi < 100.0, "high slider should stop short of the outlier max")
+
+        // The low slider must reach far enough to actually move the black point.
+        // Capped at 10% it spanned 8.75 counts on an AIA frame out of 15000 and
+        // did nothing visible; it now reaches the median.
+        t.sLo.doubleValue = 1.0
+        #expect(t.readStretch().lo >= 50.0, "low slider does not reach the median")
+        t.sLo.doubleValue = 0.0
+        #expect(t.readStretch().lo <= 0.01, "low slider should reach effectively no clipping")
+    }
+}
+
+// MARK: - Histogram binning must not trap
+
+@Suite("Histogram binning") @MainActor
+struct HistogramBinTests {
+    /// A FITS carrying a large fill value (IDL writes 1e30 for missing data)
+    /// next to normal pixels used to kill the app the moment a region was
+    /// dragged: binning runs against a PERCENTILE range, so such a pixel is far
+    /// outside it, and `Int(_: Float)` traps on overflow before the clamp
+    /// applies. Verified crashing with exit 133 before the fix.
+    @Test("a 1e30 fill value does not trap the binner")
+    func hugeFillValueIsBinnedNotFatal() throws {
+        let n = 64
+        var pix = [Float](repeating: 0, count: n * n)
+        for i in 0..<pix.count { pix[i] = Float(i % 500) }
+        pix[10] = 1e30                     // fill / missing marker
+        pix[11] = -1e30
+        pix[12] = .infinity                // must be skipped, not binned
+        pix[13] = .nan
+        let buf: FITSPreviewModel.Buffer = (w: n, h: n, pix: pix)
+        let res = FITSRenderer.Result(png: Data(), header: "", width: n, height: n,
+                                      natW: n, natH: n, factor: 1,
+                                      lo: 0, hi: 1, gam: 0.5, cmapKey: nil)
+        // rhefValues walks the same data; if the binner traps this never returns.
+        let g = FITSPreviewModel.rhefValues(buffer: buf, res: res, wcs: nil)
+        #expect(g != nil, "filter failed on a frame containing fill values")
+    }
+}

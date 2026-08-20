@@ -23,13 +23,17 @@ that's what broke the store path the first time.
 2. **Bump the build number** — ASC rejects a duplicate (version, build) pair at
    upload, i.e. *after* you've made the archive:
 
-       xcrun agvtool next-version -all          # bumps CURRENT_PROJECT_VERSION everywhere
-       # for a new marketing version too:
-       xcrun agvtool new-marketing-version 1.3
+       # agvtool's -all flag ERRORS on this project (it tries to read "YES" as a
+       # path) and new-marketing-version only touches an Info.plist, not the 10
+       # per-target build settings. Set both in project.pbxproj and verify:
+       sed -i '' 's/MARKETING_VERSION = 1\.2;/MARKETING_VERSION = 1.2.1;/g' HelioFITS.xcodeproj/project.pbxproj
+       sed -i '' 's/CURRENT_PROJECT_VERSION = 6;/CURRENT_PROJECT_VERSION = 7;/g' HelioFITS.xcodeproj/project.pbxproj
+       grep -oE "MARKETING_VERSION = [0-9.]+;|CURRENT_PROJECT_VERSION = [0-9]+;" \
+         HelioFITS.xcodeproj/project.pbxproj | sort | uniq -c   # expect 10 of each
 
-   (Both fields live in `project.pbxproj`, repeated across all 10 targets —
-   `agvtool` keeps them in sync; hand-editing one target desynchronises the
-   extensions from the app and the upload fails.)
+   (Both fields live in `project.pbxproj`, repeated across all 10 targets. They
+   must move together: desynchronising the extensions from the app fails the
+   upload, which is why the verification grep above is not optional.)
 
 3. **Run the tests** (hosted in the GUI app — quit any running HelioFITS first
    or the runner hangs, then run lsclean afterward: `xcodebuild test` registers
@@ -41,17 +45,21 @@ that's what broke the store path the first time.
          CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES
        ./lsclean.sh
 
-4. **Commit + tag**: `git tag -a v<VER>-build.<N> -m "..."` and push the tag.
+4. **Update `CHANGELOG.md`.** Keep a Changelog format, newest section first,
+   grouped Added / Changed / Fixed by what a user would notice rather than by
+   commit. Link the issues. The GitHub release notes are drawn from this, so
+   write it once here rather than twice.
+5. **Commit + tag**: `git tag -a v<VER>-build.<N> -m "..."` and push the tag.
    The tag marks the exact source of the shipped binaries.
 
 ### Channel A — Mac App Store (default)
 
-5. Xcode → **Product → Archive** (plain archive is MAS-clean: the legacy
+6. Xcode → **Product → Archive** (plain archive is MAS-clean: the legacy
    Spotlight importer is injected only by `embed-importer.sh`, which archiving
    never runs; Quick Actions are separate files).
-6. Window → **Organizer** → select the archive → **Validate App** (free dry-run
+7. Window → **Organizer** → select the archive → **Validate App** (free dry-run
    of the upload checks) → **Distribute App → App Store Connect → Upload**.
-7. In App Store Connect: wait for the build to finish Processing (15–60 min),
+8. In App Store Connect: wait for the build to finish Processing (15–60 min),
    then click **+** beside "macOS App" to create the new version record, attach
    the build, write **What's New in This Version**, then **Add for Review** →
    **Submit to App Review** (two separate buttons on two pages).
@@ -60,15 +68,15 @@ that's what broke the store path the first time.
      sidebar page; attach a **demo FITS file** in App Review Information (a
      reviewer has no FITS files and cannot otherwise exercise the app); never
      click **Expire Build**.
-8. Release is **manual**: after approval, the "Release this version" button in
+9. Release is **manual**: after approval, the "Release this version" button in
    ASC. Check the live listing before clicking.
 
 ### Channel B — Direct notarized download (fallback)
 
-9. `./ship.sh` — archives with Developer ID, embeds the Spotlight importer,
+10. `./ship.sh` — archives with Developer ID, embeds the Spotlight importer,
    notarizes (waits), staples, Gatekeeper-verifies, and produces
    `build/HelioFITS-<VER>-b<N>.zip`.
-10. Publish it: the script prints the exact `gh release create` command.
+11. Publish it: the script prints the exact `gh release create` command.
 
 ## How much review to expect
 

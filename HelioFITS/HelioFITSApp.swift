@@ -36,6 +36,14 @@ struct HelioFITSApp: App {
             // that obvious. The panel is a normal window (not a SwiftUI Settings
             // scene) because ControlPanelController already manages its
             // launch/document/Dock-click lifecycle; this just adds the menu item.
+            // File ▸ Open… — the app could always open a FITS file, but only by
+            // double-clicking one in Finder. Replaces SwiftUI's "New Window",
+            // which does nothing useful here: the only window this app owns is
+            // the settings panel, and that has its own item at ⌘,.
+            CommandGroup(replacing: .newItem) {
+                Button("Open…") { HeaderWindowController.shared.runOpenPanel() }
+                    .keyboardShortcut("o", modifiers: .command)
+            }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { ControlPanelController.shared.reveal() }
                     .keyboardShortcut(",", modifiers: .command)

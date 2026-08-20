@@ -87,9 +87,14 @@ final class FITSPreviewModel {
     /// rather than every HDU of the file at once.
     private var buffers: [PageKey: Buffer] = [:]
     private var loading: Set<PageKey> = []
-    /// Filtered images (RHEF, …) rendered off-main, keyed "cur:filter".
-    private var filterCache: [String: NSImage] = [:]
+    /// Filter OUTPUT (the equalized values), rendered off-main, keyed
+    /// "cur:filter". Values rather than a finished image so the stretch can be
+    /// re-applied on top without re-running the expensive equalization (#14).
+    private var filterCache: [String: (w: Int, h: Int, vals: [Float])] = [:]
     private var filterLoading: Set<String> = []
+    /// Whole-image histogram per page — the region box is re-measured on every
+    /// drag, but the image behind it does not change.
+    private var wholeHistCache: [PageKey: (lo: Float, hi: Float, counts: [Int])] = [:]
     /// Fired on the main thread when a buffer or a filtered image lands (redraw).
     var onFullRes: (() -> Void)?
 
@@ -150,6 +155,12 @@ final class FITSPreviewModel {
         let want = FITSRenderer.resolveAutoHDU(path: path,
                                                want: FITSRenderer.selectedHDU(forFileAt: path))
         m.cur = m.pages.firstIndex { $0.hdu == want } ?? 0
+        // Adopt the baked gamma. A signed magnetogram is baked linear (gamma 1)
+        // so 0 G lands on the colormap midpoint; leaving the model at 0.5 made
+        // `stretchIsDefault` false from the first frame, so merely opening the
+        // Stretch panel re-rendered it at 0.5 and moved the apparent polarity
+        // inversion line off zero.
+        m.stretch.gamma = Double(FITSRenderer.defaultGamma(m.page?.res.cmapKey))
         return m
     }
 
@@ -234,7 +245,8 @@ final class FITSPreviewModel {
     func image() -> NSImage? {
         guard let p = page else { return nil }
         if filter != .none {
-            if let img = filterCache[filterKey] { return img }
+            // The filter supplies the values; the stretch maps them to the ramp.
+            if let g = filterCache[filterKey] { return filteredImage(g) ?? p.image }
             requestFilter()
         }
         switch mode {
@@ -255,13 +267,13 @@ final class FITSPreviewModel {
               filterCache[key] == nil, !filterLoading.contains(key),
               let p = page, let f = buffer(cur) else { return }
         filterLoading.insert(key)
-        let res = p.res, wcs = p.wcs, lut = p.lut
+        let res = p.res, wcs = p.wcs
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let img = FITSPreviewModel.rhefImage(buffer: f, res: res, wcs: wcs, lut: lut)
+            let g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.filterLoading.remove(key)
-                if let img { self.filterCache[key] = img }
+                if let g { self.filterCache[key] = g }
                 if self.filterKey == key { self.onFullRes?() }   // still wanted → redraw
             }
         }
@@ -299,8 +311,22 @@ final class FITSPreviewModel {
     /// flux), so it has to be the real one: summing a decimated copy while
     /// labelling the box in native pixels understated it 64× on a 4096² frame,
     /// BUNIT and all. Nothing is posted until the pixels are actually resident.
-    func statistics(u0: Double, v0: Double, u1: Double, v1: Double)
-        -> (text: String, histogram: [Int])? {
+    /// Everything the statistics card draws. The two histograms share one bin
+    /// range (the whole image's), which is what makes them comparable: the point
+    /// of showing the image distribution behind the region's is to say whether
+    /// the region is typical or unusual, and that only works on a common axis.
+    struct RegionStats {
+        let text: String
+        let region: [Int]           // counts per bin, selected box
+        let whole: [Int]            // counts per bin, whole image, finite pixels only
+        let axisMin: Float          // shared bin range, in data units
+        let axisMax: Float
+        let unit: String
+        let clipLo: Float?          // where the display is currently clipped …
+        let clipHi: Float?          // … drawn over the distribution
+    }
+
+    func statistics(u0: Double, v0: Double, u1: Double, v1: Double) -> RegionStats? {
         guard let p = page, let f = buffer(cur) else { return nil }
         let r = p.res
 
@@ -331,18 +357,83 @@ final class FITSPreviewModel {
         func fy(_ y: Int) -> Int { f.h - y }
         let unit = FITSRenderer.headerVal(r.header, "BUNIT").map { " \($0)" } ?? ""
 
+        // BUNIT once, on its own line: repeating it after mean AND median made
+        // those lines long enough to wrap off the card for PUNCH, whose BUNIT
+        // carries a scale factor and is 19 characters on its own.
+        let unitLine = unit.isEmpty ? "" : "\nunits \(unit.trimmingCharacters(in: .whitespaces))"
         let text = """
-        region x \(fx(x0))–\(fx(x1))  y \(fy(y1))–\(fy(y0))   n=\(vals.count)
-        mean \(FITSRenderer.fmtValue(mean))\(unit)   median \(FITSRenderer.fmtValue(med))\(unit)
+        region x \(fx(x0))–\(fx(x1))  y \(fy(y1))–\(fy(y0))
+        n=\(vals.count)\(unitLine)
+        mean \(FITSRenderer.fmtValue(mean))   median \(FITSRenderer.fmtValue(med))
         σ \(FITSRenderer.fmtValue(sd))   sum \(FITSRenderer.fmtValue(Float(sum)))
         min \(FITSRenderer.fmtValue(mn))   max \(FITSRenderer.fmtValue(mx))
         """
 
-        let bins = 44
+        // Bin over the WHOLE image so the two histograms line up. Ignoring the
+        // region's own min/max here is deliberate: a region-relative axis
+        // rescales every time you drag, which is what made the old histogram
+        // decorative rather than readable.
+        let bins = 48
+        let (wLo, wHi, whole) = wholeImageHistogram(f, bins: bins)
+        let span = max(wHi - wLo, 1e-12)
         var hist = [Int](repeating: 0, count: bins)
-        let range = max(mx - mn, 1e-12)
-        for v in vals { hist[min(bins - 1, Int((v - mn) / range * Float(bins)))] += 1 }
-        return (text, hist)
+        for v in vals where v.isFinite {
+            hist[Self.bin(v, wLo, span, bins)] += 1
+        }
+        let clip = displayLimits()
+        return RegionStats(text: text, region: hist, whole: whole,
+                           axisMin: wLo, axisMax: wHi,
+                           unit: FITSRenderer.headerVal(r.header, "BUNIT") ?? "",
+                           clipLo: clip?.lo, clipHi: clip?.hi)
+    }
+
+    /// Bin index for a value, clamped in FLOAT before the Int conversion.
+    ///
+    /// `Int(_: Float)` traps on overflow, so clamping afterwards is too late:
+    /// binning now runs against a PERCENTILE range rather than min/max, and a
+    /// pixel far outside it (an IDL-style 1e30 fill value, an uncalibrated hot
+    /// pixel, a BSCALE blow-up) overflows the conversion and kills the app the
+    /// moment a region is dragged. Values outside the range land in the end
+    /// bins, which is the intended behaviour for a percentile-clipped axis.
+    private static func bin(_ v: Float, _ lo: Float, _ span: Float, _ bins: Int) -> Int {
+        let t = (v - lo) / span * Float(bins)
+        guard t.isFinite else { return 0 }
+        return Int(max(0, min(Float(bins - 1), t)))
+    }
+
+    /// Histogram of every finite pixel in the frame, cached per page: BLANK and
+    /// off-disk NaNs are excluded so they cannot dominate the range.
+    private func wholeImageHistogram(_ f: Buffer, bins: Int) -> (lo: Float, hi: Float, counts: [Int]) {
+        let key = PageKey(hdu: page?.hdu ?? 0, plane: page?.plane ?? 0)
+        if let c = wholeHistCache[key], c.counts.count == bins { return c }
+        // Percentiles, not min/max. A solar frame spans decades, so a
+        // min-to-max axis puts the entire distribution in the first two bins and
+        // leaves the rest of the plot empty. 0.1-99.9 keeps the extremes out of
+        // the axis while still sitting OUTSIDE the default 0.5-99.5 display
+        // clip, so the clip markers land inside the plot where they can be read.
+        // Sampled the same way `levels()` samples, so the two agree about shape.
+        var sample = [Float]()
+        let step = max(1, f.pix.count / 200_000)
+        sample.reserveCapacity(f.pix.count / step + 1)
+        for i in stride(from: 0, to: f.pix.count, by: step) where f.pix[i].isFinite {
+            sample.append(f.pix[i])
+        }
+        sample.sort()
+        var lo: Float = 0, hi: Float = 1
+        if sample.count > 1 {
+            lo = sample[min(sample.count - 1, Int(Double(sample.count) * 0.001))]
+            hi = sample[min(sample.count - 1, Int(Double(sample.count) * 0.999))]
+            if hi <= lo { lo = sample.first!; hi = sample.last! }
+        }
+        if hi <= lo { hi = lo + 1 }
+        let span = max(hi - lo, 1e-12)
+        var counts = [Int](repeating: 0, count: bins)
+        for v in f.pix where v.isFinite {
+            counts[Self.bin(v, lo, span, bins)] += 1
+        }
+        let out = (lo: lo, hi: hi, counts: counts)
+        wholeHistCache[key] = out
+        return out
     }
 
     // MARK: image synthesis
@@ -364,6 +455,28 @@ final class FITSPreviewModel {
             FITSRenderer.levels($0.baseAddress!, count: f.pix.count,
                                 pLow: stretch.lo, pHigh: stretch.hi, cmapKey: r.cmapKey)
         }
+    }
+
+    /// The display limits currently in force, in DATA units, with BUNIT.
+    ///
+    /// The sliders are percentiles, which is not the number anyone quotes or
+    /// reproduces in Python (#12, asked by Chris Lowder about PUNCH). `levels()`
+    /// already computes the real values and threw them away; this surfaces them.
+    /// Falls back to the baked limits until the full-res buffer is resident, so
+    /// it never blocks or reports limits from a different population of pixels.
+    func displayLimits() -> (lo: Float, hi: Float, unit: String)? {
+        guard let p = page else { return nil }
+        // A filter clips in ITS OWN space (RHEF output is a rank transform into
+        // [0,1]), so the raw-data levels below are not where the picture is
+        // actually clipped and are not reproducible in Python. Reporting them
+        // under a filter would defeat the point of showing them at all (#12).
+        guard filter == .none else { return nil }
+        let unit = FITSRenderer.headerVal(p.res.header, "BUNIT") ?? ""
+        if stretchIsDefault || buffer(cur) == nil {
+            return (p.res.lo, p.res.hi, unit)
+        }
+        let (lo, hi) = levels(buffer(cur)!, p.res)
+        return (lo, hi, unit)
     }
 
     /// Live stretch, rendered from the full-resolution pixels and decimated to
@@ -466,9 +579,9 @@ final class FITSPreviewModel {
     /// Pure RHEF render from a snapshot — safe to call off the main thread.
     /// Caps the working grid at 1024/side (RHEF is a display filter; finer than
     /// any window and it keeps a big frame from costing seconds).
-    static func rhefImage(buffer f: Buffer, res: FITSRenderer.Result,
-                          wcs: FITSRenderer.SolarWCS?, lut: [UInt8]?,
-                          upsilon: Double = 0.35) -> NSImage? {
+    static func rhefValues(buffer f: Buffer, res: FITSRenderer.Result,
+                           wcs: FITSRenderer.SolarWCS?,
+                           upsilon: Double = 0.35) -> (w: Int, h: Int, vals: [Float])? {
         let cap = 1024
         let scale = max(1, (max(f.w, f.h) + cap - 1) / cap)   // full-res px per grid cell
         let gw = f.w / scale, gh = f.h / scale
@@ -503,22 +616,59 @@ final class FITSPreviewModel {
         let nbins = max(1, gh / 2)
         let out = FITSRenderer.rhefEqualize(values: vals, radii: rad, maxRadius: maxR,
                                             nbins: nbins, upsilon: upsilon)
+        return (gw, gh, out)
+    }
 
+    /// Colour the cached RHEF output, applying the stretch on top of it.
+    ///
+    /// RHEF and the stretch compose rather than compete: the filter decides the
+    /// ordering of the values, the stretch decides how that ordering is mapped
+    /// to the ramp. Kept separate from the equalization because the sort is the
+    /// expensive part (~1 s on a big frame) while this is a per-pixel remap, so
+    /// dragging a slider does not re-run the filter.
+    func filteredImage(_ g: (w: Int, h: Int, vals: [Float])) -> NSImage? {
+        let n = g.w * g.h
+        // Percentiles OF THE FILTER OUTPUT, so "0.5–99.5%" keeps meaning the same
+        // thing it does for an unfiltered image.
+        // Sample before sorting, exactly as FITSRenderer.levels does. Sorting all
+        // ~1M filter outputs cost 66-71 ms on the main thread PER CALL, and
+        // image() is called on every continuous slider event, so a drag ran at
+        // about 13 fps inside a watchdog'd Quick Look extension. The percentile
+        // edges are indistinguishable from a 200k sample.
+        let stride0 = max(1, g.vals.count / 200_000)
+        var finite = [Float]()
+        finite.reserveCapacity(g.vals.count / stride0 + 1)
+        for i in Swift.stride(from: 0, to: g.vals.count, by: stride0) where g.vals[i].isFinite {
+            finite.append(g.vals[i])
+        }
+        var lo: Float = 0, hi: Float = 1
+        if finite.count > 1 {
+            finite.sort()
+            let c = finite.count
+            lo = finite[min(c - 1, Int(Double(c) * stretch.lo / 100))]
+            hi = finite[min(c - 1, Int(Double(c) * stretch.hi / 100))]
+            if hi <= lo { lo = finite.first!; hi = finite.last! }
+            if hi <= lo { hi = lo + 1 }
+        }
+        let span = hi - lo, gam = Float(stretch.gamma)
         var rgba = [UInt8](repeating: 255, count: n * 4)
         for i in 0..<n {
             let i4 = i * 4
-            guard out[i].isFinite else { rgba[i4] = 0; rgba[i4 + 1] = 0; rgba[i4 + 2] = 0; continue }
-            let v = max(0, min(255, Int(out[i] * 255)))
-            if let lut {
-                rgba[i4] = lut[v * 3]; rgba[i4 + 1] = lut[v * 3 + 1]; rgba[i4 + 2] = lut[v * 3 + 2]
+            guard g.vals[i].isFinite else { rgba[i4] = 0; rgba[i4+1] = 0; rgba[i4+2] = 0; continue }
+            var t = (g.vals[i] - lo) / span
+            t = max(0, min(1, t))
+            if stretch.log { t = Float(Foundation.log(1 + 9 * Double(t)) / Foundation.log(10.0)) }
+            let v = max(0, min(255, Int(powf(t, gam) * 255)))
+            if let lut = page?.lut {
+                rgba[i4] = lut[v*3]; rgba[i4+1] = lut[v*3+1]; rgba[i4+2] = lut[v*3+2]
             } else {
-                rgba[i4] = UInt8(v); rgba[i4 + 1] = UInt8(v); rgba[i4 + 2] = UInt8(v)
+                rgba[i4] = UInt8(v); rgba[i4+1] = UInt8(v); rgba[i4+2] = UInt8(v)
             }
         }
-        return image(rgba: &rgba, w: gw, h: gh)
+        return Self.image(rgba: &rgba, w: g.w, h: g.h)
     }
 
-    private static func image(rgba: inout [UInt8], w: Int, h: Int) -> NSImage? {
+    fileprivate static func image(rgba: inout [UInt8], w: Int, h: Int) -> NSImage? {
         guard let ctx = CGContext(data: &rgba, width: w, height: h, bitsPerComponent: 8,
                                   bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
@@ -583,16 +733,32 @@ final class FITSPreviewModel {
 // MARK: - Statistics card
 
 final class FITSStatsCard: NSView {
-    var text = "" { didSet { setAccessibilityValue(text) } }
-    var histogram: [Int] = []
+    var text = "" { didSet { setAccessibilityValue(accessibilityValue() as? String ?? text) } }
+    /// Set together with `text`; nil until a region has been measured.
+    var stats: FITSPreviewModel.RegionStats?
     override var isFlipped: Bool { true }
 
     // The whole card is custom-drawn, so without this VoiceOver sees an empty
-    // box where the mean/median/σ/sum live.
+    // box where the mean/median/σ/sum live. The histogram is decorative to a
+    // screen reader, but the clip limits are not, so they are spoken too.
     override func accessibilityLabel() -> String? { "Region statistics" }
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
-    override func accessibilityValue() -> Any? { text }
+    override func accessibilityValue() -> Any? {
+        guard let s = stats, let lo = s.clipLo, let hi = s.clipHi else { return text }
+        let u = s.unit.isEmpty ? "" : " " + s.unit
+        return text + "\ndisplay clipped to \(FITSRenderer.fmtValue(lo))\(u) – \(FITSRenderer.fmtValue(hi))\(u)"
+    }
+
+    private let pad: CGFloat = 9
+    private let axisH: CGFloat = 13
+    private let histH: CGFloat = 46
+
+    /// Click-through. The card is a 292×168 sibling sitting ON the image, and
+    /// without this it swallows every gesture underneath it: no measure-drag, no
+    /// scroll-to-blink (the only gesture Finder delivers to the column pane), no
+    /// hover readout, and no way to dismiss it since clicking it does nothing.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirty: NSRect) {
         NSColor(calibratedWhite: 0.07, alpha: 0.96).setFill()
@@ -601,23 +767,67 @@ final class FITSStatsCard: NSView {
         NSColor(calibratedWhite: 0.25, alpha: 1).setStroke()
         bg.stroke()
 
+        let block = histH + axisH + pad
         NSAttributedString(string: text, attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.97, blue: 0.93, alpha: 1),
-        ]).draw(in: NSRect(x: 9, y: 7, width: bounds.width - 18, height: bounds.height - 60))
+        ]).draw(in: NSRect(x: pad, y: 6, width: bounds.width - 2 * pad,
+                           height: bounds.height - block - 6))
 
-        guard !histogram.isEmpty else { return }
-        let hr = NSRect(x: 9, y: bounds.height - 48, width: bounds.width - 18, height: 40)
+        guard let s = stats, !s.region.isEmpty else { return }
+        let hr = NSRect(x: pad, y: bounds.height - block, width: bounds.width - 2 * pad, height: histH)
         NSColor(calibratedWhite: 0.04, alpha: 1).setFill()
         NSBezierPath(roundedRect: hr, xRadius: 3, yRadius: 3).fill()
-        let peak = max(1.0, histogram.map { Foundation.log(1 + Double($0)) }.max() ?? 1)
-        let bw = hr.width / CGFloat(histogram.count)
-        NSColor(calibratedRed: 0.5, green: 0.72, blue: 0.54, alpha: 1).setFill()
-        for (i, c) in histogram.enumerated() {
-            let h = CGFloat(Foundation.log(1 + Double(c)) / peak) * (hr.height - 2)
-            NSRect(x: hr.minX + CGFloat(i) * bw + 0.5, y: hr.maxY - h,
-                   width: max(1, bw - 1), height: h).fill()
+
+        // One vertical scale for both, so the region reads as a fraction of the
+        // image rather than being silently renormalised to its own peak.
+        func logs(_ a: [Int]) -> [Double] { a.map { Foundation.log(1 + Double($0)) } }
+        let rl = logs(s.region), wl = logs(s.whole)
+        let peak = max(1.0, (wl + rl).max() ?? 1)
+        let bw = hr.width / CGFloat(max(s.region.count, 1))
+
+        // whole image behind, dim; the selected region in front
+        func bars(_ v: [Double], _ colour: NSColor) {
+            colour.setFill()
+            for (i, c) in v.enumerated() where c > 0 {
+                let h = CGFloat(c / peak) * (hr.height - 2)
+                NSRect(x: hr.minX + CGFloat(i) * bw + 0.5, y: hr.maxY - h,
+                       width: max(1, bw - 1), height: h).fill()
+            }
         }
+        bars(wl, NSColor(calibratedWhite: 0.42, alpha: 1))
+        bars(rl, NSColor(calibratedRed: 0.5, green: 0.72, blue: 0.54, alpha: 0.95))
+
+        // Where the display is currently clipped, drawn ON the distribution:
+        // the useful question when choosing a stretch is how much of the data
+        // the clip is throwing away, which a pair of numbers cannot show.
+        let span = Double(max(s.axisMax - s.axisMin, 1e-12))
+        func xFor(_ v: Float) -> CGFloat? {
+            let t = (Double(v) - Double(s.axisMin)) / span
+            guard t >= -0.02, t <= 1.02 else { return nil }
+            return hr.minX + CGFloat(min(max(t, 0), 1)) * hr.width
+        }
+        NSColor(calibratedRed: 1, green: 0.78, blue: 0.35, alpha: 0.9).setStroke()
+        for v in [s.clipLo, s.clipHi].compactMap({ $0 }) {
+            guard let x = xFor(v) else { continue }
+            let p = NSBezierPath()
+            p.move(to: NSPoint(x: x, y: hr.minY)); p.line(to: NSPoint(x: x, y: hr.maxY))
+            p.lineWidth = 1
+            p.setLineDash([3, 2], count: 2, phase: 0)
+            p.stroke()
+        }
+
+        // Abscissa: the axis was unlabelled, which is what made this a vibe.
+        let f = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let grey = NSColor(calibratedWhite: 0.62, alpha: 1)
+        func label(_ t: String, rightAlignedAt x: CGFloat) {
+            let a = NSAttributedString(string: t, attributes: [.font: f, .foregroundColor: grey])
+            a.draw(at: NSPoint(x: x - a.size().width, y: hr.maxY + 1))
+        }
+        NSAttributedString(string: FITSRenderer.fmtValue(s.axisMin),
+                           attributes: [.font: f, .foregroundColor: grey])
+            .draw(at: NSPoint(x: hr.minX, y: hr.maxY + 1))
+        label(FITSRenderer.fmtValue(s.axisMax), rightAlignedAt: hr.maxX)
     }
 }
 
@@ -672,6 +882,11 @@ final class FITSImageCanvas: NSView {
     private var panStart: (mouse: NSPoint, pan: CGPoint)?
     private var cmdDown = false
     private var mouseInside = false
+    /// Last pointer position in view coords, so the readout can be recomputed
+    /// when the mapping changes under a stationary cursor (zoom/pan). Without
+    /// this the chip kept a value sampled at the previous zoom and described a
+    /// pixel the cursor was no longer over (#13).
+    private var lastPointer: NSPoint?
     private var scrollIsZoom = false
     private var hintDeadline = Date.distantPast
     private var flagsMonitor: Any?
@@ -709,8 +924,15 @@ final class FITSImageCanvas: NSView {
     /// The hint describes the CURRENT gestures, so the behaviour is
     /// self-documenting rather than something you have to be told once.
     private func hintText() -> String? {
+        // The column pane gets ONE short line. Finder delivers no clicks, no
+        // hover and no modifier keys there, so advertising drag-to-measure or
+        // ⌥-scroll is false; and the full string measured 728 pt in a pane that
+        // is by definition under 380, so it was drawn clipped off the left edge
+        // with "press Space" — the only actionable part — entirely off-screen.
+        if compactMode {
+            return pageCount > 1 ? "press Space  ·  scroll to blink layers" : "press Space"
+        }
         var parts: [String] = []
-        if compactMode { parts.append("press Space for the full interactive preview") }
         if pageCount > 1 { parts.append("scroll (or ↑↓) to blink layers") }
         if isZoomed {
             parts.append("drag to pan")
@@ -849,6 +1071,7 @@ final class FITSImageCanvas: NSView {
     func resetZoom() {
         zoom = 1; pan = .zero
         onZoomChanged?()
+        refreshReadout()
         needsDisplay = true
     }
 
@@ -897,16 +1120,22 @@ final class FITSImageCanvas: NSView {
     private func setZoom(_ z: CGFloat, about p: NSPoint) {
         let old = imageRect()
         let wasZoomed = isZoomed
+        let z0 = zoom
         let anchor = old.map { (u: (p.x - $0.minX) / $0.width, v: (p.y - $0.minY) / $0.height) }
         zoom = max(1, min(20, z))
-        // Crossing fit<->zoomed changes what a drag does, so re-advertise it.
-        if isZoomed != wasZoomed { flashHint(4); stateChanged() }
+        // Crossing fit<->zoomed changes what a drag does, so re-advertise it —
+        // and keep re-advertising while zooming in, because ⌘-drag-to-measure
+        // exists ONLY in the zoomed state and the hint is the only place it is
+        // ever mentioned.
+        if isZoomed != wasZoomed { stateChanged() }
+        if isZoomed != wasZoomed || zoom > z0 { flashHint(4) }
         if zoom == 1 { pan = .zero } else if let a = anchor, let r = imageRect() {
             let now = NSPoint(x: r.minX + a.u * r.width, y: r.minY + a.v * r.height)
             pan.x += p.x - now.x
             pan.y += p.y - now.y
         }
         onZoomChanged?()
+        refreshReadout()
         needsDisplay = true
     }
 
@@ -973,8 +1202,17 @@ final class FITSImageCanvas: NSView {
         mouseInside = true
         cmdDown = e.modifierFlags.contains(.command)
         cursorForMode.set()
+        lastPointer = convert(e.locationInWindow, from: nil)
         guard dragStart == nil, panStart == nil else { return }
-        onHover(normalized(convert(e.locationInWindow, from: nil)))
+        onHover(normalized(lastPointer!))
+    }
+
+    /// Re-sample under a stationary cursor. Called whenever the data beneath the
+    /// pointer changes without a mouse event: zoom, pan (#13), and blinking to
+    /// another HDU, which is the app's primary navigation.
+    func refreshReadout() {
+        guard mouseInside, let p = lastPointer else { return }
+        onHover(normalized(p))
     }
 
     override func mouseEntered(with e: NSEvent) {
@@ -984,6 +1222,7 @@ final class FITSImageCanvas: NSView {
 
     override func mouseExited(with e: NSEvent) {
         mouseInside = false
+        lastPointer = nil
         onHover(nil)
         NSCursor.arrow.set()
     }
@@ -1002,6 +1241,7 @@ final class FITSImageCanvas: NSView {
 
     override func mouseDragged(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
+        lastPointer = p
         if let s = panStart {
             pan = CGPoint(x: s.pan.x + (p.x - s.mouse.x), y: s.pan.y + (p.y - s.mouse.y))
             needsDisplay = true
@@ -1087,39 +1327,62 @@ final class FITSImageCanvas: NSView {
         NSGraphicsContext.current?.restoreGraphicsState()
 
         if isZoomed {
-            chip(String(format: "%.1f×", zoom), at: NSPoint(x: bounds.width - 8, y: 30),
-                 font: .monospacedSystemFont(ofSize: 12, weight: .regular), rightAligned: true)
+            // Bottom-LEFT: top-right now belongs to the statistics card, and the
+            // top strip already holds the caption.
+            chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
+                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
         }
         if let t = readout {
             // The readout IS the product for a scientist — it was the smallest type
             // on screen. Bumped to 13pt (panel feedback: unreadable at 11).
-            chip(t, at: NSPoint(x: 8, y: bounds.height - 8),
-                 font: .monospacedSystemFont(ofSize: 13, weight: .regular))
+            // Pinned to the top-left of the image area: the readout is two lines
+            // and grows with the value, so at the bottom it collided with the
+            // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
+            // below the caption strip, so this clears that too.
+            chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
+                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+                 anchorTop: true)
         }
         // The hint describes the gestures available RIGHT NOW. It also reappears
         // while ⌘ is held — that is the moment you are asking "what does this do?"
-        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown, readout == nil || cmdDown {
+        // The readout is top-left and the hint is bottom-centre, so they cannot
+        // collide; suppressing the hint whenever a readout was live meant the
+        // flash on zoom never appeared at all, because zooming requires the
+        // pointer to be over the image.
+        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
             let s = NSAttributedString(string: h, attributes: [
                 .font: NSFont.systemFont(ofSize: 11),
                 .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
-            let sz = s.size()
+            var sz = s.size()
+            sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
+            // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
+            // is pinned to the bottom of the host. The hint used to be drawn
+            // straight over those controls. The column pane hides the toolbar,
+            // so there it can sit low.
+            let toolbarClearance: CGFloat = compactMode ? 14 : 56
             let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
-                           y: bounds.height - sz.height - 14,
+                           y: bounds.height - sz.height - toolbarClearance,
                            width: sz.width + 20, height: sz.height + 7)
             NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
             NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
-            s.draw(at: NSPoint(x: r.minX + 10, y: r.minY + 3.5))
+            s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
+                              width: sz.width, height: sz.height + 2))
         }
     }
 
     /// Dark chip anchored by its BOTTOM-left (or bottom-right) corner.
-    private func chip(_ text: String, at origin: NSPoint, font: NSFont, rightAligned: Bool = false) {
+    /// - Parameter anchorTop: anchor by the TOP-left instead of the bottom-left,
+    ///   so the chip grows downward. The view is flipped, so a bottom-anchored
+    ///   chip pinned near the bottom edge grows up into the toolbar.
+    private func chip(_ text: String, at origin: NSPoint, font: NSFont,
+                      rightAligned: Bool = false, anchorTop: Bool = false) {
         let s = NSAttributedString(string: text, attributes: [
             .font: font,
             .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)])
         let sz = s.size()
         let x = rightAligned ? origin.x - sz.width - 12 : origin.x
-        let r = NSRect(x: x, y: origin.y - sz.height - 6, width: sz.width + 12, height: sz.height + 6)
+        let y = anchorTop ? origin.y : origin.y - sz.height - 6
+        let r = NSRect(x: x, y: y, width: sz.width + 12, height: sz.height + 6)
         NSColor(calibratedWhite: 0, alpha: 0.58).setFill()
         NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
         s.draw(at: NSPoint(x: r.minX + 6, y: r.minY + 3))
@@ -1137,6 +1400,8 @@ final class FITSToolbar {
     let sLo = NSSlider(), sHi = NSSlider(), sG = NSSlider()
     let cLog = NSButton(checkboxWithTitle: "log", target: nil, action: nil)
     let reset = NSButton(title: "Reset", target: nil, action: nil)
+    /// Shows the percentile sliders' effect in real data units (#12).
+    let limitsLabel = NSTextField(labelWithString: "")
 
     /// - Parameter target: receives the actions; must implement the selectors.
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
@@ -1216,12 +1481,20 @@ final class FITSToolbar {
         reset.bezelStyle = .rounded
         reset.toolTip = "Back to the default stretch"
 
+        limitsLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        limitsLabel.textColor = NSColor(calibratedWhite: 0.85, alpha: 1)
+        limitsLabel.lineBreakMode = .byTruncatingTail
+        limitsLabel.toolTip = "The data values the display is currently clipped to"
+
         let bottom = NSStackView(views: [cLog, reset])
         bottom.spacing = 10
         let stack = NSStackView(views: [
-            row("Low", sLo, 0, 10, 0.5, "Clip everything below this percentile to black"),
-            row("High", sHi, 90, 100, 99.5, "Clip everything above this percentile to white"),
+            row("Low", sLo, 0, 1, Self.posLow(FITSRenderer.pLow),
+                "Clip the darkest pixels to black. Logarithmic, reaching the median: fine control near 0%"),
+            row("High", sHi, 0, 1, Self.posHigh(FITSRenderer.pHigh),
+                "Clip the brightest pixels to white. Logarithmic: fine control near 100%, where a solar image's tail lives"),
             row("Gamma", sG, 0.1, 2, 0.5, "Below 1 brightens faint structure; above 1 darkens it"),
+            limitsLabel,
             bottom,
         ])
         stack.orientation = .vertical
@@ -1243,16 +1516,62 @@ final class FITSToolbar {
         return s
     }
 
+    // The clip sliders are LOGARITHMIC in distance from their end of the
+    // distribution, not linear in percentile. Solar images have a heavy tail:
+    // on a typical AIA frame 90–99.5% moves the white point 461→2096 while
+    // 99.5–100% moves it 2096→14966, so a linear percentile slider spends 95%
+    // of its travel doing almost nothing and the last 5% doing everything.
+    // Mapping travel to log(distance-from-the-end) gives even control instead.
+    //
+    // Positions are 0…1; percentiles are rounded so the defaults round-trip
+    // EXACTLY, which `stretchIsDefault` depends on to keep the baked image.
+    /// Low clip spans 0.01 … 50 %. Capping it at 10 % (the obvious symmetric
+    /// choice against the high slider) left it with nothing to do: on an AIA
+    /// frame the 0–10th percentile covers 8.75 counts out of a 15 000 range,
+    /// so the slider moved the black point invisibly. Reaching the median gives
+    /// it 108 counts, which is enough to clip the quiet Sun away and see
+    /// off-limb structure. The tail is genuinely one-sided; matching the two
+    /// ends numerically would just preserve the uselessness symmetrically.
+    private static let lowDecades = 2.0 + Foundation.log10(50.0)     // 0.01 % → 50 %
+    private static func pctLow(_ t: Double) -> Double {
+        (pow(10, -2 + lowDecades * min(max(t, 0), 1)) * 1000).rounded() / 1000
+    }
+    private static func posLow(_ pct: Double) -> Double {
+        (Foundation.log10(max(pct, 0.01)) + 2) / lowDecades
+    }
+    private static func pctHigh(_ t: Double) -> Double {
+        ((100 - pow(10, 1 - 3 * min(max(t, 0), 1))) * 1000).rounded() / 1000  // 90 … 99.99 %
+    }
+    private static func posHigh(_ pct: Double) -> Double {
+        (1 - Foundation.log10(max(100 - pct, 0.01))) / 3
+    }
+
     func readStretch() -> (lo: Double, hi: Double, gamma: Double, log: Bool) {
-        (sLo.doubleValue, sHi.doubleValue, sG.doubleValue, cLog.state == .on)
+        (Self.pctLow(sLo.doubleValue), Self.pctHigh(sHi.doubleValue),
+         sG.doubleValue, cLog.state == .on)
     }
 
     func readFilter() -> FITSPreviewModel.Filter {
         FITSPreviewModel.Filter(rawValue: filterMenu.indexOfSelectedItem) ?? .none
     }
 
-    func resetStretch() {
-        sLo.doubleValue = 0.5; sHi.doubleValue = 99.5; sG.doubleValue = 0.5; cLog.state = .off
+    /// - Parameter cmapKey: the page's colormap, because the default gamma is
+    ///   instrument-dependent: a signed magnetogram wants 1.0 (linear), and
+    ///   anything else wants the faint-structure 0.5.
+    func resetStretch(cmapKey: String? = nil) {
+        sLo.doubleValue = Self.posLow(FITSRenderer.pLow)
+        sHi.doubleValue = Self.posHigh(FITSRenderer.pHigh)
+        sG.doubleValue = Double(FITSRenderer.defaultGamma(cmapKey))
+        cLog.state = .off
+    }
+
+    /// Put the sliders where the given stretch says, so the panel opens showing
+    /// the mapping the image was actually baked with.
+    func adoptStretch(_ s: (lo: Double, hi: Double, gamma: Double, log: Bool)) {
+        sLo.doubleValue = Self.posLow(s.lo)
+        sHi.doubleValue = Self.posHigh(s.hi)
+        sG.doubleValue = s.gamma
+        cLog.state = s.log ? .on : .off
     }
 
     /// Paint one chip: opaque dark when off, solid amber when on, dimmed when
@@ -1279,8 +1598,21 @@ final class FITSToolbar {
     func sync(model: FITSPreviewModel) {
         paint(limb, on: model.limbOn, enabled: model.hasLimb)
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
+        // The stretch composes with a filter rather than being clobbered by it
+        // (#14): RHEF sets the ordering, the stretch maps that to the ramp.
         paint(tune, on: model.mode == .stretch, enabled: true)
+        tune.toolTip = model.filter == .none
+            ? "Adjust the brightness stretch (percentile clip, gamma, log)"
+            : "Adjust the stretch applied on top of the \(model.filter.label) filter"
         panel.isHidden = (model.mode != .stretch)
+        if let l = model.displayLimits() {
+            let u = l.unit.isEmpty ? "" : " " + l.unit
+            limitsLabel.stringValue = "min \(FITSRenderer.fmtValue(l.lo))\(u)\nmax \(FITSRenderer.fmtValue(l.hi))\(u)"
+        } else if model.filter != .none {
+            limitsLabel.stringValue = "clipping \(model.filter.label) output,\nnot raw data values"
+        } else {
+            limitsLabel.stringValue = ""
+        }
         if filterMenu.indexOfSelectedItem != model.filter.rawValue {
             filterMenu.selectItem(at: model.filter.rawValue)
         }
