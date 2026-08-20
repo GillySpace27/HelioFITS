@@ -87,8 +87,10 @@ final class FITSPreviewModel {
     /// rather than every HDU of the file at once.
     private var buffers: [PageKey: Buffer] = [:]
     private var loading: Set<PageKey> = []
-    /// Filtered images (RHEF, …) rendered off-main, keyed "cur:filter".
-    private var filterCache: [String: NSImage] = [:]
+    /// Filter OUTPUT (the equalized values), rendered off-main, keyed
+    /// "cur:filter". Values rather than a finished image so the stretch can be
+    /// re-applied on top without re-running the expensive equalization (#14).
+    private var filterCache: [String: (w: Int, h: Int, vals: [Float])] = [:]
     private var filterLoading: Set<String> = []
     /// Fired on the main thread when a buffer or a filtered image lands (redraw).
     var onFullRes: (() -> Void)?
@@ -234,7 +236,8 @@ final class FITSPreviewModel {
     func image() -> NSImage? {
         guard let p = page else { return nil }
         if filter != .none {
-            if let img = filterCache[filterKey] { return img }
+            // The filter supplies the values; the stretch maps them to the ramp.
+            if let g = filterCache[filterKey] { return filteredImage(g) ?? p.image }
             requestFilter()
         }
         switch mode {
@@ -255,13 +258,13 @@ final class FITSPreviewModel {
               filterCache[key] == nil, !filterLoading.contains(key),
               let p = page, let f = buffer(cur) else { return }
         filterLoading.insert(key)
-        let res = p.res, wcs = p.wcs, lut = p.lut
+        let res = p.res, wcs = p.wcs
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let img = FITSPreviewModel.rhefImage(buffer: f, res: res, wcs: wcs, lut: lut)
+            let g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs)
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.filterLoading.remove(key)
-                if let img { self.filterCache[key] = img }
+                if let g { self.filterCache[key] = g }
                 if self.filterKey == key { self.onFullRes?() }   // still wanted → redraw
             }
         }
@@ -483,9 +486,9 @@ final class FITSPreviewModel {
     /// Pure RHEF render from a snapshot — safe to call off the main thread.
     /// Caps the working grid at 1024/side (RHEF is a display filter; finer than
     /// any window and it keeps a big frame from costing seconds).
-    static func rhefImage(buffer f: Buffer, res: FITSRenderer.Result,
-                          wcs: FITSRenderer.SolarWCS?, lut: [UInt8]?,
-                          upsilon: Double = 0.35) -> NSImage? {
+    static func rhefValues(buffer f: Buffer, res: FITSRenderer.Result,
+                           wcs: FITSRenderer.SolarWCS?,
+                           upsilon: Double = 0.35) -> (w: Int, h: Int, vals: [Float])? {
         let cap = 1024
         let scale = max(1, (max(f.w, f.h) + cap - 1) / cap)   // full-res px per grid cell
         let gw = f.w / scale, gh = f.h / scale
@@ -520,22 +523,49 @@ final class FITSPreviewModel {
         let nbins = max(1, gh / 2)
         let out = FITSRenderer.rhefEqualize(values: vals, radii: rad, maxRadius: maxR,
                                             nbins: nbins, upsilon: upsilon)
+        return (gw, gh, out)
+    }
 
+    /// Colour the cached RHEF output, applying the stretch on top of it.
+    ///
+    /// RHEF and the stretch compose rather than compete: the filter decides the
+    /// ordering of the values, the stretch decides how that ordering is mapped
+    /// to the ramp. Kept separate from the equalization because the sort is the
+    /// expensive part (~1 s on a big frame) while this is a per-pixel remap, so
+    /// dragging a slider does not re-run the filter.
+    func filteredImage(_ g: (w: Int, h: Int, vals: [Float])) -> NSImage? {
+        let n = g.w * g.h
+        // Percentiles OF THE FILTER OUTPUT, so "0.5–99.5%" keeps meaning the same
+        // thing it does for an unfiltered image.
+        var finite = g.vals.filter { $0.isFinite }
+        var lo: Float = 0, hi: Float = 1
+        if finite.count > 1 {
+            finite.sort()
+            let c = finite.count
+            lo = finite[min(c - 1, Int(Double(c) * stretch.lo / 100))]
+            hi = finite[min(c - 1, Int(Double(c) * stretch.hi / 100))]
+            if hi <= lo { lo = finite.first!; hi = finite.last! }
+            if hi <= lo { hi = lo + 1 }
+        }
+        let span = hi - lo, gam = Float(stretch.gamma)
         var rgba = [UInt8](repeating: 255, count: n * 4)
         for i in 0..<n {
             let i4 = i * 4
-            guard out[i].isFinite else { rgba[i4] = 0; rgba[i4 + 1] = 0; rgba[i4 + 2] = 0; continue }
-            let v = max(0, min(255, Int(out[i] * 255)))
-            if let lut {
-                rgba[i4] = lut[v * 3]; rgba[i4 + 1] = lut[v * 3 + 1]; rgba[i4 + 2] = lut[v * 3 + 2]
+            guard g.vals[i].isFinite else { rgba[i4] = 0; rgba[i4+1] = 0; rgba[i4+2] = 0; continue }
+            var t = (g.vals[i] - lo) / span
+            t = max(0, min(1, t))
+            if stretch.log { t = Float(Foundation.log(1 + 9 * Double(t)) / Foundation.log(10.0)) }
+            let v = max(0, min(255, Int(powf(t, gam) * 255)))
+            if let lut = page?.lut {
+                rgba[i4] = lut[v*3]; rgba[i4+1] = lut[v*3+1]; rgba[i4+2] = lut[v*3+2]
             } else {
-                rgba[i4] = UInt8(v); rgba[i4 + 1] = UInt8(v); rgba[i4 + 2] = UInt8(v)
+                rgba[i4] = UInt8(v); rgba[i4+1] = UInt8(v); rgba[i4+2] = UInt8(v)
             }
         }
-        return image(rgba: &rgba, w: gw, h: gh)
+        return Self.image(rgba: &rgba, w: g.w, h: g.h)
     }
 
-    private static func image(rgba: inout [UInt8], w: Int, h: Int) -> NSImage? {
+    fileprivate static func image(rgba: inout [UInt8], w: Int, h: Int) -> NSImage? {
         guard let ctx = CGContext(data: &rgba, width: w, height: h, bitsPerComponent: 8,
                                   bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
@@ -1331,14 +1361,13 @@ final class FITSToolbar {
     func sync(model: FITSPreviewModel) {
         paint(limb, on: model.limbOn, enabled: model.hasLimb)
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
-        // A filter replaces the displayed image wholesale, so the stretch sliders
-        // cannot affect it (#14). Disable rather than let them look operable.
-        let filtered = model.filter != .none
-        paint(tune, on: model.mode == .stretch && !filtered, enabled: !filtered)
-        tune.toolTip = filtered
-            ? "Unavailable while the \(model.filter.label) filter is on — the filter sets the display mapping itself"
-            : "Adjust the brightness stretch (percentile clip, gamma, log)"
-        panel.isHidden = filtered || (model.mode != .stretch)
+        // The stretch composes with a filter rather than being clobbered by it
+        // (#14): RHEF sets the ordering, the stretch maps that to the ramp.
+        paint(tune, on: model.mode == .stretch, enabled: true)
+        tune.toolTip = model.filter == .none
+            ? "Adjust the brightness stretch (percentile clip, gamma, log)"
+            : "Adjust the stretch applied on top of the \(model.filter.label) filter"
+        panel.isHidden = (model.mode != .stretch)
         if let l = model.displayLimits() {
             let u = l.unit.isEmpty ? "" : " " + l.unit
             limitsLabel.stringValue = "min \(FITSRenderer.fmtValue(l.lo))\(u)\nmax \(FITSRenderer.fmtValue(l.hi))\(u)"
