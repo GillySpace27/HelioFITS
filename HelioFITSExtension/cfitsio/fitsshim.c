@@ -142,8 +142,14 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
              chosen - 1, extname[0] ? " " : "", extname, naxes[0], naxes[1], planeLabel,
              (hdu_wanted >= 0 && !wanted_ok) ? "  (requested HDU has no image; auto)" : "");
     strlcat(hdr, line, 4096);
+    /* colormapKey() reads every one of these. FILTER/FILTNAM1 (Proba-3/ASPIICS
+       band) and CONTENT (HMI synoptic Br charts) were being read on the Swift
+       side but never emitted here, so those branches could never fire: every
+       ASPIICS product fell through to the wide-band table regardless of filter.
+       Add a key here whenever colormapKey() starts consulting one. */
     const char *keys[] = {"TELESCOP","INSTRUME","DETECTOR","OBSRVTRY","WAVELNTH",
-                          "DATE-OBS","T_OBS","EXPTIME","BUNIT","WAVEUNIT", NULL};
+                          "DATE-OBS","T_OBS","EXPTIME","BUNIT","WAVEUNIT",
+                          "FILTER","FILTNAM1","CONTENT", NULL};
     for (int k = 0; keys[k]; k++) {
         char val[FLEN_VALUE]; int s2 = 0;
         if (fits_read_key(fptr, TSTRING, keys[k], val, NULL, &s2) == 0) {

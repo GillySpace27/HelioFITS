@@ -50,7 +50,13 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         canvas.translatesAutoresizingMaskIntoConstraints = false
         canvas.onScrollStep = { [weak self] d in
             guard let self, self.model.step(d) else { return }
+            // A different layer is now under the cursor and under any measured
+            // region, so neither the readout nor the statistics describe what is
+            // on screen any more.
+            self.canvas.selection = nil
+            self.stats.isHidden = true
             self.refresh()
+            self.canvas.refreshReadout()
         }
         canvas.onHover = { [weak self] n in
             guard let self else { return }
@@ -129,6 +135,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                 // Off-main renders (full-res buffer, RHEF filter) call this when
                 // they land — repaint so the filtered image actually swaps in.
                 m.onFullRes = { [weak self] in self?.refresh() }
+                self.tools.adoptStretch(m.stretch)   // panel opens on the baked mapping
                 self.canvas.pageCount = m.count
                 self.refresh()
                 self.canvas.flashHint(6)
@@ -167,7 +174,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         if model.mode == .stretch { refresh() }
     }
     @objc private func resetStretch() {
-        tools.resetStretch()
+        tools.resetStretch(cmapKey: model.page?.res.cmapKey)
         model.stretch = tools.readStretch()
         if model.mode == .stretch { refresh() }
     }

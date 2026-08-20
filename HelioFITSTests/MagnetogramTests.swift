@@ -123,3 +123,30 @@ struct MagnetogramTests {
         ])) == nil)
     }
 }
+
+// MARK: - Opening the Stretch panel must not move a magnetogram's neutral line
+
+@Suite("Magnetogram gamma") @MainActor
+struct MagnetogramGammaTests {
+    /// `defaultGamma` is 1.0 for a signed field so 0 G sits on the colormap
+    /// midpoint. The Gamma slider used to start hard-coded at 0.5 regardless,
+    /// so `stretchIsDefault` was false from the first frame and merely pressing
+    /// Stretch re-rendered at 0.5 — mapping zero to LUT index ~180 (blue) and
+    /// drawing the apparent polarity inversion line in the wrong place.
+    @Test("reset restores the colormap's own default gamma")
+    func resetUsesColormapGamma() {
+        final class Dummy: NSObject { @objc func noop() {} }
+        let d = Dummy()
+        let t = FITSToolbar(target: d, limbSel: #selector(Dummy.noop), diffSel: #selector(Dummy.noop),
+                            tuneSel: #selector(Dummy.noop), stretchSel: #selector(Dummy.noop),
+                            resetSel: #selector(Dummy.noop), filterSel: #selector(Dummy.noop))
+        t.resetStretch(cmapKey: "hmimag")
+        #expect(t.readStretch().gamma == Double(FITSRenderer.defaultGamma("hmimag")),
+                "a magnetogram must reset to linear gamma, got \(t.readStretch().gamma)")
+        #expect(t.readStretch().gamma == 1.0)
+
+        t.resetStretch(cmapKey: "sdoaia171")
+        #expect(t.readStretch().gamma == Double(FITSRenderer.defaultGamma("sdoaia171")),
+                "a normal image must reset to the faint-structure gamma")
+    }
+}

@@ -155,6 +155,12 @@ final class FITSPreviewModel {
         let want = FITSRenderer.resolveAutoHDU(path: path,
                                                want: FITSRenderer.selectedHDU(forFileAt: path))
         m.cur = m.pages.firstIndex { $0.hdu == want } ?? 0
+        // Adopt the baked gamma. A signed magnetogram is baked linear (gamma 1)
+        // so 0 G lands on the colormap midpoint; leaving the model at 0.5 made
+        // `stretchIsDefault` false from the first frame, so merely opening the
+        // Stretch panel re-rendered it at 0.5 and moved the apparent polarity
+        // inversion line off zero.
+        m.stretch.gamma = Double(FITSRenderer.defaultGamma(m.page?.res.cmapKey))
         return m
     }
 
@@ -372,13 +378,27 @@ final class FITSPreviewModel {
         let span = max(wHi - wLo, 1e-12)
         var hist = [Int](repeating: 0, count: bins)
         for v in vals where v.isFinite {
-            hist[max(0, min(bins - 1, Int((v - wLo) / span * Float(bins))))] += 1
+            hist[Self.bin(v, wLo, span, bins)] += 1
         }
         let clip = displayLimits()
         return RegionStats(text: text, region: hist, whole: whole,
                            axisMin: wLo, axisMax: wHi,
                            unit: FITSRenderer.headerVal(r.header, "BUNIT") ?? "",
                            clipLo: clip?.lo, clipHi: clip?.hi)
+    }
+
+    /// Bin index for a value, clamped in FLOAT before the Int conversion.
+    ///
+    /// `Int(_: Float)` traps on overflow, so clamping afterwards is too late:
+    /// binning now runs against a PERCENTILE range rather than min/max, and a
+    /// pixel far outside it (an IDL-style 1e30 fill value, an uncalibrated hot
+    /// pixel, a BSCALE blow-up) overflows the conversion and kills the app the
+    /// moment a region is dragged. Values outside the range land in the end
+    /// bins, which is the intended behaviour for a percentile-clipped axis.
+    private static func bin(_ v: Float, _ lo: Float, _ span: Float, _ bins: Int) -> Int {
+        let t = (v - lo) / span * Float(bins)
+        guard t.isFinite else { return 0 }
+        return Int(max(0, min(Float(bins - 1), t)))
     }
 
     /// Histogram of every finite pixel in the frame, cached per page: BLANK and
@@ -409,7 +429,7 @@ final class FITSPreviewModel {
         let span = max(hi - lo, 1e-12)
         var counts = [Int](repeating: 0, count: bins)
         for v in f.pix where v.isFinite {
-            counts[max(0, min(bins - 1, Int((v - lo) / span * Float(bins))))] += 1
+            counts[Self.bin(v, lo, span, bins)] += 1
         }
         let out = (lo: lo, hi: hi, counts: counts)
         wholeHistCache[key] = out
@@ -446,6 +466,11 @@ final class FITSPreviewModel {
     /// it never blocks or reports limits from a different population of pixels.
     func displayLimits() -> (lo: Float, hi: Float, unit: String)? {
         guard let p = page else { return nil }
+        // A filter clips in ITS OWN space (RHEF output is a rank transform into
+        // [0,1]), so the raw-data levels below are not where the picture is
+        // actually clipped and are not reproducible in Python. Reporting them
+        // under a filter would defeat the point of showing them at all (#12).
+        guard filter == .none else { return nil }
         let unit = FITSRenderer.headerVal(p.res.header, "BUNIT") ?? ""
         if stretchIsDefault || buffer(cur) == nil {
             return (p.res.lo, p.res.hi, unit)
@@ -605,7 +630,17 @@ final class FITSPreviewModel {
         let n = g.w * g.h
         // Percentiles OF THE FILTER OUTPUT, so "0.5–99.5%" keeps meaning the same
         // thing it does for an unfiltered image.
-        var finite = g.vals.filter { $0.isFinite }
+        // Sample before sorting, exactly as FITSRenderer.levels does. Sorting all
+        // ~1M filter outputs cost 66-71 ms on the main thread PER CALL, and
+        // image() is called on every continuous slider event, so a drag ran at
+        // about 13 fps inside a watchdog'd Quick Look extension. The percentile
+        // edges are indistinguishable from a 200k sample.
+        let stride0 = max(1, g.vals.count / 200_000)
+        var finite = [Float]()
+        finite.reserveCapacity(g.vals.count / stride0 + 1)
+        for i in Swift.stride(from: 0, to: g.vals.count, by: stride0) where g.vals[i].isFinite {
+            finite.append(g.vals[i])
+        }
         var lo: Float = 0, hi: Float = 1
         if finite.count > 1 {
             finite.sort()
@@ -1159,9 +1194,10 @@ final class FITSImageCanvas: NSView {
         onHover(normalized(lastPointer!))
     }
 
-    /// Re-sample under a stationary cursor. Called whenever zoom or pan moves the
-    /// image beneath the pointer, since no mouse event fires in that case (#13).
-    private func refreshReadout() {
+    /// Re-sample under a stationary cursor. Called whenever the data beneath the
+    /// pointer changes without a mouse event: zoom, pan (#13), and blinking to
+    /// another HDU, which is the app's primary navigation.
+    func refreshReadout() {
         guard mouseInside, let p = lastPointer else { return }
         onHover(normalized(p))
     }
@@ -1498,11 +1534,23 @@ final class FITSToolbar {
         FITSPreviewModel.Filter(rawValue: filterMenu.indexOfSelectedItem) ?? .none
     }
 
-    func resetStretch() {
+    /// - Parameter cmapKey: the page's colormap, because the default gamma is
+    ///   instrument-dependent: a signed magnetogram wants 1.0 (linear), and
+    ///   anything else wants the faint-structure 0.5.
+    func resetStretch(cmapKey: String? = nil) {
         sLo.doubleValue = Self.posLow(FITSRenderer.pLow)
         sHi.doubleValue = Self.posHigh(FITSRenderer.pHigh)
-        sG.doubleValue = 0.5
+        sG.doubleValue = Double(FITSRenderer.defaultGamma(cmapKey))
         cLog.state = .off
+    }
+
+    /// Put the sliders where the given stretch says, so the panel opens showing
+    /// the mapping the image was actually baked with.
+    func adoptStretch(_ s: (lo: Double, hi: Double, gamma: Double, log: Bool)) {
+        sLo.doubleValue = Self.posLow(s.lo)
+        sHi.doubleValue = Self.posHigh(s.hi)
+        sG.doubleValue = s.gamma
+        cLog.state = s.log ? .on : .off
     }
 
     /// Paint one chip: opaque dark when off, solid amber when on, dimmed when
@@ -1539,6 +1587,8 @@ final class FITSToolbar {
         if let l = model.displayLimits() {
             let u = l.unit.isEmpty ? "" : " " + l.unit
             limitsLabel.stringValue = "min \(FITSRenderer.fmtValue(l.lo))\(u)\nmax \(FITSRenderer.fmtValue(l.hi))\(u)"
+        } else if model.filter != .none {
+            limitsLabel.stringValue = "clipping \(model.filter.label) output,\nnot raw data values"
         } else {
             limitsLabel.stringValue = ""
         }

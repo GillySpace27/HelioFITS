@@ -232,6 +232,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                     guard let self, let win, let c = self.ctx[ObjectIdentifier(win)] else { return }
                     self.refresh(c)
                 }
+                c.tools.adoptStretch(m.stretch)   // panel opens on the baked mapping
                 self.populatePopup(c, headerText: text)
                 c.save.isEnabled = !m.isEmpty
                 c.copy.isEnabled = !m.isEmpty
@@ -297,8 +298,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.translatesAutoresizingMaskIntoConstraints = false
         c.canvas.onScrollStep = { [weak self, weak c] d in
             guard let self, let c, c.model.step(d) else { return }
-            c.popup.selectItem(withTag: c.model.page?.hdu ?? 0)
-            self.refresh(c)
+            // populatePopup tags items with the PAGE INDEX, not the HDU number —
+            // they differ as soon as a file has several image HDUs, and a data
+            // cube gives many pages the same hdu.
+            c.popup.selectItem(withTag: c.model.cur)
+            self.pageChanged(c)
         }
         c.canvas.onHover = { [weak c] n in
             guard let c else { return }
@@ -456,7 +460,17 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     @objc private func hduChanged(_ sender: NSPopUpButton) {
         guard let c = ctx(for: sender) else { return }
         c.model.select(page: sender.selectedTag())
+        pageChanged(c)
+    }
+
+    /// Refresh after the displayed layer changes. The readout and any measured
+    /// region describe the PREVIOUS layer, and neither is invalidated by a
+    /// mouse event, so both have to be dealt with explicitly.
+    private func pageChanged(_ c: Ctx) {
+        c.canvas.selection = nil
+        c.stats.isHidden = true
         refresh(c)
+        c.canvas.refreshReadout()
     }
 
     @objc private func toggleLimb(_ s: NSButton) {
@@ -487,7 +501,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     @objc private func resetStretch(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.tools.resetStretch()
+        c.tools.resetStretch(cmapKey: c.model.page?.res.cmapKey)
         c.model.stretch = c.tools.readStretch()
         if c.model.mode == .stretch { refresh(c) }
     }

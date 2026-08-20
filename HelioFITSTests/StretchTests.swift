@@ -233,3 +233,31 @@ struct ClipSliderTests {
         #expect(t.readStretch().lo <= 0.01, "low slider should reach effectively no clipping")
     }
 }
+
+// MARK: - Histogram binning must not trap
+
+@Suite("Histogram binning") @MainActor
+struct HistogramBinTests {
+    /// A FITS carrying a large fill value (IDL writes 1e30 for missing data)
+    /// next to normal pixels used to kill the app the moment a region was
+    /// dragged: binning runs against a PERCENTILE range, so such a pixel is far
+    /// outside it, and `Int(_: Float)` traps on overflow before the clamp
+    /// applies. Verified crashing with exit 133 before the fix.
+    @Test("a 1e30 fill value does not trap the binner")
+    func hugeFillValueIsBinnedNotFatal() throws {
+        let n = 64
+        var pix = [Float](repeating: 0, count: n * n)
+        for i in 0..<pix.count { pix[i] = Float(i % 500) }
+        pix[10] = 1e30                     // fill / missing marker
+        pix[11] = -1e30
+        pix[12] = .infinity                // must be skipped, not binned
+        pix[13] = .nan
+        let buf: FITSPreviewModel.Buffer = (w: n, h: n, pix: pix)
+        let res = FITSRenderer.Result(png: Data(), header: "", width: n, height: n,
+                                      natW: n, natH: n, factor: 1,
+                                      lo: 0, hi: 1, gam: 0.5, cmapKey: nil)
+        // rhefValues walks the same data; if the binner traps this never returns.
+        let g = FITSPreviewModel.rhefValues(buffer: buf, res: res, wcs: nil)
+        #expect(g != nil, "filter failed on a frame containing fill values")
+    }
+}
