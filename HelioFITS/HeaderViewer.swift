@@ -290,7 +290,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                 return
             }
             c.stats.text = s.text
-            c.stats.histogram = s.histogram
+            c.stats.stats = s
             c.stats.isHidden = false
             c.stats.needsDisplay = true
             _ = self
@@ -320,8 +320,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             // can be visible at once (hover a pixel, then drag a region).
             c.stats.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
             c.stats.topAnchor.constraint(equalTo: top.topAnchor, constant: 28),
-            c.stats.widthAnchor.constraint(equalToConstant: 210),
-            c.stats.heightAnchor.constraint(equalToConstant: 118),
+            c.stats.widthAnchor.constraint(equalToConstant: 292),
+            c.stats.heightAnchor.constraint(equalToConstant: 168),
             toolStack.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),
             toolStack.bottomAnchor.constraint(equalTo: top.bottomAnchor, constant: -10),
             c.tools.panel.trailingAnchor.constraint(equalTo: top.trailingAnchor, constant: -10),

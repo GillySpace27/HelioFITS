@@ -82,8 +82,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             // can be visible at once (hover a pixel, then drag a region).
             stats.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
             stats.topAnchor.constraint(equalTo: root.topAnchor, constant: 28),
-            stats.widthAnchor.constraint(equalToConstant: 210),
-            stats.heightAnchor.constraint(equalToConstant: 118),
+            stats.widthAnchor.constraint(equalToConstant: 292),
+            stats.heightAnchor.constraint(equalToConstant: 168),
             toolStack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
             toolStack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -10),
             tools.panel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
@@ -179,7 +179,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
             return
         }
         stats.text = s.text
-        stats.histogram = s.histogram
+        stats.stats = s
         stats.isHidden = false
         stats.needsDisplay = true
     }

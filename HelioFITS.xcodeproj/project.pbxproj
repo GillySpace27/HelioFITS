@@ -548,7 +548,7 @@
 					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcfitsio",
@@ -584,7 +584,7 @@
 					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcfitsio",
@@ -752,7 +752,7 @@
 					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcfitsio",
@@ -802,7 +802,7 @@
 					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lcfitsio",
@@ -832,7 +832,7 @@
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITSTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -852,7 +852,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITSTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -872,7 +872,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UB45PPC2JS;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITSUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -891,7 +891,7 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UB45PPC2JS;
 				GENERATE_INFOPLIST_FILE = YES;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITSUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = NO;
@@ -927,7 +927,7 @@
 					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lz",
@@ -973,7 +973,7 @@
 					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
-				MARKETING_VERSION = 1.2.1;
+				MARKETING_VERSION = 1.3.0;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
 					"-lz",

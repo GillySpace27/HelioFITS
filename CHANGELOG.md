@@ -4,7 +4,7 @@ All notable changes to HelioFITS are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.1] - 2026-08-19
+## [1.3.0] - 2026-08-19
 
 First release driven entirely by reports from other people. Thanks to
 [@DavidBerghmans](https://github.com/DavidBerghmans) (PI, Solar Orbiter/EUI),
@@ -50,6 +50,14 @@ First release driven entirely by reports from other people. Thanks to
   units, instead of only percentiles. Asked for by Chris Lowder, who wanted to
   know what vmin/vmax a PUNCH image was actually being scaled between.
   ([#12](https://github.com/GillySpace27/HelioFITS/issues/12))
+- **The region-statistics histogram is now readable rather than decorative.**
+  The distribution of the whole image is drawn behind the selected region's on a
+  shared axis, so you can see whether a region is typical or unusual; the axis is
+  labelled in data units; and the current display limits are drawn across it as
+  markers, which shows how much of the data a stretch is clipping away in a way
+  two numbers cannot. Binning runs over the image's 0.1–99.9 percentile range,
+  because a min-to-max axis put a solar frame's entire distribution in the first
+  two bins. Fixes the statistics text being cut off after the second line.
 
 ## [1.2] - 2026-07-28
 
@@ -95,7 +103,7 @@ First App Store release.
 Initial release: Quick Look previews, Finder thumbnails, Spotlight metadata and
 a standalone viewer for solar FITS files.
 
-[1.2.1]: https://github.com/GillySpace27/HelioFITS/releases/tag/v1.2.1
+[1.3.0]: https://github.com/GillySpace27/HelioFITS/releases/tag/v1.3.0
 [1.2]: https://github.com/GillySpace27/HelioFITS/releases/tag/v1.2-build.6
 [1.1.1]: https://github.com/GillySpace27/HelioFITS/releases/tag/v1.1.1-build.3
 [1.1]: https://github.com/GillySpace27/HelioFITS/releases/tag/v1.1-build.2

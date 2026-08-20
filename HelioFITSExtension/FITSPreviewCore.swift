@@ -92,6 +92,9 @@ final class FITSPreviewModel {
     /// re-applied on top without re-running the expensive equalization (#14).
     private var filterCache: [String: (w: Int, h: Int, vals: [Float])] = [:]
     private var filterLoading: Set<String> = []
+    /// Whole-image histogram per page — the region box is re-measured on every
+    /// drag, but the image behind it does not change.
+    private var wholeHistCache: [PageKey: (lo: Float, hi: Float, counts: [Int])] = [:]
     /// Fired on the main thread when a buffer or a filtered image lands (redraw).
     var onFullRes: (() -> Void)?
 
@@ -302,8 +305,22 @@ final class FITSPreviewModel {
     /// flux), so it has to be the real one: summing a decimated copy while
     /// labelling the box in native pixels understated it 64× on a 4096² frame,
     /// BUNIT and all. Nothing is posted until the pixels are actually resident.
-    func statistics(u0: Double, v0: Double, u1: Double, v1: Double)
-        -> (text: String, histogram: [Int])? {
+    /// Everything the statistics card draws. The two histograms share one bin
+    /// range (the whole image's), which is what makes them comparable: the point
+    /// of showing the image distribution behind the region's is to say whether
+    /// the region is typical or unusual, and that only works on a common axis.
+    struct RegionStats {
+        let text: String
+        let region: [Int]           // counts per bin, selected box
+        let whole: [Int]            // counts per bin, whole image, finite pixels only
+        let axisMin: Float          // shared bin range, in data units
+        let axisMax: Float
+        let unit: String
+        let clipLo: Float?          // where the display is currently clipped …
+        let clipHi: Float?          // … drawn over the distribution
+    }
+
+    func statistics(u0: Double, v0: Double, u1: Double, v1: Double) -> RegionStats? {
         guard let p = page, let f = buffer(cur) else { return nil }
         let r = p.res
 
@@ -334,18 +351,69 @@ final class FITSPreviewModel {
         func fy(_ y: Int) -> Int { f.h - y }
         let unit = FITSRenderer.headerVal(r.header, "BUNIT").map { " \($0)" } ?? ""
 
+        // BUNIT once, on its own line: repeating it after mean AND median made
+        // those lines long enough to wrap off the card for PUNCH, whose BUNIT
+        // carries a scale factor and is 19 characters on its own.
+        let unitLine = unit.isEmpty ? "" : "\nunits \(unit.trimmingCharacters(in: .whitespaces))"
         let text = """
-        region x \(fx(x0))–\(fx(x1))  y \(fy(y1))–\(fy(y0))   n=\(vals.count)
-        mean \(FITSRenderer.fmtValue(mean))\(unit)   median \(FITSRenderer.fmtValue(med))\(unit)
+        region x \(fx(x0))–\(fx(x1))  y \(fy(y1))–\(fy(y0))
+        n=\(vals.count)\(unitLine)
+        mean \(FITSRenderer.fmtValue(mean))   median \(FITSRenderer.fmtValue(med))
         σ \(FITSRenderer.fmtValue(sd))   sum \(FITSRenderer.fmtValue(Float(sum)))
         min \(FITSRenderer.fmtValue(mn))   max \(FITSRenderer.fmtValue(mx))
         """
 
-        let bins = 44
+        // Bin over the WHOLE image so the two histograms line up. Ignoring the
+        // region's own min/max here is deliberate: a region-relative axis
+        // rescales every time you drag, which is what made the old histogram
+        // decorative rather than readable.
+        let bins = 48
+        let (wLo, wHi, whole) = wholeImageHistogram(f, bins: bins)
+        let span = max(wHi - wLo, 1e-12)
         var hist = [Int](repeating: 0, count: bins)
-        let range = max(mx - mn, 1e-12)
-        for v in vals { hist[min(bins - 1, Int((v - mn) / range * Float(bins)))] += 1 }
-        return (text, hist)
+        for v in vals where v.isFinite {
+            hist[max(0, min(bins - 1, Int((v - wLo) / span * Float(bins))))] += 1
+        }
+        let clip = displayLimits()
+        return RegionStats(text: text, region: hist, whole: whole,
+                           axisMin: wLo, axisMax: wHi,
+                           unit: FITSRenderer.headerVal(r.header, "BUNIT") ?? "",
+                           clipLo: clip?.lo, clipHi: clip?.hi)
+    }
+
+    /// Histogram of every finite pixel in the frame, cached per page: BLANK and
+    /// off-disk NaNs are excluded so they cannot dominate the range.
+    private func wholeImageHistogram(_ f: Buffer, bins: Int) -> (lo: Float, hi: Float, counts: [Int]) {
+        let key = PageKey(hdu: page?.hdu ?? 0, plane: page?.plane ?? 0)
+        if let c = wholeHistCache[key], c.counts.count == bins { return c }
+        // Percentiles, not min/max. A solar frame spans decades, so a
+        // min-to-max axis puts the entire distribution in the first two bins and
+        // leaves the rest of the plot empty. 0.1-99.9 keeps the extremes out of
+        // the axis while still sitting OUTSIDE the default 0.5-99.5 display
+        // clip, so the clip markers land inside the plot where they can be read.
+        // Sampled the same way `levels()` samples, so the two agree about shape.
+        var sample = [Float]()
+        let step = max(1, f.pix.count / 200_000)
+        sample.reserveCapacity(f.pix.count / step + 1)
+        for i in stride(from: 0, to: f.pix.count, by: step) where f.pix[i].isFinite {
+            sample.append(f.pix[i])
+        }
+        sample.sort()
+        var lo: Float = 0, hi: Float = 1
+        if sample.count > 1 {
+            lo = sample[min(sample.count - 1, Int(Double(sample.count) * 0.001))]
+            hi = sample[min(sample.count - 1, Int(Double(sample.count) * 0.999))]
+            if hi <= lo { lo = sample.first!; hi = sample.last! }
+        }
+        if hi <= lo { hi = lo + 1 }
+        let span = max(hi - lo, 1e-12)
+        var counts = [Int](repeating: 0, count: bins)
+        for v in f.pix where v.isFinite {
+            counts[max(0, min(bins - 1, Int((v - lo) / span * Float(bins))))] += 1
+        }
+        let out = (lo: lo, hi: hi, counts: counts)
+        wholeHistCache[key] = out
+        return out
     }
 
     // MARK: image synthesis
@@ -630,16 +698,26 @@ final class FITSPreviewModel {
 // MARK: - Statistics card
 
 final class FITSStatsCard: NSView {
-    var text = "" { didSet { setAccessibilityValue(text) } }
-    var histogram: [Int] = []
+    var text = "" { didSet { setAccessibilityValue(accessibilityValue() as? String ?? text) } }
+    /// Set together with `text`; nil until a region has been measured.
+    var stats: FITSPreviewModel.RegionStats?
     override var isFlipped: Bool { true }
 
     // The whole card is custom-drawn, so without this VoiceOver sees an empty
-    // box where the mean/median/σ/sum live.
+    // box where the mean/median/σ/sum live. The histogram is decorative to a
+    // screen reader, but the clip limits are not, so they are spoken too.
     override func accessibilityLabel() -> String? { "Region statistics" }
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
-    override func accessibilityValue() -> Any? { text }
+    override func accessibilityValue() -> Any? {
+        guard let s = stats, let lo = s.clipLo, let hi = s.clipHi else { return text }
+        let u = s.unit.isEmpty ? "" : " " + s.unit
+        return text + "\ndisplay clipped to \(FITSRenderer.fmtValue(lo))\(u) – \(FITSRenderer.fmtValue(hi))\(u)"
+    }
+
+    private let pad: CGFloat = 9
+    private let axisH: CGFloat = 13
+    private let histH: CGFloat = 46
 
     override func draw(_ dirty: NSRect) {
         NSColor(calibratedWhite: 0.07, alpha: 0.96).setFill()
@@ -648,23 +726,67 @@ final class FITSStatsCard: NSView {
         NSColor(calibratedWhite: 0.25, alpha: 1).setStroke()
         bg.stroke()
 
+        let block = histH + axisH + pad
         NSAttributedString(string: text, attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
             .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.97, blue: 0.93, alpha: 1),
-        ]).draw(in: NSRect(x: 9, y: 7, width: bounds.width - 18, height: bounds.height - 60))
+        ]).draw(in: NSRect(x: pad, y: 6, width: bounds.width - 2 * pad,
+                           height: bounds.height - block - 6))
 
-        guard !histogram.isEmpty else { return }
-        let hr = NSRect(x: 9, y: bounds.height - 48, width: bounds.width - 18, height: 40)
+        guard let s = stats, !s.region.isEmpty else { return }
+        let hr = NSRect(x: pad, y: bounds.height - block, width: bounds.width - 2 * pad, height: histH)
         NSColor(calibratedWhite: 0.04, alpha: 1).setFill()
         NSBezierPath(roundedRect: hr, xRadius: 3, yRadius: 3).fill()
-        let peak = max(1.0, histogram.map { Foundation.log(1 + Double($0)) }.max() ?? 1)
-        let bw = hr.width / CGFloat(histogram.count)
-        NSColor(calibratedRed: 0.5, green: 0.72, blue: 0.54, alpha: 1).setFill()
-        for (i, c) in histogram.enumerated() {
-            let h = CGFloat(Foundation.log(1 + Double(c)) / peak) * (hr.height - 2)
-            NSRect(x: hr.minX + CGFloat(i) * bw + 0.5, y: hr.maxY - h,
-                   width: max(1, bw - 1), height: h).fill()
+
+        // One vertical scale for both, so the region reads as a fraction of the
+        // image rather than being silently renormalised to its own peak.
+        func logs(_ a: [Int]) -> [Double] { a.map { Foundation.log(1 + Double($0)) } }
+        let rl = logs(s.region), wl = logs(s.whole)
+        let peak = max(1.0, (wl + rl).max() ?? 1)
+        let bw = hr.width / CGFloat(max(s.region.count, 1))
+
+        // whole image behind, dim; the selected region in front
+        func bars(_ v: [Double], _ colour: NSColor) {
+            colour.setFill()
+            for (i, c) in v.enumerated() where c > 0 {
+                let h = CGFloat(c / peak) * (hr.height - 2)
+                NSRect(x: hr.minX + CGFloat(i) * bw + 0.5, y: hr.maxY - h,
+                       width: max(1, bw - 1), height: h).fill()
+            }
         }
+        bars(wl, NSColor(calibratedWhite: 0.42, alpha: 1))
+        bars(rl, NSColor(calibratedRed: 0.5, green: 0.72, blue: 0.54, alpha: 0.95))
+
+        // Where the display is currently clipped, drawn ON the distribution:
+        // the useful question when choosing a stretch is how much of the data
+        // the clip is throwing away, which a pair of numbers cannot show.
+        let span = Double(max(s.axisMax - s.axisMin, 1e-12))
+        func xFor(_ v: Float) -> CGFloat? {
+            let t = (Double(v) - Double(s.axisMin)) / span
+            guard t >= -0.02, t <= 1.02 else { return nil }
+            return hr.minX + CGFloat(min(max(t, 0), 1)) * hr.width
+        }
+        NSColor(calibratedRed: 1, green: 0.78, blue: 0.35, alpha: 0.9).setStroke()
+        for v in [s.clipLo, s.clipHi].compactMap({ $0 }) {
+            guard let x = xFor(v) else { continue }
+            let p = NSBezierPath()
+            p.move(to: NSPoint(x: x, y: hr.minY)); p.line(to: NSPoint(x: x, y: hr.maxY))
+            p.lineWidth = 1
+            p.setLineDash([3, 2], count: 2, phase: 0)
+            p.stroke()
+        }
+
+        // Abscissa: the axis was unlabelled, which is what made this a vibe.
+        let f = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
+        let grey = NSColor(calibratedWhite: 0.62, alpha: 1)
+        func label(_ t: String, rightAlignedAt x: CGFloat) {
+            let a = NSAttributedString(string: t, attributes: [.font: f, .foregroundColor: grey])
+            a.draw(at: NSPoint(x: x - a.size().width, y: hr.maxY + 1))
+        }
+        NSAttributedString(string: FITSRenderer.fmtValue(s.axisMin),
+                           attributes: [.font: f, .foregroundColor: grey])
+            .draw(at: NSPoint(x: hr.minX, y: hr.maxY + 1))
+        label(FITSRenderer.fmtValue(s.axisMax), rightAlignedAt: hr.maxX)
     }
 }
 
