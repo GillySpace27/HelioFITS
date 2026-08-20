@@ -24,10 +24,18 @@ First release driven entirely by reports from other people. Thanks to
   the cursor was no longer over. It is now re-sampled whenever zoom or pan moves
   the image under a stationary pointer.
   ([#13](https://github.com/GillySpace27/HelioFITS/issues/13))
-- **The stretch sliders silently did nothing while a filter was active.** A
-  filter replaces the displayed image wholesale, so the panel is now disabled
-  and says why, rather than presenting controls that cannot work.
+- **The stretch sliders silently did nothing while RHEF was active.** The filter
+  and the stretch now compose: RHEF decides the ordering of the values and the
+  stretch decides how that ordering maps onto the colour ramp, so the sliders
+  work on a filtered image the way they do on an unfiltered one. Moving a slider
+  no longer re-runs the filter either, only the per-pixel remap.
   ([#14](https://github.com/GillySpace27/HelioFITS/issues/14))
+
+### Changed
+
+- **The pixel readout is pinned to the top-left** instead of the bottom-left,
+  where it grew into the filter menu and the Limb/Diff/Stretch buttons. Region
+  statistics moved to the top-right to make room.
 
 ### Added
 
