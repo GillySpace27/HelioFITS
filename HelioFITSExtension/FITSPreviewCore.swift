@@ -366,6 +366,23 @@ final class FITSPreviewModel {
         }
     }
 
+    /// The display limits currently in force, in DATA units, with BUNIT.
+    ///
+    /// The sliders are percentiles, which is not the number anyone quotes or
+    /// reproduces in Python (#12, asked by Chris Lowder about PUNCH). `levels()`
+    /// already computes the real values and threw them away; this surfaces them.
+    /// Falls back to the baked limits until the full-res buffer is resident, so
+    /// it never blocks or reports limits from a different population of pixels.
+    func displayLimits() -> (lo: Float, hi: Float, unit: String)? {
+        guard let p = page else { return nil }
+        let unit = FITSRenderer.headerVal(p.res.header, "BUNIT") ?? ""
+        if stretchIsDefault || buffer(cur) == nil {
+            return (p.res.lo, p.res.hi, unit)
+        }
+        let (lo, hi) = levels(buffer(cur)!, p.res)
+        return (lo, hi, unit)
+    }
+
     /// Live stretch, rendered from the full-resolution pixels and decimated to
     /// the same size as the baked image, so moving a slider changes the mapping
     /// and nothing else — not the sharpness, not the framing.
@@ -672,6 +689,11 @@ final class FITSImageCanvas: NSView {
     private var panStart: (mouse: NSPoint, pan: CGPoint)?
     private var cmdDown = false
     private var mouseInside = false
+    /// Last pointer position in view coords, so the readout can be recomputed
+    /// when the mapping changes under a stationary cursor (zoom/pan). Without
+    /// this the chip kept a value sampled at the previous zoom and described a
+    /// pixel the cursor was no longer over (#13).
+    private var lastPointer: NSPoint?
     private var scrollIsZoom = false
     private var hintDeadline = Date.distantPast
     private var flagsMonitor: Any?
@@ -849,6 +871,7 @@ final class FITSImageCanvas: NSView {
     func resetZoom() {
         zoom = 1; pan = .zero
         onZoomChanged?()
+        refreshReadout()
         needsDisplay = true
     }
 
@@ -907,6 +930,7 @@ final class FITSImageCanvas: NSView {
             pan.y += p.y - now.y
         }
         onZoomChanged?()
+        refreshReadout()
         needsDisplay = true
     }
 
@@ -973,8 +997,16 @@ final class FITSImageCanvas: NSView {
         mouseInside = true
         cmdDown = e.modifierFlags.contains(.command)
         cursorForMode.set()
+        lastPointer = convert(e.locationInWindow, from: nil)
         guard dragStart == nil, panStart == nil else { return }
-        onHover(normalized(convert(e.locationInWindow, from: nil)))
+        onHover(normalized(lastPointer!))
+    }
+
+    /// Re-sample under a stationary cursor. Called whenever zoom or pan moves the
+    /// image beneath the pointer, since no mouse event fires in that case (#13).
+    private func refreshReadout() {
+        guard mouseInside, let p = lastPointer else { return }
+        onHover(normalized(p))
     }
 
     override func mouseEntered(with e: NSEvent) {
@@ -984,6 +1016,7 @@ final class FITSImageCanvas: NSView {
 
     override func mouseExited(with e: NSEvent) {
         mouseInside = false
+        lastPointer = nil
         onHover(nil)
         NSCursor.arrow.set()
     }
@@ -1002,6 +1035,7 @@ final class FITSImageCanvas: NSView {
 
     override func mouseDragged(with e: NSEvent) {
         let p = convert(e.locationInWindow, from: nil)
+        lastPointer = p
         if let s = panStart {
             pan = CGPoint(x: s.pan.x + (p.x - s.mouse.x), y: s.pan.y + (p.y - s.mouse.y))
             needsDisplay = true
@@ -1137,6 +1171,8 @@ final class FITSToolbar {
     let sLo = NSSlider(), sHi = NSSlider(), sG = NSSlider()
     let cLog = NSButton(checkboxWithTitle: "log", target: nil, action: nil)
     let reset = NSButton(title: "Reset", target: nil, action: nil)
+    /// Shows the percentile sliders' effect in real data units (#12).
+    let limitsLabel = NSTextField(labelWithString: "")
 
     /// - Parameter target: receives the actions; must implement the selectors.
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
@@ -1216,12 +1252,18 @@ final class FITSToolbar {
         reset.bezelStyle = .rounded
         reset.toolTip = "Back to the default stretch"
 
+        limitsLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        limitsLabel.textColor = NSColor(calibratedWhite: 0.85, alpha: 1)
+        limitsLabel.lineBreakMode = .byTruncatingTail
+        limitsLabel.toolTip = "The data values the display is currently clipped to"
+
         let bottom = NSStackView(views: [cLog, reset])
         bottom.spacing = 10
         let stack = NSStackView(views: [
             row("Low", sLo, 0, 10, 0.5, "Clip everything below this percentile to black"),
             row("High", sHi, 90, 100, 99.5, "Clip everything above this percentile to white"),
             row("Gamma", sG, 0.1, 2, 0.5, "Below 1 brightens faint structure; above 1 darkens it"),
+            limitsLabel,
             bottom,
         ])
         stack.orientation = .vertical
@@ -1279,8 +1321,20 @@ final class FITSToolbar {
     func sync(model: FITSPreviewModel) {
         paint(limb, on: model.limbOn, enabled: model.hasLimb)
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
-        paint(tune, on: model.mode == .stretch, enabled: true)
-        panel.isHidden = (model.mode != .stretch)
+        // A filter replaces the displayed image wholesale, so the stretch sliders
+        // cannot affect it (#14). Disable rather than let them look operable.
+        let filtered = model.filter != .none
+        paint(tune, on: model.mode == .stretch && !filtered, enabled: !filtered)
+        tune.toolTip = filtered
+            ? "Unavailable while the \(model.filter.label) filter is on — the filter sets the display mapping itself"
+            : "Adjust the brightness stretch (percentile clip, gamma, log)"
+        panel.isHidden = filtered || (model.mode != .stretch)
+        if let l = model.displayLimits() {
+            let u = l.unit.isEmpty ? "" : " " + l.unit
+            limitsLabel.stringValue = "min \(FITSRenderer.fmtValue(l.lo))\(u)\nmax \(FITSRenderer.fmtValue(l.hi))\(u)"
+        } else {
+            limitsLabel.stringValue = ""
+        }
         if filterMenu.indexOfSelectedItem != model.filter.rawValue {
             filterMenu.selectItem(at: model.filter.rawValue)
         }
