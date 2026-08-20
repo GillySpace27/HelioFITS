@@ -52,6 +52,40 @@ struct ColormapMatchTests {
         #expect(FITSRenderer.colormapKey(fromHeader: h) == "aspiicswb")
     }
 
+    /// The exact header values @nawinnova reported in #9, cross-checked against
+    /// the SIDC colour-table page. This is verification against REPORTED values,
+    /// not against a file that was opened: no Proba-3 data was reachable without
+    /// the archive's JavaScript query layer.
+    @Test("ASPIICS L1/L2 FILTER values pick the right table",
+          arguments: [("Wideband", "aspiicswb"), ("Fe XIV", "aspiicsfe"), ("He I", "aspiicshe"),
+                      ("Polarizer 0", "aspiicsp"), ("Polarizer 60", "aspiicsp"),
+                      ("Polarizer 120", "aspiicsp")])
+    func aspiicsFilter(_ filter: String, _ want: String) {
+        let h = "TELESCOP Proba-3\nINSTRUME ASPIICS\nDETECTOR ASPIICS\nFILTER    \(filter)\n"
+        #expect(FITSRenderer.colormapKey(fromHeader: h) == want,
+                "FILTER '\(filter)' should select \(want)")
+    }
+
+    /// L3 drops FILTER and carries PROD_ID. Two of these values contain the
+    /// substring "NE" ("Green line", "Total brightness"), which is what made the
+    /// original concatenated substring match unsafe.
+    @Test("ASPIICS L3 PROD_ID values pick the right table",
+          arguments: [("Total brightness", "aspiicswb"), ("Polarized brightness", "aspiicsp"),
+                      ("Green line", "aspiicsfe"), ("He I D3 line", "aspiicshe")])
+    func aspiicsProdID(_ prod: String, _ want: String) {
+        let h = "TELESCOP Proba-3\nINSTRUME ASPIICS\nDETECTOR ASPIICS\nPROD_ID   \(prod)\n"
+        #expect(FITSRenderer.colormapKey(fromHeader: h) == want,
+                "PROD_ID '\(prod)' should select \(want)")
+    }
+
+    /// Polarization angle is cyclic; there is no SIDC table for it and a
+    /// brightness ramp would imply an ordering the quantity does not have.
+    @Test("ASPIICS polarization angle gets no brightness table")
+    func aspiicsAngleFallsThrough() {
+        let h = "TELESCOP Proba-3\nINSTRUME ASPIICS\nDETECTOR ASPIICS\nPROD_ID   Polarization angle\n"
+        #expect(FITSRenderer.colormapKey(fromHeader: h) == nil)
+    }
+
     @Test("every table an instrument can select actually decodes")
     func tablesResolve() throws {
         for key in ["euihrilya", "aspiicswb", "aspiicsfe", "aspiicshe", "aspiicsp",

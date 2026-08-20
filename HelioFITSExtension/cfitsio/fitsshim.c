@@ -149,7 +149,7 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
        Add a key here whenever colormapKey() starts consulting one. */
     const char *keys[] = {"TELESCOP","INSTRUME","DETECTOR","OBSRVTRY","WAVELNTH",
                           "DATE-OBS","T_OBS","EXPTIME","BUNIT","WAVEUNIT",
-                          "FILTER","FILTNAM1","CONTENT", NULL};
+                          "FILTER","FILTNAM1","CONTENT","PROD_ID", NULL};
     for (int k = 0; keys[k]; k++) {
         char val[FLEN_VALUE]; int s2 = 0;
         if (fits_read_key(fptr, TSTRING, keys[k], val, NULL, &s2) == 0) {

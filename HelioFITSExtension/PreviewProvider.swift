@@ -116,18 +116,35 @@ enum FITSRenderer {
             if d.contains("HRIEUV") { return "sdoaia171" }
             return wav > 0 && nearest([174, 304]) == 304 ? "sdoaia304" : "sdoaia171"
         }
-        // Proba-3/ASPIICS (#9, Nawin). Tables are from the SIDC colour-table page;
-        // sunpy does not carry them yet. UNVERIFIED against a real file: no
-        // ASPIICS data was available when this was written, so the keyword match
-        // below is a best guess and the FILTER values may need correcting.
+        // Proba-3/ASPIICS (#9). Tables are from the SIDC colour-table page
+        // (wb / fe / he / p / ne); sunpy does not carry them. Keyword values
+        // reported by @nawinnova in #9, cross-checked against the SIDC page:
+        //   TELESCOP Proba-3, INSTRUME ASPIICS, DETECTOR ASPIICS
+        //   L1/L2 FILTER  = Wideband | Fe XIV | He I | Polarizer 0|60|120
+        //   L3 drops FILTER and carries PROD_ID instead:
+        //     Total brightness | Polarized brightness | Green line
+        //     | He I D3 line | Polarization angle
+        // The two vocabularies must be matched SEPARATELY. Substring-matching a
+        // concatenation of both is wrong: "Green line" and "Total brightness"
+        // each contain "NE", so an electron-density test would swallow them.
         if inst.contains("ASPIICS") || tel.contains("ASPIICS") || tel.contains("PROBA-3")
             || tel.contains("PROBA3") || obs.contains("PROBA-3") || obs.contains("PROBA3") {
-            let f = ((val("FILTER") ?? "") + " " + (val("FILTNAM1") ?? "")).uppercased()
+            if let p = val("PROD_ID")?.uppercased(), !p.isEmpty {
+                if p.contains("GREEN") { return "aspiicsfe" }
+                if p.contains("HE I") || p.contains("D3") { return "aspiicshe" }
+                if p.contains("POLARIZED") { return "aspiicsp" }
+                if p.contains("ELECTRON") || p.contains("DENSITY") { return "aspiicsne" }
+                // Polarization angle is a cyclic quantity in degrees. A brightness
+                // ramp implies an ordering it does not have, so fall through to the
+                // generic mapping rather than colour it like an intensity image.
+                if p.contains("ANGLE") { return nil }
+                if p.contains("TOTAL") { return "aspiicswb" }
+            }
+            let f = (val("FILTER") ?? "").uppercased()
             if f.contains("FE") { return "aspiicsfe" }
             if f.contains("HE") { return "aspiicshe" }
-            if f.contains("POL") || f.contains("PB") { return "aspiicsp" }
-            if f.contains("NE") { return "aspiicsne" }
-            return "aspiicswb"        // wide-band is the default product
+            if f.contains("POLARIZ") { return "aspiicsp" }
+            return "aspiicswb"        // Wideband, and the L1/L2 fallback
         }
         if inst.contains("EIT") { return "sohoeit\(nearest([171, 195, 284, 304]))" }
         if det == "C2" { return "soholasco2" }
