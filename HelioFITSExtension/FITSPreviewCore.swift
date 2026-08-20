@@ -1043,7 +1043,13 @@ final class FITSImageCanvas: NSView {
         NSGraphicsContext.current?.saveGraphicsState()
         NSBezierPath(rect: contentBox()).setClip()        // zoomed image must not spill
         NSGraphicsContext.current?.imageInterpolation = zoom > 4 ? .none : .default
-        img.draw(in: box, from: .zero, operation: .copy, fraction: 1)
+        // respectFlipped is REQUIRED: this view is flipped (row 0 at top, which the
+        // caption/readout/limb geometry all assume), and the plain draw(in:) ignores
+        // that and renders the image upside down. Reported by the EUI PI on a file
+        // with a polar coronal hole, where the flip is finally visible by eye (#11);
+        // a full-disk AIA or PUNCH frame is symmetric enough to hide it.
+        img.draw(in: box, from: .zero, operation: .copy, fraction: 1,
+                 respectFlipped: true, hints: nil)
 
         if let l = limb, natSize.width > 0, l.r > 0 {
             let sx = box.width / natSize.width
