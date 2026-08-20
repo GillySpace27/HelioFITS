@@ -223,5 +223,13 @@ struct ClipSliderTests {
         #expect(t.readStretch().hi > 99.0, "high slider is not logarithmic")
         t.sHi.doubleValue = 1.0
         #expect(t.readStretch().hi < 100.0, "high slider should stop short of the outlier max")
+
+        // The low slider must reach far enough to actually move the black point.
+        // Capped at 10% it spanned 8.75 counts on an AIA frame out of 15000 and
+        // did nothing visible; it now reaches the median.
+        t.sLo.doubleValue = 1.0
+        #expect(t.readStretch().lo >= 50.0, "low slider does not reach the median")
+        t.sLo.doubleValue = 0.0
+        #expect(t.readStretch().lo <= 0.01, "low slider should reach effectively no clipping")
     }
 }

@@ -1433,7 +1433,7 @@ final class FITSToolbar {
         bottom.spacing = 10
         let stack = NSStackView(views: [
             row("Low", sLo, 0, 1, Self.posLow(FITSRenderer.pLow),
-                "Clip the darkest pixels to black. Logarithmic: fine control near 0%"),
+                "Clip the darkest pixels to black. Logarithmic, reaching the median: fine control near 0%"),
             row("High", sHi, 0, 1, Self.posHigh(FITSRenderer.pHigh),
                 "Clip the brightest pixels to white. Logarithmic: fine control near 100%, where a solar image's tail lives"),
             row("Gamma", sG, 0.1, 2, 0.5, "Below 1 brightens faint structure; above 1 darkens it"),
@@ -1468,11 +1468,19 @@ final class FITSToolbar {
     //
     // Positions are 0…1; percentiles are rounded so the defaults round-trip
     // EXACTLY, which `stretchIsDefault` depends on to keep the baked image.
+    /// Low clip spans 0.01 … 50 %. Capping it at 10 % (the obvious symmetric
+    /// choice against the high slider) left it with nothing to do: on an AIA
+    /// frame the 0–10th percentile covers 8.75 counts out of a 15 000 range,
+    /// so the slider moved the black point invisibly. Reaching the median gives
+    /// it 108 counts, which is enough to clip the quiet Sun away and see
+    /// off-limb structure. The tail is genuinely one-sided; matching the two
+    /// ends numerically would just preserve the uselessness symmetrically.
+    private static let lowDecades = 2.0 + Foundation.log10(50.0)     // 0.01 % → 50 %
     private static func pctLow(_ t: Double) -> Double {
-        (pow(10, -2 + 3 * min(max(t, 0), 1)) * 1000).rounded() / 1000      // 0.01 … 10 %
+        (pow(10, -2 + lowDecades * min(max(t, 0), 1)) * 1000).rounded() / 1000
     }
     private static func posLow(_ pct: Double) -> Double {
-        (Foundation.log10(max(pct, 0.01)) + 2) / 3
+        (Foundation.log10(max(pct, 0.01)) + 2) / lowDecades
     }
     private static func pctHigh(_ t: Double) -> Double {
         ((100 - pow(10, 1 - 3 * min(max(t, 0), 1))) * 1000).rounded() / 1000  // 90 … 99.99 %
