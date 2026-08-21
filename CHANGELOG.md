@@ -4,6 +4,36 @@ All notable changes to HelioFITS are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-08-21
+
+Two fixes, one of which meant a headline feature of 1.3.0 never actually ran.
+
+### Fixed
+
+- **"Open a Finder Window" always failed.** The button on the settings screen
+  reported *"The application HelioFITS does not have permission to open
+  gilly"* and opened nothing. It handed the home directory to the system open
+  call, which the sandbox refuses: the app may only reach folders you choose
+  yourself through a panel. It now asks which folder to open, starting in your
+  home directory, and opens that. Broken since 1.2, on every click.
+  ([#24](https://github.com/GillySpace27/HelioFITS/issues/24))
+- **The Proba-3/ASPIICS colormaps added in 1.3.0 could never be selected.**
+  The colour table is chosen from FITS header keywords, and the header reader
+  that supplies them is compiled into a vendored library rather than built with
+  the app. That library had not been rebuilt since 15 July, so the keywords the
+  matcher needed were never present and every ASPIICS image fell back to the
+  wide-band table. Rebuilt, and the matching is now verified against real files
+  from the P3SC archive rather than against reported keyword values.
+  ([#9](https://github.com/GillySpace27/HelioFITS/issues/9))
+- **Level-3 ASPIICS products were matched on the wrong keyword.** Level-3
+  processing removes `FILTER` and carries `PROD_ID` instead, which was not
+  being read. Polarised brightness also needed both spellings: the archive
+  writes `Polarizer` in level 1 and 2 and `Polarisation` in level 3. Green
+  line, He I D3, polarised brightness and total brightness now each select
+  their own table. Polarisation angle deliberately gets none: it is a cyclic
+  quantity in degrees, and a brightness ramp would imply an ordering it does
+  not have.
+
 ## [1.3.0] - 2026-08-19
 
 First release driven entirely by reports from other people. Thanks to
