@@ -52,10 +52,10 @@ struct ColormapMatchTests {
         #expect(FITSRenderer.colormapKey(fromHeader: h) == "aspiicswb")
     }
 
-    /// The exact header values @nawinnova reported in #9, cross-checked against
-    /// the SIDC colour-table page. This is verification against REPORTED values,
-    /// not against a file that was opened: no Proba-3 data was reachable without
-    /// the archive's JavaScript query layer.
+    /// Header values VERIFIED against the P3SC archive on 2026-08-21 by querying
+    /// https://p3sc.oma.be/api/{L1,L2,L3} for every distinct FILTER and PROD_ID
+    /// over ~4000 rows per level, and by pulling the primary header off real L3
+    /// files. These are the archive's own strings, not values quoted in #9.
     @Test("ASPIICS L1/L2 FILTER values pick the right table",
           arguments: [("Wideband", "aspiicswb"), ("Fe XIV", "aspiicsfe"), ("He I", "aspiicshe"),
                       ("Polarizer 0", "aspiicsp"), ("Polarizer 60", "aspiicsp"),
@@ -66,11 +66,15 @@ struct ColormapMatchTests {
                 "FILTER '\(filter)' should select \(want)")
     }
 
-    /// L3 drops FILTER and carries PROD_ID. Two of these values contain the
-    /// substring "NE" ("Green line", "Total brightness"), which is what made the
-    /// original concatenated substring match unsafe.
+    /// L3 drops FILTER and carries PROD_ID. Two traps live here. Two values
+    /// contain the substring "NE" ("Green line", "Total brightness"), which is
+    /// what made the original concatenated substring match unsafe. And the
+    /// archive spells L3 with an s ("Polarisation") while L1/L2 FILTER uses a z
+    /// ("Polarizer"), so matching only the American spelling sent polarised
+    /// brightness to the wideband table.
     @Test("ASPIICS L3 PROD_ID values pick the right table",
-          arguments: [("Total brightness", "aspiicswb"), ("Polarized brightness", "aspiicsp"),
+          arguments: [("Total brightness", "aspiicswb"), ("Polarisation brightness", "aspiicsp"),
+                      ("Polarized brightness", "aspiicsp"),
                       ("Green line", "aspiicsfe"), ("He I D3 line", "aspiicshe")])
     func aspiicsProdID(_ prod: String, _ want: String) {
         let h = "TELESCOP Proba-3\nINSTRUME ASPIICS\nDETECTOR ASPIICS\nPROD_ID   \(prod)\n"
@@ -80,10 +84,12 @@ struct ColormapMatchTests {
 
     /// Polarization angle is cyclic; there is no SIDC table for it and a
     /// brightness ramp would imply an ordering the quantity does not have.
-    @Test("ASPIICS polarization angle gets no brightness table")
-    func aspiicsAngleFallsThrough() {
-        let h = "TELESCOP Proba-3\nINSTRUME ASPIICS\nDETECTOR ASPIICS\nPROD_ID   Polarization angle\n"
-        #expect(FITSRenderer.colormapKey(fromHeader: h) == nil)
+    @Test("ASPIICS polarisation angle gets no brightness table",
+          arguments: ["Polarisation angle", "Polarization angle"])
+    func aspiicsAngleFallsThrough(_ prod: String) {
+        let h = "TELESCOP Proba-3\nINSTRUME ASPIICS\nDETECTOR ASPIICS\nPROD_ID   \(prod)\n"
+        #expect(FITSRenderer.colormapKey(fromHeader: h) == nil,
+                "\(prod) is cyclic in degrees and has no SIDC table")
     }
 
     @Test("every table an instrument can select actually decodes")
@@ -129,6 +135,41 @@ struct HeaderKeyContractTests {
         for key in read.sorted() {
             #expect(emitted.contains("\"\(key)\""),
                     "colormapKey reads \(key) but fitsshim.c never emits it — that branch is dead code")
+        }
+    }
+
+    /// The source check above is NOT sufficient, and shipped a bug that proved it.
+    /// fitsshim.c is not in any Xcode target: it is baked into the vendored
+    /// libcfitsio.a by cfitsio/build-universal.sh. Editing the .c and rebuilding
+    /// the app changes nothing. FILTER/FILTNAM1/CONTENT were added to the source
+    /// on 2026-08-20 against a library last built 2026-07-15, so the ASPIICS
+    /// branch stayed unreachable while every source-level test passed.
+    ///
+    /// So check the artefact the app actually links.
+    @Test("the BUILT libcfitsio.a contains every keyword the matcher reads")
+    func builtLibraryIsCurrent() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+        let swift = try String(contentsOf: root.appendingPathComponent("HelioFITSExtension/PreviewProvider.swift"),
+                               encoding: .utf8)
+        let lib = try Data(contentsOf: root.appendingPathComponent("HelioFITSExtension/cfitsio/libcfitsio.a"))
+
+        let body = swift.components(separatedBy: "static func colormapKey")[1]
+            .components(separatedBy: "\n    /// Which HDU")[0]
+        var read = Set<String>()
+        var i = body.startIndex
+        while let r = body.range(of: "val(\"", range: i..<body.endIndex) {
+            if let end = body.range(of: "\"", range: r.upperBound..<body.endIndex) {
+                read.insert(String(body[r.upperBound..<end.lowerBound]))
+                i = end.upperBound
+            } else { break }
+        }
+        #expect(!read.isEmpty)
+        for key in read.sorted() {
+            // NUL-terminated C literal, so the byte after the key must be 0.
+            let needle = Data((key + "\0").utf8)
+            #expect(lib.range(of: needle) != nil,
+                    "colormapKey reads \(key), but the BUILT libcfitsio.a does not contain it. Re-run HelioFITSExtension/cfitsio/build-universal.sh: editing fitsshim.c alone does nothing, the library is what the app links.")
         }
     }
 }

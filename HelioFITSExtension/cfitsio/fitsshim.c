@@ -142,11 +142,17 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
              chosen - 1, extname[0] ? " " : "", extname, naxes[0], naxes[1], planeLabel,
              (hdu_wanted >= 0 && !wanted_ok) ? "  (requested HDU has no image; auto)" : "");
     strlcat(hdr, line, 4096);
-    /* colormapKey() reads every one of these. FILTER/FILTNAM1 (Proba-3/ASPIICS
-       band) and CONTENT (HMI synoptic Br charts) were being read on the Swift
-       side but never emitted here, so those branches could never fire: every
-       ASPIICS product fell through to the wide-band table regardless of filter.
-       Add a key here whenever colormapKey() starts consulting one. */
+    /* colormapKey() reads every one of these. Add a key here whenever
+       colormapKey() starts consulting one.
+
+       !!! THIS FILE IS NOT COMPILED BY XCODE. !!!
+       It is baked into the vendored libcfitsio.a by cfitsio/build-universal.sh.
+       Editing it and rebuilding the app changes NOTHING until you re-run that
+       script. That is not hypothetical: FILTER/FILTNAM1/CONTENT were added here
+       on 2026-08-20 and had no effect at all, because the library still dated
+       from 2026-07-15, so the whole ASPIICS branch stayed unreachable for
+       another day while its unit tests passed. HeaderKeyContractTests now reads
+       the BUILT library rather than this source, so the gap fails loudly. */
     const char *keys[] = {"TELESCOP","INSTRUME","DETECTOR","OBSRVTRY","WAVELNTH",
                           "DATE-OBS","T_OBS","EXPTIME","BUNIT","WAVEUNIT",
                           "FILTER","FILTNAM1","CONTENT","PROD_ID", NULL};

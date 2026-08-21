@@ -117,33 +117,46 @@ enum FITSRenderer {
             return wav > 0 && nearest([174, 304]) == 304 ? "sdoaia304" : "sdoaia171"
         }
         // Proba-3/ASPIICS (#9). Tables are from the SIDC colour-table page
-        // (wb / fe / he / p / ne); sunpy does not carry them. Keyword values
-        // reported by @nawinnova in #9, cross-checked against the SIDC page:
+        // (wb / fe / he / p / ne); sunpy does not carry them.
+        //
+        // Vocabulary VERIFIED against the P3SC archive itself (2026-08-21), by
+        // querying https://p3sc.oma.be/api/{L1,L2,L3} over ~4000 rows per level
+        // rather than trusting the values quoted in the issue:
         //   TELESCOP Proba-3, INSTRUME ASPIICS, DETECTOR ASPIICS
         //   L1/L2 FILTER  = Wideband | Fe XIV | He I | Polarizer 0|60|120
-        //   L3 drops FILTER and carries PROD_ID instead:
-        //     Total brightness | Polarized brightness | Green line
-        //     | He I D3 line | Polarization angle
-        // The two vocabularies must be matched SEPARATELY. Substring-matching a
-        // concatenation of both is wrong: "Green line" and "Total brightness"
+        //   L3 drops FILTER and carries PROD_ID = Total brightness
+        //     | Green line | He I D3 line | Polarisation brightness
+        //     | Polarisation angle
+        //
+        // Note the archive's own inconsistency: FILTER spells it "Polarizer"
+        // with a z, PROD_ID spells it "Polarisation" with an s. Matching the
+        // American spelling alone sent every L3 polarised-brightness frame to
+        // the wideband table. Match the common stem POLARI.
+        //
+        // The two vocabularies must also be matched SEPARATELY. Substring-
+        // matching a concatenation is wrong: "Green line" and "Total brightness"
         // each contain "NE", so an electron-density test would swallow them.
+        //
+        // No electron-density product exists in the archive today, so aspiicsne
+        // is currently unreachable; the table is kept for when one appears.
         if inst.contains("ASPIICS") || tel.contains("ASPIICS") || tel.contains("PROBA-3")
             || tel.contains("PROBA3") || obs.contains("PROBA-3") || obs.contains("PROBA3") {
             if let p = val("PROD_ID")?.uppercased(), !p.isEmpty {
                 if p.contains("GREEN") { return "aspiicsfe" }
                 if p.contains("HE I") || p.contains("D3") { return "aspiicshe" }
-                if p.contains("POLARIZED") { return "aspiicsp" }
                 if p.contains("ELECTRON") || p.contains("DENSITY") { return "aspiicsne" }
-                // Polarization angle is a cyclic quantity in degrees. A brightness
-                // ramp implies an ordering it does not have, so fall through to the
-                // generic mapping rather than colour it like an intensity image.
+                // ANGLE before POLARI: "Polarisation angle" contains both. Angle is
+                // a cyclic quantity in degrees (BUNIT deg) with no SIDC table; a
+                // brightness ramp would imply an ordering it does not have, so let
+                // it fall through to the generic mapping.
                 if p.contains("ANGLE") { return nil }
+                if p.contains("POLARI") { return "aspiicsp" }
                 if p.contains("TOTAL") { return "aspiicswb" }
             }
             let f = (val("FILTER") ?? "").uppercased()
             if f.contains("FE") { return "aspiicsfe" }
             if f.contains("HE") { return "aspiicshe" }
-            if f.contains("POLARIZ") { return "aspiicsp" }
+            if f.contains("POLARI") { return "aspiicsp" }
             return "aspiicswb"        // Wideband, and the L1/L2 fallback
         }
         if inst.contains("EIT") { return "sohoeit\(nearest([171, 195, 284, 304]))" }
