@@ -62,7 +62,7 @@ struct HelioFITSView: View {
 
                         HStack(spacing: 12) {
                             Button(action: openFinderWindow) {
-                                Label("Open a Finder Window", systemImage: "folder")
+                                Label("Open a Finder Window…", systemImage: "folder")
                                     .font(.system(size: 15, weight: .medium))
                             }
                             .buttonStyle(.borderedProminent)
@@ -232,9 +232,28 @@ struct HelioFITSView: View {
     /// Open a Finder window at the user's real home so they can go try Space on a
     /// file. NSHomeDirectory() would give the sandbox container; getpwuid gives
     /// the real home, and Finder (a separate process) can open it despite the sandbox.
+    /// Open a Finder window on a folder of FITS files.
+    ///
+    /// This used to hand the user's home directory straight to NSWorkspace,
+    /// which the sandbox refuses: the app holds only
+    /// com.apple.security.files.user-selected.read-write, so opening any path
+    /// the user has not chosen fails with "The application HelioFITS does not
+    /// have permission to open 'gilly'". Going through an open panel is what
+    /// confers the grant, and Finder itself is unsandboxed, so opening the
+    /// chosen URL then works. The panel starts in the home directory so the
+    /// common case is one extra click.
     private func openFinderWindow() {
-        guard let pw = getpwuid(getuid()) else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: String(cString: pw.pointee.pw_dir)))
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Open in Finder"
+        panel.message = "Choose a folder of FITS files. Finder will open it, and the icons become the images."
+        panel.directoryURL = getpwuid(getuid()).map { URL(fileURLWithPath: String(cString: $0.pointee.pw_dir)) }
+        panel.begin { resp in
+            guard resp == .OK, let url = panel.url else { return }
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func openReadme() {
