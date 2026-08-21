@@ -18,6 +18,21 @@ that's what broke the store path the first time.
 
 ## Every release, in order
 
+0. **Did you touch `fitsshim.c`? Rebuild the library.** `fitsshim.c` is in NO
+   Xcode target. It is baked into the vendored `libcfitsio.a` by
+   `HelioFITSExtension/cfitsio/build-universal.sh`, so editing the `.c` and
+   rebuilding the app changes **nothing**:
+
+       ./HelioFITSExtension/cfitsio/build-universal.sh
+       lipo -archs HelioFITSExtension/cfitsio/libcfitsio.a   # expect: x86_64 arm64
+
+   This is not hypothetical. `FILTER`/`FILTNAM1`/`CONTENT` were added to the
+   source on 2026‑08‑20 against a library last built 2026‑07‑15, so the whole
+   Proba‑3/ASPIICS colormap branch shipped in **1.3.0 unable to fire**, while
+   its unit tests passed the entire time. `HeaderKeyContractTests` now reads the
+   BUILT library rather than the source, so `xcodebuild test` fails loudly with
+   the remedy in the message — but only if you actually run the suite.
+
 1. **Clean tree.** Everything committed; tests green
    (`./preflight.sh` does 1–4 and refuses a dirty tree).
 2. **Bump the build number** — ASC rejects a duplicate (version, build) pair at
@@ -36,14 +51,22 @@ that's what broke the store path the first time.
    upload, which is why the verification grep above is not optional.)
 
 3. **Run the tests** (hosted in the GUI app — quit any running HelioFITS first
-   or the runner hangs, then run lsclean afterward: `xcodebuild test` registers
-   a Debug copy with LaunchServices, which is the recurring thumbnail bug):
+   or the runner hangs, and do NOT `pkill HelioFITS` while a run is in flight:
+   the test host IS the app, so killing it fails the run with "crashed with
+   signal term before establishing connection", which looks like a real failure
+   and is not. Run lsclean afterward: `xcodebuild test` registers a Debug copy
+   with LaunchServices, which is the recurring thumbnail bug):
 
        pkill -x HelioFITS; xcodebuild test -project HelioFITS.xcodeproj \
          -scheme HelioFITS -destination 'platform=macOS,arch=arm64' \
          DEVELOPMENT_TEAM=UB45PPC2JS CODE_SIGN_IDENTITY="-" \
          CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES
        ./lsclean.sh
+
+   If `libcfitsio.a` changed, run the suite on **both** arches — the Intel
+   slice is built separately and is otherwise never exercised on this Mac:
+
+       xcodebuild test ... -destination 'platform=macOS,arch=x86_64'   # Rosetta
 
 4. **Update `CHANGELOG.md`.** Keep a Changelog format, newest section first,
    grouped Added / Changed / Fixed by what a user would notice rather than by
