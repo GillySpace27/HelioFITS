@@ -64,6 +64,28 @@ reporting" terms for a single team. Keep usage inside that scope, always:
   more of the pipeline automatable; it does not make Submit to Review or
   Release This Version automatic.
 
+## Progress tracker — show this after every milestone
+
+Render `scripts/release_status.py` after completing any step below, so Gilly
+can follow the release without re-reading the whole conversation. It checks
+REAL state (git tags, `gh release view`, the ASC API) rather than trusting
+what an earlier turn claimed — the first five milestones (preflight, version
+bump, tests, changelog, tag-created) are inherently this session's own
+actions and get passed in via `--done`; everything from "tag pushed" onward
+is independently verified live:
+
+    python3 .claude/skills/ship-heliofits/scripts/release_status.py <VERSION> <BUILD> \
+      --done preflight,version,tests,changelog
+
+Paste its output directly into the response — don't reformat or summarize
+it, that defeats the point of a stable, scannable format Gilly can pattern-
+match across releases. Show it: after finishing the local pipeline (through
+tag+push), after `ship.sh` and the GitHub release, after the App Store
+archive/upload, after creating the ASC version and attaching the build,
+after setting What's New, and once more after the gated submit/release
+steps (which still need Gilly's explicit go-ahead each time regardless of
+what the tracker shows as ready).
+
 ## Steps
 
 1. **Did `fitsshim.c` change since the last release?**
