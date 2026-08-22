@@ -15,3 +15,6 @@ ship.log
 *.o
 __.SYMDEF*
 .venv/
+
+# App Store Connect API keys must never live in the repo
+*.p8

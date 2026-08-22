@@ -41,9 +41,18 @@ version record and clicks through Submit to Review himself.
 
 ## App Store Connect API key: scope and terms
 
-If `~/.claude/secrets/appstoreconnect/` holds a `.p8` key, it was issued
-under Apple's "internal development, testing, and reporting" terms for a
-single team. Keep usage inside that scope, always:
+A key is configured (as of 2026-08-22): Key ID `4QPRA2KW39`, Issuer ID
+`7b467b82-5579-417f-aa7e-b7d16f47f8d9`, role App Manager, `.p8` at
+`~/.claude/secrets/appstoreconnect/AuthKey_4QPRA2KW39.p8` (mode 600, outside
+any git-tracked tree). `scripts/asc_api.py` in this skill signs the ES256 JWT
+and calls the API — `python3 scripts/asc_api.py GET /v1/apps/6790952544/builds`
+etc. GET calls are safe to run freely; anything that mutates ASC state goes
+through the confirmation gate below regardless of which script does the
+mutating. Verified 2026-08-22: `GET /v1/apps` and `GET .../builds` both work
+and correctly resolve to HelioFITS (app id `6790952544`).
+
+If it was issued, it's under Apple's "internal development, testing, and
+reporting" terms for a single team. Keep usage inside that scope, always:
 
 - The key and any JWT derived from it go to Apple's App Store Connect API
   endpoints ONLY. Never log it, never include it in a commit, never send it
