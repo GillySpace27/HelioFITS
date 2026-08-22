@@ -15,14 +15,29 @@ here seems to disagree with it; RELEASING.md wins.
 Everything through "build N is uploaded and Processing in App Store Connect."
 No password, credential, or GUI click is required for any of it.
 
-## What it cannot finish
+## What it cannot finish without Gilly in the loop
 
-Creating the version record in App Store Connect, attaching the build,
-writing What's New, uploading screenshots, and Add for Review / Submit to
-Review. That's a logged-in web UI with no API key configured on this machine,
-and submission is the kind of step Gilly should see before it goes out
-anyway. Hand this off explicitly at the end — don't imply the release is live
-until he submits it.
+Creating the version record, attaching the build, writing What's New, and
+confirming screenshots are automatable once an App Store Connect API key
+exists (see [references/asc-api.md](references/asc-api.md) if that file is
+present; if not, no key has been set up yet and this whole tier is
+unavailable — hand off to the manual App Store Connect flow instead).
+
+**Hard gate, independent of what's automated: never call Add for Review,
+Submit to Review, or Release This Version without asking Gilly in chat first
+and getting an explicit yes, every single time.** This is not a one-time
+grant — a "yes" for build N does not cover build N+1. These are the actions
+that make a release visible to the public or to Apple's review queue, and
+per the standing safety rules for this project they require confirmation
+per action, not standing authorization. Preparing everything up to that
+point (version record, build, metadata, screenshots) does NOT require
+per-step confirmation — only the final publish/submit action does. State
+plainly what is about to happen ("this will submit build 8 of 1.3.1 for App
+Review") rather than a vague "should I continue?".
+
+If no API key is configured, all of this stays manual: hand off after
+upload and say plainly that the release is not live until Gilly creates the
+version record and clicks through Submit to Review himself.
 
 ## Steps
 
