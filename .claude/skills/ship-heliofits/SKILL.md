@@ -39,6 +39,22 @@ If no API key is configured, all of this stays manual: hand off after
 upload and say plainly that the release is not live until Gilly creates the
 version record and clicks through Submit to Review himself.
 
+## App Store Connect API key: scope and terms
+
+If `~/.claude/secrets/appstoreconnect/` holds a `.p8` key, it was issued
+under Apple's "internal development, testing, and reporting" terms for a
+single team. Keep usage inside that scope, always:
+
+- The key and any JWT derived from it go to Apple's App Store Connect API
+  endpoints ONLY. Never log it, never include it in a commit, never send it
+  or its contents to any other service.
+- It is for HelioFITS, under Gilly's own account. Don't reuse it for another
+  app or another person's project, and don't treat it as something that can
+  be shared outside Gilly's team.
+- This does not relax the confirmation gate above. A working API key makes
+  more of the pipeline automatable; it does not make Submit to Review or
+  Release This Version automatic.
+
 ## Steps
 
 1. **Did `fitsshim.c` change since the last release?**
