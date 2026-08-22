@@ -12,7 +12,7 @@ live.
 Usage: python3 release_status.py <VERSION> <BUILD> [--done preflight,version,tests,changelog]
   python3 release_status.py 1.3.1 8 --done preflight,version,tests,changelog
 """
-import sys, os, json, subprocess, argparse
+import sys, os, json, subprocess, argparse, datetime
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 APP_ID = "6790952544"
@@ -118,7 +118,34 @@ if __name__ == "__main__":
     p.add_argument("version")
     p.add_argument("build")
     p.add_argument("--done", default="", help="comma-separated session-only milestones to mark done: preflight,version,tests,changelog")
+    p.add_argument("--emit", action="store_true",
+                   help="also write a timestamped snapshot to ~/.claude/runbooks/state/ "
+                        "for the dashboard. The snapshot is a CACHE, never truth: it records "
+                        "checked_at so consumers can show its age and grey it out when stale.")
     args = p.parse_args()
     done_flags = {k: True for k in args.done.split(",") if k}
     live_state = check_live(args.version, args.build)
     print(render(args.version, args.build, done_flags, live_state))
+
+    if args.emit:
+        combined = {**done_flags, **live_state}
+        snap = {
+            "name": "ship-heliofits",
+            "title": f"HelioFITS {args.version} (build {args.build})",
+            "checked_at": datetime.datetime.now(datetime.timezone.utc)
+                            .isoformat(timespec="seconds"),
+            "complete": sum(1 for k, _ in MILESTONES if combined.get(k)),
+            "total": len(MILESTONES),
+            "next": next((lb for k, lb in MILESTONES if not combined.get(k)), None),
+            "external_state": combined.get("_asc_state_raw"),
+            "milestones": [
+                {"key": k, "label": lb, "done": bool(combined.get(k)),
+                 "gated": k in ("submitted", "released")}
+                for k, lb in MILESTONES
+            ],
+        }
+        d = os.path.expanduser("~/.claude/runbooks/state")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "ship-heliofits.json"), "w") as f:
+            json.dump(snap, f, indent=2)
+        print(f"\n(snapshot written to {d}/ship-heliofits.json)")
