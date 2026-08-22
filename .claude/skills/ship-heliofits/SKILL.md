@@ -5,10 +5,15 @@ description: Full HelioFITS release pipeline — version bump, conditional libcf
 
 # ship-heliofits
 
-Runs the HelioFITS release pipeline end to end, up to the point that requires
-a logged-in web UI. The authoritative runbook is
+Runs the HelioFITS release pipeline end to end, stopping at the confirmation
+gate before anything public-facing. The authoritative procedure is
 [RELEASING.md](../../../RELEASING.md) at the repo root — read it if anything
 here seems to disagree with it; RELEASING.md wins.
+
+This is a **runbook** in the sense defined by the global `runbook` skill:
+procedure doc + operational checklist + a tracker that verifies real external
+state. If you are changing the shape of this file rather than its content,
+read that skill's design notes first.
 
 ## What this skill can finish unattended
 
@@ -196,12 +201,37 @@ what the tracker shows as ready).
 
 ## Things that have actually gone wrong here before
 
-- Editing `fitsshim.c` without rebuilding `libcfitsio.a` — silent no-op,
-  shipped in 1.3.0, cost a full extra release to fix (1.3.1).
-- `pkill -x HelioFITS` while a test run is in flight — fails the run with a
-  misleading crash message.
-- Treating one Apple timestamp-server failure as a build problem instead of
-  probing the TSA directly first.
+Real dated incidents. Append, never delete. This section is the reason the
+runbook is worth more than the commands it contains.
+
+- **2026-08-20 — the stale library.** Edited `fitsshim.c`, committed, tests
+  green, shipped 1.3.0 announcing an ASPIICS colormap feature that could
+  never execute: the file is in no Xcode target and the vendored
+  `libcfitsio.a` had not been rebuilt since 07-15. The purpose-built contract
+  test passed because it grepped the `.c` **source**, not the built artifact.
+  Cost an entire extra release (1.3.1). Guard: `HeaderKeyContractTests` now
+  reads the built library, verified by running it against the old one and
+  watching it fail. See step 1.
+- **2026-08-21 — the unclicked button.** "Open a Finder Window" had never
+  worked in any sandboxed build since 1.2; it handed `$HOME` to
+  `NSWorkspace.open`, which App Sandbox refuses. Two simulated review panels
+  examined that screen and missed it, because reading code and viewing a
+  screenshot both fall short of pressing the button. Guard: none automatic —
+  press user-facing controls in a real build before shipping them.
+- **2026-08-22 — the unsubmitted build.** Build 8 was archived, validated,
+  and described as ready; a later session assumed "ready" meant "submitted".
+  It wasn't. Guard: the tracker's `submitted` milestone reads the live
+  `appStoreState` from the ASC API, so it cannot be assumed.
+- **2026-08-21 — retry-by-reflex on the timestamp server.** Four archives
+  failed on `A timestamp was expected but was not found`. Signing twelve
+  throwaway binaries measured it in seconds: one-in-three failing, then
+  zero-in-twelve minutes later — Apple's TSA was degraded and recovered.
+  Because `ship.sh` signs ~10 binaries, a modest per-signature rate makes
+  nearly every archive fail. Guard: probe the TSA before burning archive
+  cycles (step 7).
+- `pkill -x HelioFITS` while a test run is in flight — the test host IS the
+  app, so this fails the run with "crashed with signal term", which reads as
+  a real failure and is not.
 - Assuming an Xcode archive is MAS-clean without checking for the Spotlight
   importer — `ship.sh`'s embed step runs on Channel B builds only, so a plain
   Xcode archive for the Store should never have it, but confirm each time.
