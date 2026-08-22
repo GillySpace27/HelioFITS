@@ -72,6 +72,15 @@ that's what broke the store path the first time.
    grouped Added / Changed / Fixed by what a user would notice rather than by
    commit. Link the issues. The GitHub release notes are drawn from this, so
    write it once here rather than twice.
+
+   **Two tiers, not one.** The changelog entry is the long form: it explains
+   *why* a bug mattered and what was actually wrong, because a GitHub reader
+   is often the person who reported it and wants the mechanism, not just the
+   symptom. The App Store **What's New** box is a separate, short pass:
+   one line per fix, no root cause, no issue links — a store visitor wants
+   "is my bug fixed," not why. Write the changelog entry first, then compress
+   each Fixed bullet to a single headline sentence for What's New. Do not
+   paste the changelog into the store box or vice versa.
 5. **Commit + tag**: `git tag -a v<VER>-build.<N> -m "..."` and push the tag.
    The tag marks the exact source of the shipped binaries.
 
