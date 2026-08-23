@@ -29,9 +29,31 @@ MILESTONES = [
     ("asc_version", "App Store version record created"),
     ("asc_build",   "Build attached to version"),
     ("asc_notes",   "What's New set"),
-    ("submitted",   "Submitted for Review  (gated: needs your go-ahead)"),
-    ("released",    "Released to users  (gated: needs your go-ahead)"),
+    ("submitted",   "Submitted for Review"),
+    ("released",    "Released to users"),
 ]
+
+# What each step actually takes. A tracker that names a step without saying how
+# to do it is a to-do list you have to translate every time; {V} and {B} are
+# filled with the version and build.
+#
+# `shell` steps need a real session — the Orrery has no shell by design.
+# `api` steps are ASC writes the Orrery itself can perform.
+HOW = {
+    "preflight":   ("shell", "./HelioFITSExtension/cfitsio/build-universal.sh   # only if fitsshim.c changed"),
+    "version":     ("shell", "sed -i '' 's/MARKETING_VERSION = [0-9.]*;/MARKETING_VERSION = {V};/g' HelioFITS.xcodeproj/project.pbxproj && "
+                             "sed -i '' 's/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = {B};/g' HelioFITS.xcodeproj/project.pbxproj   # then verify 10 of each"),
+    "tests":       ("shell", "pkill -x HelioFITS; xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS -destination 'platform=macOS,arch=arm64' DEVELOPMENT_TEAM=UB45PPC2JS CODE_SIGN_IDENTITY=\"-\" CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES"),
+    "changelog":   ("edit",  "Write the [{V}] section in CHANGELOG.md — long form, grouped Added/Changed/Fixed, issues linked."),
+    "tag":         ("shell", "git tag -a v{V}-build.{B} -m \"{V} (build {B})\""),
+    "tag_pushed":  ("shell", "git push && git push origin v{V}-build.{B}"),
+    "gh_release":  ("shell", "./ship.sh   # then: gh release create v{V}-build.{B} build/HelioFITS-{V}-b{B}.zip --title \"HelioFITS {V} (build {B})\" --notes-file <notes>"),
+    "asc_version": ("api",   "Create the {V} version record in App Store Connect."),
+    "asc_build":   ("api",   "Attach build {B} to the {V} version record."),
+    "asc_notes":   ("api",   "Set What's New — the SHORT form, one headline sentence per fix."),
+    "submitted":   ("gate",  "Submit build {B} of {V} for App Review. Never without Gilly saying so, this run."),
+    "released":    ("gate",  "Release {V} to users. Never without Gilly saying so, this run."),
+}
 
 def sh(cmd):
     return subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout.strip()
@@ -94,6 +116,7 @@ def render(version, build, done_flags, live_state):
     filled = round(20 * done_count / total)
     bar = "█" * filled + "░" * (20 - filled)
 
+    GATED = {"submitted", "released"}
     lines = [f"HelioFITS {version} (build {build}) — release progress",
              f"[{bar}] {done_count}/{total}", ""]
     seen_incomplete = False
@@ -106,7 +129,13 @@ def render(version, build, done_flags, live_state):
             seen_incomplete = True
         else:
             mark = "⬜"
-        lines.append(f"{mark} {label}")
+        suffix = "  (gated: needs your go-ahead)" if key in GATED else ""
+        lines.append(f"{mark} {label}{suffix}")
+        # Show the command for the NEXT step only: printing all twelve would
+        # bury the one thing to do now.
+        if mark == "▶" and key in HOW:
+            kind, how = HOW[key]
+            lines.append(f"      {kind}: {how.format(V=version, B=build)}")
     raw = combined.get("_asc_state_raw")
     if raw:
         lines.append("")
@@ -138,9 +167,12 @@ if __name__ == "__main__":
             "total": len(MILESTONES),
             "next": next((lb for k, lb in MILESTONES if not combined.get(k)), None),
             "external_state": combined.get("_asc_state_raw"),
+            "external_label": "App Store Connect appStoreState",
             "milestones": [
                 {"key": k, "label": lb, "done": bool(combined.get(k)),
-                 "gated": k in ("submitted", "released")}
+                 "gated": k in ("submitted", "released"),
+                 "how_kind": HOW.get(k, ("", ""))[0],
+                 "how": HOW.get(k, ("", ""))[1].format(V=args.version, B=args.build)}
                 for k, lb in MILESTONES
             ],
         }

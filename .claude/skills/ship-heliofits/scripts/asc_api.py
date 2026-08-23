@@ -48,4 +48,6 @@ if __name__ == "__main__":
     body = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
     status, resp = call(method, path, body)
     print("HTTP", status)
-    print(json.dumps(resp, indent=2)[:3000])
+    # Never truncate: a clipped response is INVALID JSON, which turns a large
+    # but perfectly good result into a parse error downstream.
+    print(json.dumps(resp, indent=2))
