@@ -29,6 +29,7 @@ MILESTONES = [
     ("asc_version", "App Store version record created"),
     ("asc_build",   "Build attached to version"),
     ("asc_notes",   "What's New set"),
+    ("asc_shots",   "Screenshots attached"),
     ("submitted",   "Submitted for Review"),
     ("released",    "Released to users"),
 ]
@@ -51,9 +52,34 @@ HOW = {
     "asc_version": ("api",   "Create the {V} version record in App Store Connect."),
     "asc_build":   ("api",   "Attach build {B} to the {V} version record."),
     "asc_notes":   ("api",   "Set What's New — the SHORT form, one headline sentence per fix."),
+    "asc_shots":   ("edit",  "Drag the shots from ~/Desktop/HelioFITS-appstore/ into Media Manager "
+                             "(App Store Connect ▸ the {V} version ▸ App Previews and Screenshots). "
+                             "The API key is read-only for media, so this one is hands."),
     "submitted":   ("gate",  "Submit build {B} of {V} for App Review. Never without Gilly saying so, this run."),
     "released":    ("gate",  "Release {V} to users. Never without Gilly saying so, this run."),
 }
+
+def shots_verdict(states):
+    """(ok, note) from the delivery state of every attached screenshot.
+
+    Zero attached is a fail; anything still uploading is a fail; a count that
+    is merely smaller than the local folder is NOT, because dropping a shot is
+    a real editorial choice and a permanently red check gets ignored."""
+    done = [x for x in states if x == "COMPLETE"]
+    if not states:
+        return False, None
+    note = f"{len(done)} delivered"
+    if len(done) != len(states):
+        note += f", {len(states) - len(done)} not yet"
+    return len(done) == len(states), note
+
+
+def _selftest():
+    assert shots_verdict([]) == (False, None)
+    assert shots_verdict(["COMPLETE"] * 5) == (True, "5 delivered")
+    assert shots_verdict(["COMPLETE", "AWAITING_UPLOAD"]) == (False, "1 delivered, 1 not yet")
+    print("selftest ok")
+
 
 def sh(cmd):
     return subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout.strip()
@@ -102,6 +128,26 @@ def check_live(version, build):
             wn = locs["data"][0]["attributes"].get("whatsNew")
             state["asc_notes"] = bool(wn and wn.strip())
 
+    # Screenshots. Deliberately NOT compared against the local folder: Gilly
+    # drops a shot on purpose sometimes, and a check that reads "5 of 6" forever
+    # is a check you learn to ignore. What actually breaks a submission is zero
+    # screenshots, or one stuck mid-upload, so those are the only failures.
+    state["asc_shots"] = False
+    if version_id:
+        shots = []
+        locs = asc_get(f"/v1/appStoreVersions/{version_id}/appStoreVersionLocalizations"
+                        f"?filter[locale]=en-US")
+        for loc in (locs or {}).get("data", []):
+            sets = asc_get(f"/v1/appStoreVersionLocalizations/{loc['id']}/appScreenshotSets")
+            for st in (sets or {}).get("data", []):
+                got = asc_get(f"/v1/appScreenshotSets/{st['id']}/appScreenshots")
+                for d in (got or {}).get("data", []):
+                    shots.append(d["attributes"].get("assetDeliveryState", {}).get("state"))
+        ok, note = shots_verdict(shots)
+        state["asc_shots"] = ok
+        if note:
+            state["_notes"] = {**state.get("_notes", {}), "asc_shots": note}
+
     submitted_states = {"WAITING_FOR_REVIEW", "IN_REVIEW", "PENDING_APPLE_RELEASE",
                          "PENDING_DEVELOPER_RELEASE", "READY_FOR_SALE", "PROCESSING_FOR_APP_STORE"}
     state["submitted"] = app_store_state in submitted_states
@@ -130,7 +176,8 @@ def render(version, build, done_flags, live_state):
         else:
             mark = "⬜"
         suffix = "  (gated: needs your go-ahead)" if key in GATED else ""
-        lines.append(f"{mark} {label}{suffix}")
+        note = combined.get("_notes", {}).get(key)
+        lines.append(f"{mark} {label}{suffix}" + (f"  ({note})" if note else ""))
         # Show the command for the NEXT step only: printing all twelve would
         # bury the one thing to do now.
         if mark == "▶" and key in HOW:
@@ -144,14 +191,18 @@ def render(version, build, done_flags, live_state):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument("version")
-    p.add_argument("build")
+    p.add_argument("version", nargs="?", default="")
+    p.add_argument("build", nargs="?", default="")
     p.add_argument("--done", default="", help="comma-separated session-only milestones to mark done: preflight,version,tests,changelog")
+    p.add_argument("--selftest", action="store_true", help="run the screenshot-verdict asserts and exit")
     p.add_argument("--emit", action="store_true",
                    help="also write a timestamped snapshot to ~/.claude/runbooks/state/ "
                         "for the dashboard. The snapshot is a CACHE, never truth: it records "
                         "checked_at so consumers can show its age and grey it out when stale.")
     args = p.parse_args()
+    if args.selftest:
+        _selftest()
+        sys.exit(0)
     done_flags = {k: True for k in args.done.split(",") if k}
     live_state = check_live(args.version, args.build)
     print(render(args.version, args.build, done_flags, live_state))
@@ -170,6 +221,7 @@ if __name__ == "__main__":
             "external_label": "App Store Connect appStoreState",
             "milestones": [
                 {"key": k, "label": lb, "done": bool(combined.get(k)),
+                 "note": combined.get("_notes", {}).get(k),
                  "gated": k in ("submitted", "released"),
                  "how_kind": HOW.get(k, ("", ""))[0],
                  "how": HOW.get(k, ("", ""))[1].format(V=args.version, B=args.build)}

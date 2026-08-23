@@ -18,3 +18,5 @@ __.SYMDEF*
 
 # App Store Connect API keys must never live in the repo
 *.p8
+
+__pycache__/
