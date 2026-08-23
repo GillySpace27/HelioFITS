@@ -82,7 +82,22 @@ def _selftest():
 
 
 def sh(cmd):
-    return subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout.strip()
+    """Run a command in the repo, returning "" if its binary is missing.
+
+    launchd does not inherit a login shell's PATH. The Orrery agent runs with
+    /usr/bin:/bin:/usr/sbin:/sbin, which has git but not gh (/opt/homebrew/bin),
+    so `gh release view` raised FileNotFoundError straight out of check_live and
+    killed the tracker before it could emit. The card then sat at a two-hour-old
+    13/13 that looked finished rather than saying it had failed to check. One
+    absent tool must cost one milestone, never the whole run. 2026-08-23."""
+    try:
+        return subprocess.run(cmd, cwd=REPO, capture_output=True, text=True).stdout.strip()
+    except FileNotFoundError:
+        MISSING.add(cmd[0])
+        return ""
+
+
+MISSING = set()   # binaries this run could not find, reported rather than hidden
 
 def asc_get(path):
     out = subprocess.run([sys.executable, ASC_API, "GET", path], capture_output=True, text=True).stdout
@@ -101,9 +116,13 @@ def check_live(version, build):
     tags_remote = sh(["git", "ls-remote", "--tags", "origin", tag])
     state["tag_pushed"] = bool(tags_remote.strip())
 
-    gh_out = subprocess.run(["gh", "release", "view", tag, "--json", "url"],
-                             cwd=REPO, capture_output=True, text=True)
-    state["gh_release"] = gh_out.returncode == 0
+    try:
+        gh_out = subprocess.run(["gh", "release", "view", tag, "--json", "url"],
+                                 cwd=REPO, capture_output=True, text=True)
+        state["gh_release"] = gh_out.returncode == 0
+    except FileNotFoundError:
+        MISSING.add("gh")
+        state["gh_release"] = False
 
     versions = asc_get(f"/v1/apps/{APP_ID}/appStoreVersions"
                         f"?filter[versionString]={version}&filter[platform]=MAC_OS"
@@ -153,6 +172,10 @@ def check_live(version, build):
     state["submitted"] = app_store_state in submitted_states
     state["released"] = app_store_state == "READY_FOR_SALE"
     state["_asc_state_raw"] = app_store_state
+    if MISSING:
+        state["_notes"] = {**state.get("_notes", {}),
+                           "gh_release": f"{', '.join(sorted(MISSING))} not on PATH, so this is UNCHECKED, not undone"}
+    state["_missing"] = sorted(MISSING)
     return state
 
 def render(version, build, done_flags, live_state):
