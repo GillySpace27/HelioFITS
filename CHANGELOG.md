@@ -4,6 +4,22 @@ All notable changes to HelioFITS are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- New app icon: the sun-pie iris, six wedges of the Sun at six wavelengths around
+  a dark hexagon lettered HF. It comes from the application that used to be called
+  HFStudio, which has taken a coronagraph mark of its own (PUNCHStudio); an
+  aperture made of solar images suits a FITS previewer better than it suited a
+  studio. `tools/make_app_icon.py` draws it from `tools/iris_orb.png`.
+- The icon is drawn twice: lettered at 128 pixels and above, and plain, without
+  lettering, at 64 and below, where HF is too small to read and a shrunken copy of
+  the full mark is a smudge.
+- The icon images are now full squares rather than rounded ones. macOS 26 applies
+  its own shape and insets art that arrives already rounded, which is why the
+  16 pixel icon has been sitting on a grey plate.
+
 ## [1.3.1] - 2026-08-21
 
 Two fixes, one of which meant a headline feature of 1.3.0 never actually ran.
