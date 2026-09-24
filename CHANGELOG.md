@@ -6,6 +6,11 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-09-23
+
+Multi-extension files are no longer cut off at eight, and the icon no longer sits on a grey
+plate at small sizes.
+
 ### Fixed
 
 - **Files with more than 8 image extensions showed only the first 8.** A UCoMP
@@ -15,6 +20,12 @@ All notable changes to HelioFITS are recorded here. Format follows
   arrived with its corners already rounded, and macOS 26, which applies its own
   shape, insets such art on a plate. The same AIA 171 icon is now supplied as
   full squares and macOS does the rounding.
+
+### Changed
+
+- **The About panel says what HelioFITS is and links to HelioFITS Studio,** the separate
+  desktop application for coronagraph and wide-field imagery, so the two are not
+  confused.
 
 ## [1.3.1] - 2026-08-21
 
