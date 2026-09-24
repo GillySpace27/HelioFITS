@@ -6,6 +6,18 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Opening the app now opens the viewer, not the settings.** With no file, the
+  window is a drop zone: drop a FITS file on it or click Open… (⌘O). Opening a
+  file still shows only that file's viewer.
+- **The landing page is now a Welcome window** beside the viewer on launch, with
+  a "Don't show this again" checkbox. Help ▸ Welcome to HelioFITS brings it back.
+- **The default-layer and folder-rule controls moved to Settings (⌘,),** the
+  standard macOS Settings window.
+- **"Sync FITS previews to HDU…" is now its own dialog.** It used to be a sheet on
+  the settings window, so it could arrive attached to a window that was hidden.
+
 ## [1.3.2] - 2026-09-23
 
 Multi-extension files are no longer cut off at eight, and the icon no longer sits on a grey
