@@ -712,8 +712,10 @@ enum FITSRenderer {
     }
 
 
-    // ponytail: 8-HDU cap keeps many-extension files from stalling previews.
-    static let maxPagerHDUs = 8
+    // ponytail: HDU cap because FITSPreviewModel.load renders every page up
+    // front; 128 clears real files (UCoMP L2 has 12, issue #25). Lazy per-page
+    // rendering is the upgrade if a file ever needs more.
+    static let maxPagerHDUs = 128
 
 
 
