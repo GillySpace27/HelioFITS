@@ -75,6 +75,10 @@ HDU to PNG for slides and papers, or convert a whole folder at once.
 Free. No account, no network, no telemetry — HelioFITS has no network
 entitlement, so the macOS sandbox denies it all internet access. It only ever
 reads the files you point it at.
+
+HelioFITS previews solar FITS files in Finder and Quick Look. HelioFITS Studio,
+a separate free download from gilly.space/heliofits-studio, is the full desktop
+application for working with coronagraph and wide-field solar imagery.
 ```
 
 ## Keywords (100 char max, comma-separated, no spaces)
