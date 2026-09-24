@@ -10,43 +10,31 @@ struct HelioFITSApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        WindowGroup {
-            HelioFITSView()
-                .background(WindowCapture { ControlPanelController.shared.capture($0) })
+        // The first scene opens at launch: the viewer with no file in it. The
+        // Welcome window rides alongside it (HomeWindowController), and the
+        // preview settings are a standard Settings scene at ⌘,.
+        WindowGroup("HelioFITS") {
+            HomeView()
+                .background(WindowCapture { HomeWindowController.shared.capture($0) })
                 // SwiftUI delivers opened URLs here (not the AppDelegate).
-                //  • file://…​.fits  → "View HDU header" opened the file with the
-                //    app; show its header in a native window. Opening the file
+                //  • file://…​.fits  → open it in the viewer. Opening the file
                 //    (vs a URL-scheme path) is what grants the sandbox read.
-                //  • heliofits://…   → HDU-sync rule write / chooser sheet.
+                //  • heliofits://…   → HDU chooser / batch export.
                 .onOpenURL { url in
                     if url.isFileURL {
                         HeaderWindowController.shared.present(fileURL: url)
-                        // Opening a FITS file must never bring up the settings
-                        // panel (cold OR warm launch).
-                        ControlPanelController.shared.fileOpened()
                     } else {
                         applySyncURL(url)
                     }
                 }
         }
+        .windowResizability(.contentMinSize)
         .commands {
-            // Put the settings panel where every Mac app keeps it: the App menu's
-            // "Settings…" item (⌘,). This is the whole window's identity — it is
-            // settings, NOT the viewer — so reaching it the standard way makes
-            // that obvious. The panel is a normal window (not a SwiftUI Settings
-            // scene) because ControlPanelController already manages its
-            // launch/document/Dock-click lifecycle; this just adds the menu item.
-            // File ▸ Open… — the app could always open a FITS file, but only by
-            // double-clicking one in Finder. Replaces SwiftUI's "New Window",
-            // which does nothing useful here: the only window this app owns is
-            // the settings panel, and that has its own item at ⌘,.
+            // File ▸ Open… replaces SwiftUI's "New Window": a second empty
+            // viewer is never what anyone wants here.
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { HeaderWindowController.shared.runOpenPanel() }
                     .keyboardShortcut("o", modifiers: .command)
-            }
-            CommandGroup(replacing: .appSettings) {
-                Button("Settings…") { ControlPanelController.shared.reveal() }
-                    .keyboardShortcut(",", modifiers: .command)
             }
             // With no telemetry, GitHub is the only feedback channel — so the
             // app has to point at it. Both items are plain browser handoffs
@@ -54,6 +42,7 @@ struct HelioFITSApp: App {
             // Updates…" is the honest answer to the direct-download build
             // never self-updating: the Releases page IS the update channel.
             CommandGroup(replacing: .help) {
+                Button("Welcome to HelioFITS") { HomeWindowController.shared.showWelcome() }
                 Button("HelioFITS Help (README)") {
                     NSWorkspace.shared.open(
                         URL(string: "https://github.com/GillySpace27/HelioFITS#readme")!)
@@ -69,6 +58,8 @@ struct HelioFITSApp: App {
                 }
             }
         }
+
+        Settings { SettingsView() }
     }
 }
 
@@ -76,69 +67,102 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.servicesProvider = ServiceProvider.shared
         NSUpdateDynamicServices()
+        // AppKit says "default launch" only when nothing else is going on, so a
+        // yes lets Home appear at once. A no is NOT proof of a document: Apple
+        // also counts restored window state, which SwiftUI always has (measured:
+        // a plain `open` of the app reported NO). So a no falls back to the timer.
+        let isDefault = notification.userInfo?[NSApplication.launchIsDefaultUserInfoKey] as? Bool
+        HomeWindowController.shared.launchFinished(isDefault: isDefault)
     }
 
-    // Clicking the Dock icon brings the control panel back even if it was
-    // suppressed for a header, or only header windows are open.
+    // Dock click with nothing on screen brings the home window back. With a
+    // viewer already up, the Dock click just activates the app, as usual.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        ControlPanelController.shared.reveal()
+        if !flag { HomeWindowController.shared.reveal() }
         return true
     }
 }
 
-/// Owns the app's single control-panel window so header-only launches can keep
-/// it hidden. The window starts hidden and is revealed shortly after launch —
-/// unless a header was opened, which is the whole reason the app came up.
-final class ControlPanelController {
-    static let shared = ControlPanelController()
-    private var window: NSWindow?          // the (latest) control-panel window
+/// Owns the home window (the viewer with no file in it) and the Welcome window.
+///
+/// Home appears on a plain launch or a Dock click, and NEVER alongside a document:
+/// a launch that opens a file shows that file's viewer and nothing else. Welcome
+/// rides along with Home on a plain launch until "Don't show this again" is ticked.
+final class HomeWindowController {
+    static let shared = HomeWindowController()
+    private var window: NSWindow?          // the (latest) home window
+    private var welcome: NSWindow?
     private var revealWork: DispatchWorkItem?
-    private var documentMode = false       // a file was opened → keep the panel down
+    private var documentMode = false       // a file was opened → keep Home down
+    private var launchIsDefault: Bool?     // nil until AppKit says
+    private var welcomedThisLaunch = false
 
-    // The control panel appears ONLY on a plain launch or a Dock click — NEVER
-    // alongside a document. Two gotchas this handles:
-    //   • `open -a` can deliver a reopen BEFORE the window exists (reveal() then
-    //     no-ops on a nil window — fine, capture() reschedules).
-    //   • SwiftUI creates a FRESH WindowGroup window when a file is opened with
-    //     no window present, so we must NOT guard on window==nil — track the
-    //     newest and hide it; documentMode keeps every one down.
+    // Two gotchas this handles:
+    //   • SwiftUI creates a FRESH WindowGroup window on reopen, on activation and
+    //     when a file is opened with no window present, and state restoration can
+    //     bring back another. Each runs capture(); keep exactly one (newest wins)
+    //     and never guard on window == nil.
+    //   • capture() and launchFinished() can arrive in either order.
     func capture(_ w: NSWindow) {
-        // A SwiftUI WindowGroup spawns a FRESH window on reopen/activation, and
-        // macOS state-restoration can bring back another — each runs capture(),
-        // and without this the user sees TWO Settings panels. Keep exactly one:
-        // the newest wins, the previous is closed. isRestorable stops restoration
-        // from resurrecting a duplicate on the next launch.
         w.isRestorable = false
         if let old = window, old !== w { old.close() }
         window = w
-        w.title = "HelioFITS Extension"
         w.orderOut(nil)                          // hidden until we decide (no flash)
-        guard !documentMode else { return }      // came up for a document → stay hidden
-        // Plain launch: reveal after long enough to catch a COLD document event
-        // (the old 0.4s was shorter than cold-launch delivery → the panel
-        // flashed up). fileOpened() cancels this if a document is opening.
-        let work = DispatchWorkItem { [weak self] in
-            guard let self, !self.documentMode else { return }
-            self.reveal()
-        }
-        revealWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+        decide()
     }
 
-    /// A FITS file was opened (its viewer window shows). The control panel must
-    /// never accompany a document — every time: cancel a pending reveal and hide
-    /// any panel a cold OR warm launch created/left up. Dock-click (reveal)
-    /// brings it back and clears documentMode.
+    func launchFinished(isDefault: Bool?) {
+        launchIsDefault = isDefault
+        decide()
+    }
+
+    private func decide() {
+        guard window != nil, !documentMode else { return }
+        if launchIsDefault == true {
+            reveal(launch: true)
+        } else {
+            // Unknown, or "not default" (which may still be a plain launch): wait
+            // long enough to catch a cold document event. fileOpened() cancels.
+            revealWork?.cancel()
+            let work = DispatchWorkItem { [weak self] in
+                guard let self, !self.documentMode else { return }
+                self.reveal(launch: true)
+            }
+            revealWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+        }
+    }
+
+    /// A FITS file was opened in the viewer: Home steps aside.
     func fileOpened() {
         documentMode = true
         revealWork?.cancel()
         window?.orderOut(nil)
     }
 
-    func reveal() {
+    func reveal(launch: Bool = false) {
         documentMode = false
-        window?.title = "HelioFITS Extension"
         window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        if launch, !welcomedThisLaunch, !UserDefaults.standard.bool(forKey: "hideWelcome") {
+            welcomedThisLaunch = true
+            showWelcome()
+        }
+    }
+
+    /// The landing page. Help ▸ Welcome to HelioFITS reopens it any time.
+    func showWelcome() {
+        if welcome == nil {
+            let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                             backing: .buffered, defer: true)
+            w.title = "Welcome to HelioFITS"
+            w.isReleasedWhenClosed = false
+            w.contentViewController = NSHostingController(
+                rootView: WelcomeView(close: { [weak w] in w?.close() }))
+            w.center()
+            welcome = w
+        }
+        welcome?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 }
@@ -197,10 +221,7 @@ func applySyncURL(_ url: URL) {
     let dirs = dirsFromURL(url)
     guard !dirs.isEmpty, url.host == "choose" else { return }
 
-    DispatchQueue.main.async {
-        ServiceRequest.shared.pendingDirs = dirs
-        NSApp.activate(ignoringOtherApps: true)
-    }
+    DispatchQueue.main.async { PreviewSettings.runSyncChooser(dirs: dirs) }
 }
 
 /// Receives the app's own NSServices item (kept as a fallback path). Folders
@@ -222,14 +243,7 @@ final class ServiceProvider: NSObject {
             error.pointee = "No folders or FITS files in selection" as NSString
             return
         }
-        DispatchQueue.main.async {
-            ServiceRequest.shared.pendingDirs = dirs.sorted()
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        DispatchQueue.main.async { PreviewSettings.runSyncChooser(dirs: dirs.sorted()) }
     }
 }
 
-final class ServiceRequest: ObservableObject {
-    static let shared = ServiceRequest()
-    @Published var pendingDirs: [String] = []
-}
