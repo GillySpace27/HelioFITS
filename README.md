@@ -17,6 +17,9 @@
 
 </div>
 
+> **HelioFITS** previews solar FITS files in Finder and Quick Look. **HelioFITS Studio** is the full desktop application for working with coronagraph and wide-field solar imagery.
+> Looking for the desktop application? See [HelioFITS Studio](https://gilly.space/heliofits-studio).
+
 ---
 
 Do you have a hundred directories of FITS files and no way to preview them
