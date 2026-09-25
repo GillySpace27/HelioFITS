@@ -285,6 +285,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                            styleMask: [.titled, .closable, .resizable, .miniaturizable],
                            backing: .buffered, defer: false)
         win.title = title
+        // The title bar's file icon: drag it into Terminal, Mail or a save panel,
+        // or ⌘-click the title for the folder path. Free, and every Mac user's
+        // muscle memory.
+        win.representedURL = c.url
         // Below this the on-image chrome starts overlapping: the statistics card
         // covers the pixel readout under ~645 pt of width, and the stretch panel
         // and toolbar under ~400 pt of height. The card hides itself when there
@@ -407,7 +411,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.copy.isEnabled = false
         c.copy.toolTip = "Copy the code that loads this image into sunpy — paste it straight into Python"
 
-        let right = NSStackView(views: [c.copy, c.save])
+        // Where the file lives, one click away. Icon-only so the bar stays about
+        // the image; tooltips and the File menu (with shortcuts) carry the words.
+        let reveal = iconButton("folder", "Show in Finder (⇧⌘R)", #selector(revealInFinder(_:)))
+        let copyPath = iconButton("link", "Copy the file’s full path (⌥⌘C)", #selector(copyPath(_:)))
+
+        let right = NSStackView(views: [reveal, copyPath, c.copy, c.save])
         right.spacing = 8
         let barStack = NSStackView(views: [c.popup, NSView(), right])
         barStack.spacing = 10
@@ -549,6 +558,37 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             guard resp == .OK, let url = panel.url else { return }
             try? out.data.write(to: url)
         }
+    }
+
+    private func iconButton(_ symbol: String, _ tip: String, _ action: Selector) -> NSButton {
+        let b = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: tip)!,
+                         target: self, action: action)
+        b.bezelStyle = .rounded
+        b.toolTip = tip
+        b.setAccessibilityLabel(tip)
+        return b
+    }
+
+    /// The viewer's file for a button, or for the File menu (the key window).
+    private func fileURL(for sender: Any?) -> URL? {
+        if let c = ctx(for: sender) { return c.url }
+        guard let w = NSApp.keyWindow else { return nil }
+        return ctx[ObjectIdentifier(w)]?.url
+    }
+
+    @objc func revealInFinder(_ sender: Any?) {
+        guard let url = fileURL(for: sender) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    @objc func copyPath(_ sender: Any?) {
+        guard let url = fileURL(for: sender) else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(url.path, forType: .string)
+        // Confirm on the button, since the clipboard is invisible.
+        guard let b = sender as? NSButton, let old = b.image else { return }
+        b.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "Copied")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { b.image = old }
     }
 
     @objc private func copyPython(_ sender: NSButton) {
