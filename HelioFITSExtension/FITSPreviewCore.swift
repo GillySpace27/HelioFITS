@@ -711,8 +711,8 @@ final class FITSPreviewModel {
                 hdu = hdul[\(p.hdu)]                 # 3-D cube
                 data = hdu.data[\(p.plane)]            # plane shown in HelioFITS
                 header = hdu.header
-            m = sunpy.map.Map((data, header))
-
+            m = sunpy.map.Map((data, header))   # `data` is the displayed plane (numpy array)
+            \(rhefLines)
             # Coronagraph data spans a huge dynamic range; a plain linear scale
             # floors the faint structure to background. Match HelioFITS with a
             # percentile clip + gamma (power) stretch so the corona is visible.
@@ -725,7 +725,23 @@ final class FITSPreviewModel {
         return """
         import sunpy.map
         m = sunpy.map.Map(\(q), hdus=\(p.hdu))   # edit path if you move or share this file
-        m.peek()  # opens a quick-look plot
+        data = m.data   # the displayed HDU as stored in the file (numpy array)
+        \(rhefLines)m.peek()  # opens a quick-look plot
+        """
+    }
+
+    /// With RHEF on, the lines that reproduce it: sunkit-image's `radial.rhef` is
+    /// the reference implementation this viewer's filter was ported from, called
+    /// with the same upsilon and ordinal ranking. HelioFITS runs it on a
+    /// display-sized grid; this runs it at full resolution. Verified against
+    /// sunkit-image 0.7.0 on an AIA 1700 frame. Empty when RHEF is off.
+    private var rhefLines: String {
+        guard filter == .rhef else { return "" }
+        return """
+        from sunkit_image.radial import rhef   # needs sunkit-image with radial.rhef (0.7.0 has it)
+        m = rhef(m, upsilon=0.35, method="numpy")   # the RHEF filter shown in HelioFITS
+        rhef_data = m.data   # filtered values: per-radius rank in (0, 1]
+
         """
     }
 }

@@ -6,6 +6,18 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Copy Python now hands you the array by name.** The snippet includes
+  `data = m.data`, the displayed HDU as stored in the file (a numpy array, with
+  the header and WCS still on `m`). A separate numpy export would have been the
+  same numbers without the metadata.
+- **With RHEF on, Copy Python reproduces it.** The snippet adds sunkit-image's
+  `radial.rhef` with the viewer's settings (`upsilon=0.35`, ordinal ranking) and
+  names the result `rhef_data`. HelioFITS runs the filter on a display-sized grid;
+  the snippet runs it at full resolution. Checked with sunkit-image 0.7.0 on an
+  AIA 1700 frame and a PUNCH PAM cube plane.
+
 ## [1.3.2] - 2026-09-23
 
 Multi-extension files are no longer cut off at eight, and the icon no longer sits on a grey
