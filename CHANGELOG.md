@@ -6,6 +6,15 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Show in Finder and Copy Path in the viewer.** Two buttons beside Copy Python,
+  also in the File menu as Show in Finder (⇧⌘R) and Copy Path (⌥⌘C, the same
+  shortcut Finder uses for Copy as Pathname).
+- **The viewer's title bar carries the file's icon.** Drag it into Terminal, Mail
+  or a save panel to hand over the file, or ⌘-click the title to see the folders
+  above it.
+
 ## [1.3.2] - 2026-09-23
 
 Multi-extension files are no longer cut off at eight, and the icon no longer sits on a grey
