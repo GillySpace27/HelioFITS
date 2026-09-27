@@ -20,4 +20,18 @@ import Foundation
         #expect(s.contains("sunpy.map.Map((data, header))"))
         #expect(!s.contains("hdus="))          // must NOT use the 2-D form on a cube
     }
+    @Test("2-D snippet names the array, and reproduces RHEF only when it is on") func plainAndRHEF() {
+        let p = "/Users/gilly/Downloads/AIA20260624_204500_1700.fits"
+        guard FileManager.default.fileExists(atPath: p) else { return }
+        let m = FITSPreviewModel.load(path: p, maxSide: 512)
+        let plain = m.pythonSnippet(path: p)
+        #expect(plain.contains("data = m.data"))
+        #expect(!plain.contains("rhef"))
+        m.filter = .rhef
+        let filtered = m.pythonSnippet(path: p)
+        print("SNIPPET_RHEF\n\(filtered)\n---")
+        #expect(filtered.contains("data = m.data"))
+        #expect(filtered.contains("m = rhef(m, upsilon=0.35, method=\"numpy\")"))
+        #expect(filtered.contains("rhef_data = m.data"))
+    }
 }

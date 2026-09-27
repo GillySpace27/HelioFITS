@@ -410,7 +410,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.copy.target = self
         c.copy.action = #selector(copyPython(_:))
         c.copy.isEnabled = false
-        c.copy.toolTip = "Copy the code that loads this image into sunpy — paste it straight into Python"
+        c.copy.toolTip = "Copy Python that loads this image into sunpy. In it, `data` is the displayed array, as stored in the file (numpy); with RHEF on, `rhef_data` is the filtered one."
 
         // Where the file lives, one click away. Icon-only so the bar stays about
         // the image; tooltips and the File menu (with shortcuts) carry the words.
