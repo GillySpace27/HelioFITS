@@ -36,6 +36,15 @@ struct HelioFITSApp: App {
                 Button("Open…") { HeaderWindowController.shared.runOpenPanel() }
                     .keyboardShortcut("o", modifiers: .command)
             }
+            // The viewer's file: where it lives, and its path. ⌥⌘C is Finder's
+            // own "Copy as Pathname", so the shortcut is already known.
+            CommandGroup(after: .newItem) {
+                Divider()
+                Button("Show in Finder") { HeaderWindowController.shared.revealInFinder(nil) }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                Button("Copy Path") { HeaderWindowController.shared.copyPath(nil) }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
+            }
             // With no telemetry, GitHub is the only feedback channel — so the
             // app has to point at it. Both items are plain browser handoffs
             // (sandbox-safe; needs no network entitlement). "Check for
