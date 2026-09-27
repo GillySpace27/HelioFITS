@@ -6,6 +6,11 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-09-27
+
+Opening the app now opens the viewer, the viewer knows where its file lives, and Copy Python
+hands you the array.
+
 ### Added
 
 - **Show in Finder and Copy Path in the viewer.** Two buttons beside Copy Python,
