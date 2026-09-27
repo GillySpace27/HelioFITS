@@ -229,6 +229,15 @@ runbook is worth more than the commands it contains.
   Because `ship.sh` signs ~10 binaries, a modest per-signature rate makes
   nearly every archive fail. Guard: probe the TSA before burning archive
   cycles (step 7).
+- **2026-09-24 — the test build that caught a real file.** Launching a Debug
+  build from DerivedData to check new windows registered it with
+  LaunchServices, and a FITS file Gilly double-clicked in Finder opened in the
+  test build instead of his App Store copy. A test of the Finder sync dialog
+  (`open -a <debug app> heliofits://choose?...`) was also answered with Apply
+  and wrote a real folder rule into the shared app-group settings. Guard: run
+  `./lsclean.sh` immediately after every test launch, keep test launches
+  short, and never trigger a dialog whose default button writes to the shared
+  settings.
 - `pkill -x HelioFITS` while a test run is in flight — the test host IS the
   app, so this fails the run with "crashed with signal term", which reads as
   a real failure and is not.
