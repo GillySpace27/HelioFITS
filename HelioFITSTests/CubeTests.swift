@@ -19,6 +19,8 @@
 import Testing
 import Foundation
 @testable import HelioFITS
+@testable import HelioFITSCore
+import CFITSIO
 
 /// Write a minimal BITPIX=-32 image cube (NAXIS=3) whose plane `p` (0-based) is
 /// filled entirely with the constant `(p+1) * 100` — so a misread plane is

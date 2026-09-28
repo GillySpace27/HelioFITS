@@ -5,6 +5,7 @@
 // READING the FITS files inside it and WRITING the PNGs into it.
 
 import AppKit
+import HelioFITSCore
 
 enum PNGExporter {
     static func run(paths: [String]) {

@@ -1,5 +1,6 @@
 #!/bin/bash
-# Rebuild the vendored universal (arm64 + x86_64) libcfitsio.a from source.
+# Rebuild the vendored universal (arm64 + x86_64) CFITSIO from source, as
+# HelioFITSCore/CFITSIO.xcframework.
 #
 # The app links this ONE static library; it must be a fat binary so HelioFITS
 # ships as a universal app that runs on both Apple Silicon and Intel Macs. The
@@ -48,9 +49,25 @@ done
 echo "==> lipo -> universal libcfitsio.a"
 lipo -create "$work/build-arm64/.libs/libcfitsio.a" \
              "$work/build-x86_64/.libs/libcfitsio.a" \
-     -output "$SHIM/libcfitsio.a"
+     -output "$work/libcfitsio.a"
+lipo -info "$work/libcfitsio.a"
 
-lipo -info "$SHIM/libcfitsio.a"
+# The app links CFITSIO through the HelioFITSCore Swift package, as an xcframework
+# whose module map lets Swift `import CFITSIO`. That xcframework is the ONE copy of
+# the library in the repo; tests read the .a inside it.
+echo "==> xcframework -> HelioFITSCore/CFITSIO.xcframework"
+hdrs="$work/headers"; mkdir -p "$hdrs"
+cp "$SHIM/fitsshim.h" "$SHIM/fitsio.h" "$SHIM/longnam.h" "$hdrs/"
+cat > "$hdrs/module.modulemap" <<'MAP'
+module CFITSIO {
+    header "fitsshim.h"
+    link "z"
+    export *
+}
+MAP
+xcf="$SHIM/../../HelioFITSCore/CFITSIO.xcframework"
+rm -rf "$xcf"
+xcodebuild -create-xcframework -library "$work/libcfitsio.a" -headers "$hdrs" -output "$xcf"
 echo "==> done. Rebuild the app and run the test suite on BOTH arches:"
 echo "    xcodebuild test ... -destination 'platform=macOS,arch=arm64'"
 echo "    xcodebuild test ... -destination 'platform=macOS,arch=x86_64'   # Rosetta"

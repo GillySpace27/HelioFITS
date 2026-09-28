@@ -8,6 +8,7 @@
 import Testing
 import Foundation
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 /// Write a single 2880-byte primary-header block from "KEY = value" cards.
 private func writeHeaderFile(_ pairs: [(String, String)]) throws -> String {

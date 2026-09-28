@@ -13,7 +13,9 @@
 
 import Testing
 import Foundation
+import AppKit
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 @Suite("Stretch levels")
 struct StretchTests {
@@ -106,9 +108,9 @@ struct StretchTests {
         var plain: Data?, stretched: Data?
         DispatchQueue.main.sync {
             m.mode = .plain
-            plain = m.image()?.tiffRepresentation
+            plain = m.image().map { NSImage($0) }?.tiffRepresentation
             m.mode = .stretch                 // panel opens; NOTHING else touched
-            stretched = m.image()?.tiffRepresentation
+            stretched = m.image().map { NSImage($0) }?.tiffRepresentation
         }
         try #require(plain != nil && stretched != nil)
         #expect(plain == stretched,

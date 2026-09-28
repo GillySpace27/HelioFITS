@@ -8,6 +8,7 @@
 import Testing
 import Foundation
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 @Suite("Colormap matching")
 struct ColormapMatchTests {
@@ -114,7 +115,7 @@ struct HeaderKeyContractTests {
     func matcherKeysAreEmitted() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
-        let swift = try String(contentsOf: root.appendingPathComponent("HelioFITSExtension/PreviewProvider.swift"),
+        let swift = try String(contentsOf: root.appendingPathComponent("HelioFITSCore/Sources/HelioFITSCore/FITSRenderer.swift"),
                                encoding: .utf8)
         let c = try String(contentsOf: root.appendingPathComponent("HelioFITSExtension/cfitsio/fitsshim.c"),
                            encoding: .utf8)
@@ -150,9 +151,9 @@ struct HeaderKeyContractTests {
     func builtLibraryIsCurrent() throws {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
-        let swift = try String(contentsOf: root.appendingPathComponent("HelioFITSExtension/PreviewProvider.swift"),
+        let swift = try String(contentsOf: root.appendingPathComponent("HelioFITSCore/Sources/HelioFITSCore/FITSRenderer.swift"),
                                encoding: .utf8)
-        let lib = try Data(contentsOf: root.appendingPathComponent("HelioFITSExtension/cfitsio/libcfitsio.a"))
+        let lib = try Data(contentsOf: root.appendingPathComponent("HelioFITSCore/CFITSIO.xcframework/macos-arm64_x86_64/libcfitsio.a"))
 
         let body = swift.components(separatedBy: "static func colormapKey")[1]
             .components(separatedBy: "\n    /// Which HDU")[0]

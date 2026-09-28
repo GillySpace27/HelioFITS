@@ -5,6 +5,7 @@
 
 import Testing
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 struct HelioFITSTests {
 

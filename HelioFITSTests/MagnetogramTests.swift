@@ -19,6 +19,7 @@
 import Testing
 import Foundation
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 /// Write a scaled-integer image (BITPIX=32, BSCALE, BLANK) where the four
 /// corners are BLANK and the interior holds a known ramp. Mirrors how HMI marks
