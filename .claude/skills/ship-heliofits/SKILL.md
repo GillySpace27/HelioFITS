@@ -238,6 +238,19 @@ runbook is worth more than the commands it contains.
   `./lsclean.sh` immediately after every test launch, keep test launches
   short, and never trigger a dialog whose default button writes to the shared
   settings.
+- **2026-09-27 — expired Apple sign-ins, twice over.** For 1.4.0 the notary
+  profile returned 401 and Xcode had no Apple account signed in at all, so
+  the App Store export failed with "Failed to Use Accounts". The upload went
+  through by passing the ASC API key to `xcodebuild -exportArchive`
+  (`-authenticationKeyPath/-authenticationKeyID/-authenticationKeyIssuerID`).
+  Re-storing the notary profile needs the developer Apple ID, which is NOT
+  gillygumption@gmail.com ("account does not exist"). Guard: check
+  `xcrun notarytool history --keychain-profile HelioFITS-notary` before step 7.
+- **2026-09-27 — a notarization that never finished.** The first 1.4.0
+  submission sat "In Progress" for over three hours (and `notarytool --wait`
+  crashed with a bus error). Resubmitting the same zip was Accepted in about a
+  minute. Guard: if a submission is still in progress after ~15 minutes,
+  resubmit with `--wait --timeout 8m` instead of waiting it out.
 - `pkill -x HelioFITS` while a test run is in flight — the test host IS the
   app, so this fails the run with "crashed with signal term", which reads as
   a real failure and is not.
