@@ -20,3 +20,7 @@ __.SYMDEF*
 *.p8
 
 __pycache__/
+
+# HelioFITSCore package build output
+HelioFITSCore/.build/
+HelioFITSCore/.swiftpm/

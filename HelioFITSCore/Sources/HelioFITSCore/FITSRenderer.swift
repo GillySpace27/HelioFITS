@@ -1,43 +1,43 @@
-import QuickLook
-import Quartz
+import Foundation
 import CoreGraphics
 import CoreText
 import ImageIO
 import UniformTypeIdentifiers
 import os.log
+import CFITSIO
 
 
-enum FITSRenderer {
+public enum FITSRenderer {
 
     // ponytail: percentile clip + gamma stretch. Solar images span a huge
     // dynamic range; a linear min/max map renders near-black. Tune to taste.
-    static let pLow: Double = 0.5     // low clip percentile
-    static let pHigh: Double = 99.5   // high clip percentile
-    static let gamma: Float = 0.5     // <1 brightens faint structure (sqrt)
-    static let maxSide = 1024         // cap preview dimension
+    public static let pLow: Double = 0.5     // low clip percentile
+    public static let pHigh: Double = 99.5   // high clip percentile
+    public static let gamma: Float = 0.5     // <1 brightens faint structure (sqrt)
+    public static let maxSide = 1024         // cap preview dimension
 
 
     // Shared with the container app (HDU-selection UI) via app group.
-    static let appGroup = "UB45PPC2JS.com.gillyspace27.fits"
+    public static let appGroup = "UB45PPC2JS.com.gillyspace27.fits"
 
-    struct Result {
-        let png: Data; let header: String; let width: Int; let height: Int
-        let natW: Int; let natH: Int          // native NAXIS1/2
-        let factor: Int                       // native → display decimation of `png`
+    public struct Result {
+        public let png: Data; public let header: String; public let width: Int; public let height: Int
+        public let natW: Int; public let natH: Int          // native NAXIS1/2
+        public let factor: Int                       // native → display decimation of `png`
 
         // The EXACT mapping `png` was built with. The interactive stretch reuses
         // these so that opening the colour panel — before any slider is touched —
         // reproduces the baked image instead of quietly re-deriving its own
         // limits from a different population of pixels and shifting the contrast.
-        let lo: Float; let hi: Float; let gam: Float
-        let cmapKey: String?
+        public let lo: Float; public let hi: Float; public let gam: Float
+        public let cmapKey: String?
     }
 
     /// Percentile clip limits from a strided sample of finite pixels, plus the
     /// magnetogram special case. The ONE place limits are decided: `render` bakes
     /// the PNG with it and the live stretch re-derives with it, so the two cannot
     /// disagree about what "0.5 – 99.5%" means.
-    static func levels(_ pix: UnsafePointer<Float>, count: Int,
+    public static func levels(_ pix: UnsafePointer<Float>, count: Int,
                        pLow: Double, pHigh: Double, cmapKey: String?) -> (lo: Float, hi: Float) {
         var sample = [Float]()
         let step = max(1, count / 200_000)
@@ -66,13 +66,13 @@ enum FITSRenderer {
 
     /// Linear scale is right for signed magnetograms; everything else gets the
     /// faint-structure-brightening gamma.
-    static func defaultGamma(_ cmapKey: String?) -> Float {
+    public static func defaultGamma(_ cmapKey: String?) -> Float {
         cmapKey == "hmimag" ? 1.0 : gamma
     }
 
     /// Instrument/channel-appropriate sunpy colormap for a file, from the
     /// header summary the shim returns. nil -> grayscale.
-    static func colormapKey(fromHeader h: String) -> String? {
+    public static func colormapKey(fromHeader h: String) -> String? {
         func val(_ key: String) -> String? {
             for line in h.split(separator: "\n") where line.hasPrefix(key) {
                 return String(line.dropFirst(9)).trimmingCharacters(in: .whitespaces)
@@ -178,7 +178,7 @@ enum FITSRenderer {
 
     /// Which HDU to display for a file: per-directory rule wins, then the
     /// global default, else -1 (auto = first image HDU).
-    static func selectedHDU(forFileAt path: String) -> Int {
+    public static func selectedHDU(forFileAt path: String) -> Int {
         guard let d = UserDefaults(suiteName: appGroup) else { return -1 }
         let dir = (path as NSString).deletingLastPathComponent
         if let per = d.dictionary(forKey: "dirHDU") as? [String: Int], let v = per[dir] {
@@ -190,7 +190,7 @@ enum FITSRenderer {
     /// Resolve the "auto = last image HDU" sentinel (-2) to a concrete index by
     /// listing the file's image HDUs. -1 (auto first) and explicit >=0 pass
     /// straight through — the shim resolves -1 to the first image HDU itself.
-    static func resolveAutoHDU(path: String, want: Int) -> Int {
+    public static func resolveAutoHDU(path: String, want: Int) -> Int {
         guard want == -2 else { return want }
         var idx = [Int](repeating: 0, count: maxPagerHDUs)
         let total = Int(fitsshim_image_hdus(path, &idx, Int32(maxPagerHDUs)))
@@ -201,11 +201,11 @@ enum FITSRenderer {
     /// Number of selectable planes in an image HDU: 1 for a plain 2D image, or
     /// the length of a data cube's 3rd axis (e.g. PUNCH PAM's 3 Stokes/
     /// polarization planes). 0 if `hdu` isn't an image HDU at all.
-    static func planeCount(path: String, hdu: Int) -> Int {
+    public static func planeCount(path: String, hdu: Int) -> Int {
         max(0, Int(fitsshim_image_planes(path, hdu)))
     }
 
-    static func render(path: String, maxSide: Int = FITSRenderer.maxSide, hdu: Int? = nil,
+    public static func render(path: String, maxSide: Int = FITSRenderer.maxSide, hdu: Int? = nil,
                        plane: Int = 0) throws -> Result {
         var w: Int = 0, h: Int = 0
         var pixPtr: UnsafeMutablePointer<Float>? = nil
@@ -270,7 +270,7 @@ enum FITSRenderer {
     /// Parse one keyword's value out of a raw FITS card block (the shim's
     /// fits_hdr2str output — 80-char cards, newline-joined; fall back to 80-char
     /// chunking if the separator is absent). Unquotes strings, drops comments.
-    static func cardVal(_ cards: String, _ key: String) -> String? {
+    public static func cardVal(_ cards: String, _ key: String) -> String? {
         let lines: [String] = cards.contains("\n")
             ? cards.split(separator: "\n").map(String.init)
             : stride(from: 0, to: cards.count, by: 80).map {
@@ -299,7 +299,7 @@ enum FITSRenderer {
         return nil
     }
 
-    static func cardNum(_ cards: String, _ key: String) -> Double? {
+    public static func cardNum(_ cards: String, _ key: String) -> Double? {
         cardVal(cards, key).flatMap(Double.init)
     }
 
@@ -315,7 +315,7 @@ enum FITSRenderer {
     ///
     /// ~w*h*4 bytes (64 MB for 4096²), so the caller holds only the HDUs on
     /// screen. Call OFF the main thread.
-    static func pixels(path: String, hdu: Int, plane: Int = 0) -> (w: Int, h: Int, pix: [Float])? {
+    public static func pixels(path: String, hdu: Int, plane: Int = 0) -> (w: Int, h: Int, pix: [Float])? {
         var w: Int = 0, h: Int = 0
         var pixPtr: UnsafeMutablePointer<Float>? = nil
         var hdrPtr: UnsafeMutablePointer<CChar>? = nil
@@ -332,7 +332,7 @@ enum FITSRenderer {
     }
 
     /// Raw header cards for one HDU (nil if the HDU can't be read).
-    static func cards(path: String, hdu: Int) -> String? {
+    public static func cards(path: String, hdu: Int) -> String? {
         var p: UnsafeMutablePointer<CChar>? = nil
         guard fitsshim_header_cards(path, hdu, &p) == 0, let c = p else { return nil }
         defer { free(c) }
@@ -349,18 +349,18 @@ enum FITSRenderer {
     ///
     /// Units: `m*` are degrees/pixel (CDELT folded together with the PC matrix
     /// or CROTA2); `cv*`/`lonpole` degrees; `rsun` arcsec. hpc() returns arcsec.
-    struct SolarWCS {
-        let m11, m12, m21, m22: Double      // CDELT · rotation, degrees per pixel
-        let cp1, cp2: Double                // CRPIX (1-based)
-        let cv1, cv2: Double                // CRVAL, degrees
-        let lonpole: Double                 // degrees (180 for zenithal solar frames)
-        let proj: String                    // TAN | ARC | SIN | CAR | "" (linear)
-        let rsun: Double                    // arcsec
-        let cx, cy: Double                  // disk-centre pixel  (limb overlay)
-        let rpx: Double                     // solar radius in pixels (limb overlay)
+    public struct SolarWCS {
+        public let m11, m12, m21, m22: Double      // CDELT · rotation, degrees per pixel
+        public let cp1, cp2: Double                // CRPIX (1-based)
+        public let cv1, cv2: Double                // CRVAL, degrees
+        public let lonpole: Double                 // degrees (180 for zenithal solar frames)
+        public let proj: String                    // TAN | ARC | SIN | CAR | "" (linear)
+        public let rsun: Double                    // arcsec
+        public let cx, cy: Double                  // disk-centre pixel  (limb overlay)
+        public let rpx: Double                     // solar radius in pixels (limb overlay)
 
         /// FITS pixel (1-based, y up) → helioprojective (Tx, Ty) in arcsec.
-        func hpc(_ fx: Double, _ fy: Double) -> (tx: Double, ty: Double) {
+        public func hpc(_ fx: Double, _ fy: Double) -> (tx: Double, ty: Double) {
             let d2r = Double.pi / 180
             // 1. pixel → intermediate world coordinates (degrees in the plane)
             let u = fx - cp1, v = fy - cp2
@@ -400,7 +400,7 @@ enum FITSRenderer {
 
         /// Everything the preview's JS needs — including the limb circle
         /// precomputed here, so no coordinate math is duplicated in JS.
-        var dict: [String: Any] {
+        public var dict: [String: Any] {
             ["m11": m11, "m12": m12, "m21": m21, "m22": m22,
              "cp1": cp1, "cp2": cp2, "cv1": cv1, "cv2": cv2,
              "lonpole": lonpole, "proj": proj, "rsun": rsun,
@@ -436,7 +436,7 @@ enum FITSRenderer {
     /// ~12,000″ on a PUNCH frame, and a scientist has no way to see that.
     private static let projections: Set<String> = ["TAN", "ARC", "SIN", "CAR"]
 
-    static func solarWCS(cards: String, isSolar: Bool) -> SolarWCS? {
+    public static func solarWCS(cards: String, isSolar: Bool) -> SolarWCS? {
         guard let cp1 = cardNum(cards, "CRPIX1"), let cp2 = cardNum(cards, "CRPIX2")
         else { return nil }
 
@@ -533,7 +533,7 @@ enum FITSRenderer {
 
     /// One-line caption for an HDU page: "2 / 3 — HDU 2 RHEF — 1024 × 1024 pixels
     /// · 2013-01-01 00:00 UT · 171 Å · sdoaia171".
-    static func caption(res r: Result, cards: String, index: Int, of total: Int) -> String {
+    public static func caption(res r: Result, cards: String, index: Int, of total: Int) -> String {
         let head = r.header.split(separator: "\n").first.map(String.init) ?? ""
         var parts = ["\(index) / \(total)"]
         if !head.isEmpty { parts.append(head) }
@@ -563,7 +563,7 @@ enum FITSRenderer {
     /// the fast path). Returns values in [0,1]; NaN where the pixel is non-finite
     /// or its radius falls outside the bins. Pure and deterministic — pinned in
     /// the test suite against a sunkit-image reference.
-    static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
+    public static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
                              nbins: Int, upsilon: Double) -> [Float] {
         let n = values.count
         var out = [Float](repeating: .nan, count: n)
@@ -620,7 +620,7 @@ enum FITSRenderer {
     /// count (0 here) on a good open, or a negative status when the file can't be
     /// opened at all (corrupt / not FITS), which must still fall through to the
     /// generic icon.
-    static func isTableOnlyFITS(path: String) -> Bool {
+    public static func isTableOnlyFITS(path: String) -> Bool {
         var idx = [Int](repeating: 0, count: maxPagerHDUs)
         return fitsshim_image_hdus(path, &idx, Int32(maxPagerHDUs)) == 0
     }
@@ -630,7 +630,7 @@ enum FITSRenderer {
     /// thumbnail of a table-only FITS so it reads as tabular FITS data instead
     /// of an anonymous generic document. Glyph only (no text): it stays legible
     /// down to icon sizes where a label would not.
-    static func drawTablePlaceholder(in ctx: CGContext, pixels: CGSize) {
+    public static func drawTablePlaceholder(in ctx: CGContext, pixels: CGSize) {
         let w = pixels.width, h = pixels.height
         let s = min(w, h)
 
@@ -666,7 +666,7 @@ enum FITSRenderer {
         ctx.strokePath()
     }
 
-    static func noImageSummary(path: String) -> String {
+    public static func noImageSummary(path: String) -> String {
         var hdus: [(h: Int, xt: String, nm: String, naxis: Int)] = []
         var h = 0
         while h < 32 {
@@ -691,7 +691,7 @@ enum FITSRenderer {
     }
 
     /// Shared readout formatting so the preview and the viewer never drift.
-    static func fmtValue(_ z: Float) -> String {
+    public static func fmtValue(_ z: Float) -> String {
         guard z.isFinite else { return "NaN" }
         let a = abs(z)
         return (a != 0 && (a >= 1e4 || a < 1e-2))
@@ -701,7 +701,7 @@ enum FITSRenderer {
 
     /// Value of a keyword in the shim's header summary ("KEY      value" lines,
     /// 8-char key + space). Strips FITS string quotes.
-    static func headerVal(_ h: String, _ key: String) -> String? {
+    public static func headerVal(_ h: String, _ key: String) -> String? {
         for line in h.split(separator: "\n") where line.hasPrefix(key) {
             let v = String(line.dropFirst(9)).trimmingCharacters(in: .whitespaces)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "'"))
@@ -715,7 +715,7 @@ enum FITSRenderer {
     // ponytail: HDU cap because FITSPreviewModel.load renders every page up
     // front; 128 clears real files (UCoMP L2 has 12, issue #25). Lazy per-page
     // rendering is the upgrade if a file ever needs more.
-    static let maxPagerHDUs = 128
+    public static let maxPagerHDUs = 128
 
 
 

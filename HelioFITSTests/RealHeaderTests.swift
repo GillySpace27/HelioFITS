@@ -1,5 +1,7 @@
 import Testing
 @testable import HelioFITS
+@testable import HelioFITSCore
+import CFITSIO
 
 /// Verbatim output of `fitsshim_read_image` on a real Proba-3/ASPIICS L3 file
 /// from https://p3sc.oma.be, captured 2026-08-21. Every other colormap test

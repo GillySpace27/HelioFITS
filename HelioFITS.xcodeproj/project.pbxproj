@@ -9,12 +9,11 @@
 /* Begin PBXBuildFile section */
 		01BC9D342A3C101708CEDA1B /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8BD5F28682761BE7F9C2B117 /* Cocoa.framework */; };
 		046801A8F1AE81BBBED87E38 /* FITSPreviewCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */; };
+		135CAAE27665EC1A06C450BC /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0E59D3CF4B15A9E629D39739 /* HelioFITSCore */; };
 		2CDAC07023C0F7A3709504A0 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3186F702CE436DD00395F60 /* QuickLook.framework */; };
-		37E610B161CF266FB1F00D5D /* FITSColormaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */; };
 		5B0B6DAF069F7C753A49F279 /* QuickLookThumbnailing.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */; };
-		8A100F3A017B65216AD609D8 /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46E37F857E789E73DE5B1FA4 /* PreviewProvider.swift */; };
+		70DED95687543CD5FA6B14BE /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5D8F6F20E905C4F7153A4CA0 /* HelioFITSCore */; };
 		900B4ECBAECA180F8C74E599 /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3AE31E72CE3ED570080470D /* Quartz.framework */; };
-		999F6D2A260AFCC4282A327D /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46E37F857E789E73DE5B1FA4 /* PreviewProvider.swift */; };
 		A3186F732CE436DD00395F60 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3186F702CE436DD00395F60 /* QuickLook.framework */; };
 		A3AE31E82CE3ED570080470D /* Quartz.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3AE31E72CE3ED570080470D /* Quartz.framework */; };
 		A3AE31F52CE3ED570080470D /* HelioFITSExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A3AE31E52CE3ED570080470D /* HelioFITSExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -25,8 +24,8 @@
 		A3C301A52CF129F100DF1E56 /* QuickLookUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3186F712CE436DD00395F60 /* QuickLookUI.framework */; };
 		A3C301A62CF12A0E00DF1E56 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3C301A02CF129DE00DF1E56 /* WebKit.framework */; };
 		A3C301A82CF12A1B00DF1E56 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3C301A72CF12A1B00DF1E56 /* Foundation.framework */; };
-		A5B822DC325D315A576D82F0 /* FITSColormaps.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */; };
 		BC204350F77D473FAFC965B8 /* HelioFITSThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 3D17D4927978BC19D807D408 /* HelioFITSThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C6358D989033F4484EB9450D /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = E8E9DE9C0ABB224DA74CF08C /* HelioFITSCore */; };
 		E1927352D5DE44F8821011EF /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F5B74F42E4084BD7999E17A2 /* PrivacyInfo.xcprivacy */; };
 		FF395D9B80498D1004441098 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8815A478097ECDE81A6098F /* ThumbnailProvider.swift */; };
 /* End PBXBuildFile section */
@@ -79,8 +78,6 @@
 
 /* Begin PBXFileReference section */
 		3D17D4927978BC19D807D408 /* HelioFITSThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HelioFITSThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		46E37F857E789E73DE5B1FA4 /* PreviewProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = PreviewProvider.swift; path = HelioFITSExtension/PreviewProvider.swift; sourceTree = "<group>"; };
-		47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FITSColormaps.swift; path = HelioFITSExtension/FITSColormaps.swift; sourceTree = "<group>"; };
 		8BD5F28682761BE7F9C2B117 /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		A3186F702CE436DD00395F60 /* QuickLook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLook.framework; path = System/Library/Frameworks/QuickLook.framework; sourceTree = SDKROOT; };
 		A3186F712CE436DD00395F60 /* QuickLookUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookUI.framework; path = System/Library/Frameworks/QuickLookUI.framework; sourceTree = SDKROOT; };
@@ -103,6 +100,7 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
+				cfitsio/fitsshim.c,
 			);
 			target = A3AE31E42CE3ED570080470D /* HelioFITSExtension */;
 		};
@@ -126,11 +124,15 @@
 		};
 		A3AE31C72CE3ED1C0080470D /* HelioFITSTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = HelioFITSTests;
 			sourceTree = "<group>";
 		};
 		A3AE31D12CE3ED1C0080470D /* HelioFITSUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = HelioFITSUITests;
 			sourceTree = "<group>";
 		};
@@ -153,6 +155,7 @@
 				2CDAC07023C0F7A3709504A0 /* QuickLook.framework in Frameworks */,
 				900B4ECBAECA180F8C74E599 /* Quartz.framework in Frameworks */,
 				5B0B6DAF069F7C753A49F279 /* QuickLookThumbnailing.framework in Frameworks */,
+				C6358D989033F4484EB9450D /* HelioFITSCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -165,6 +168,7 @@
 				A3C301A22CF129E400DF1E56 /* Quartz.framework in Frameworks */,
 				A3C301A32CF129F100DF1E56 /* QuickLook.framework in Frameworks */,
 				A3C301A42CF129F100DF1E56 /* QuickLookThumbnailing.framework in Frameworks */,
+				70DED95687543CD5FA6B14BE /* HelioFITSCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -190,6 +194,7 @@
 				A3186F732CE436DD00395F60 /* QuickLook.framework in Frameworks */,
 				A3C301A62CF12A0E00DF1E56 /* WebKit.framework in Frameworks */,
 				A3C301A82CF12A1B00DF1E56 /* Foundation.framework in Frameworks */,
+				135CAAE27665EC1A06C450BC /* HelioFITSCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -222,9 +227,7 @@
 				A3AE31E62CE3ED570080470D /* Frameworks */,
 				A3AE31B42CE3ED1A0080470D /* Products */,
 				E8255A57AF32E296D56F5A88 /* HelioFITSThumbnail */,
-				46E37F857E789E73DE5B1FA4 /* PreviewProvider.swift */,
 				DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */,
-				47B49D4A6140D8CA12BAC22A /* FITSColormaps.swift */,
 				B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */,
 				2F262A203006DD5700F1EF79 /* Recovered References */,
 			);
@@ -280,6 +283,9 @@
 			dependencies = (
 			);
 			name = HelioFITSThumbnail;
+			packageProductDependencies = (
+				E8E9DE9C0ABB224DA74CF08C /* HelioFITSCore */,
+			);
 			productName = HelioFITSThumbnail;
 			productReference = 3D17D4927978BC19D807D408 /* HelioFITSThumbnail.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -303,6 +309,9 @@
 				A3AE31B52CE3ED1A0080470D /* HelioFITS */,
 			);
 			name = HelioFITS;
+			packageProductDependencies = (
+				5D8F6F20E905C4F7153A4CA0 /* HelioFITSCore */,
+			);
 			productName = HelioFITS;
 			productReference = A3AE31B32CE3ED1A0080470D /* HelioFITS.app */;
 			productType = "com.apple.product-type.application";
@@ -365,6 +374,9 @@
 				A3AE31E92CE3ED570080470D /* HelioFITSExtension */,
 			);
 			name = HelioFITSExtension;
+			packageProductDependencies = (
+				0E59D3CF4B15A9E629D39739 /* HelioFITSCore */,
+			);
 			productName = HelioFITSExtension;
 			productReference = A3AE31E52CE3ED570080470D /* HelioFITSExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
@@ -407,6 +419,9 @@
 			);
 			mainGroup = A3AE31AA2CE3ED1A0080470D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				9EBCFF3A3BD37A46CCA02CFC /* XCLocalSwiftPackageReference "HelioFITSCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = A3AE31B42CE3ED1A0080470D /* Products */;
 			projectDirPath = "";
@@ -465,8 +480,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				999F6D2A260AFCC4282A327D /* PreviewProvider.swift in Sources */,
-				A5B822DC325D315A576D82F0 /* FITSColormaps.swift in Sources */,
 				046801A8F1AE81BBBED87E38 /* FITSPreviewCore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -497,8 +510,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				FF395D9B80498D1004441098 /* ThumbnailProvider.swift in Sources */,
-				8A100F3A017B65216AD609D8 /* PreviewProvider.swift in Sources */,
-				37E610B161CF266FB1F00D5D /* FITSColormaps.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -537,28 +548,14 @@
 				CURRENT_PROJECT_VERSION = 10;
 				DEVELOPMENT_TEAM = UB45PPC2JS;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				INFOPLIST_FILE = HelioFITSThumbnail/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HelioFITSThumbnail;
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.4.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lcfitsio",
-					"-lz",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSThumbnail;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "HelioFITSExtension/HelioFITSExtension-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
 			};
@@ -573,28 +570,14 @@
 				DEVELOPMENT_TEAM = UB45PPC2JS;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				INFOPLIST_FILE = HelioFITSThumbnail/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HelioFITSThumbnail;
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.4.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lcfitsio",
-					"-lz",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSThumbnail;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
-				SWIFT_OBJC_BRIDGING_HEADER = "HelioFITSExtension/HelioFITSExtension-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
 			};
@@ -736,10 +719,6 @@
 				DEVELOPMENT_TEAM = UB45PPC2JS;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				INFOPLIST_FILE = HelioFITS/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
@@ -747,21 +726,11 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.4.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lcfitsio",
-					"-lz",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "HelioFITSExtension/HelioFITSExtension-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -786,10 +755,6 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				INFOPLIST_FILE = HelioFITS/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
@@ -797,21 +762,11 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.4.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lcfitsio",
-					"-lz",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "HelioFITSExtension/HelioFITSExtension-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -910,10 +865,6 @@
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = UB45PPC2JS;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				INFOPLIST_FILE = HelioFITSExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HelioFITSExtension;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
@@ -922,21 +873,12 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.4.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lz",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "HelioFITSExtension/HelioFITSExtension-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -956,10 +898,6 @@
 				DEVELOPMENT_TEAM = UB45PPC2JS;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				HEADER_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				INFOPLIST_FILE = HelioFITSExtension/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = HelioFITSExtension;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dr. Chris Gilly. All rights reserved.";
@@ -968,21 +906,12 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				LIBRARY_SEARCH_PATHS = (
-					"$(inherited)",
-					"$(PROJECT_DIR)/HelioFITSExtension/cfitsio",
-				);
 				MACOSX_DEPLOYMENT_TARGET = 14.5;
 				MARKETING_VERSION = 1.4.0;
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					"-lz",
-				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_OBJC_BRIDGING_HEADER = "HelioFITSExtension/HelioFITSExtension-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				SYSTEM_FRAMEWORK_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1050,6 +979,31 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		9EBCFF3A3BD37A46CCA02CFC /* XCLocalSwiftPackageReference "HelioFITSCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = HelioFITSCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0E59D3CF4B15A9E629D39739 /* HelioFITSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9EBCFF3A3BD37A46CCA02CFC /* XCLocalSwiftPackageReference "HelioFITSCore" */;
+			productName = HelioFITSCore;
+		};
+		5D8F6F20E905C4F7153A4CA0 /* HelioFITSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9EBCFF3A3BD37A46CCA02CFC /* XCLocalSwiftPackageReference "HelioFITSCore" */;
+			productName = HelioFITSCore;
+		};
+		E8E9DE9C0ABB224DA74CF08C /* HelioFITSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 9EBCFF3A3BD37A46CCA02CFC /* XCLocalSwiftPackageReference "HelioFITSCore" */;
+			productName = HelioFITSCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A3AE31AB2CE3ED1A0080470D /* Project object */;
 }

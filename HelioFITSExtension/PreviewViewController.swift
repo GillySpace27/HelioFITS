@@ -28,6 +28,7 @@ import AppKit
 import QuickLook
 import QuickLookUI
 import os.log
+import HelioFITSCore
 
 final class PreviewViewController: NSViewController, QLPreviewingController {
 
@@ -199,7 +200,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     private func refresh() {
         model.prefetchFullRes()     // exact readout/statistics for this HDU
-        canvas.image = model.image()
+        canvas.image = model.image().map(NSImage.init)
         canvas.caption = model.caption()
         canvas.limb = compact ? nil : model.limbCircle()
         if let p = model.page {

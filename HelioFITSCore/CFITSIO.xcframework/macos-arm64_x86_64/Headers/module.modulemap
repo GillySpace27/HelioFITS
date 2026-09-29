@@ -1,0 +1,5 @@
+module CFITSIO {
+    header "fitsshim.h"
+    link "z"
+    export *
+}

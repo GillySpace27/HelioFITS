@@ -2,6 +2,7 @@ import QuickLookThumbnailing
 import CoreGraphics
 import ImageIO
 import os.log
+import HelioFITSCore
 
 // Thumbnail (icon/gallery/column-pane) provider for FITS files. Reuses
 // FITSRenderer from PreviewProvider.swift (compiled into this target too);

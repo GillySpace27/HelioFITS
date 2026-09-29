@@ -16,6 +16,7 @@
 import Testing
 import AppKit
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 @Suite("Orientation") @MainActor
 struct OrientationTests {

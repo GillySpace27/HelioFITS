@@ -12,6 +12,7 @@
 
 import Testing
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 @Suite("RHEF")
 struct RHEFTests {

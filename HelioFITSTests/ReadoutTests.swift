@@ -15,6 +15,7 @@
 import Testing
 import Foundation
 @testable import HelioFITS
+@testable import HelioFITSCore
 
 /// Write a minimal BITPIX=-32 image FITS whose pixel (x,y) — 1-based, FITS y
 /// counting UP from the bottom row — holds the value x*100 + y.

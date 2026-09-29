@@ -19,12 +19,13 @@ that's what broke the store path the first time.
 ## Every release, in order
 
 0. **Did you touch `fitsshim.c`? Rebuild the library.** `fitsshim.c` is in NO
-   Xcode target. It is baked into the vendored `libcfitsio.a` by
+   Xcode target. It is baked into the vendored `libcfitsio.a` inside
+   `HelioFITSCore/CFITSIO.xcframework` (the HelioFITSCore package links it) by
    `HelioFITSExtension/cfitsio/build-universal.sh`, so editing the `.c` and
    rebuilding the app changes **nothing**:
 
        ./HelioFITSExtension/cfitsio/build-universal.sh
-       lipo -archs HelioFITSExtension/cfitsio/libcfitsio.a   # expect: x86_64 arm64
+       lipo -archs HelioFITSCore/CFITSIO.xcframework/macos-arm64_x86_64/libcfitsio.a   # expect: x86_64 arm64
 
    This is not hypothetical. `FILTER`/`FILTNAM1`/`CONTENT` were added to the
    source on 2026‑08‑20 against a library last built 2026‑07‑15, so the whole
@@ -178,7 +179,7 @@ importer is NOT in the store build; don't mention it):
   per-release, but it blocks the EU storefront (ESA/MPS/ROB — a big slice of the
   audience) until it is.
 - The app is **universal** (arm64 + x86_64) as of v1.1.1 build 3. The vendored
-  `libcfitsio.a` is a fat lib — regenerate it with
+  `libcfitsio.a` (in `HelioFITSCore/CFITSIO.xcframework`) is a fat lib — regenerate it with
   `HelioFITSExtension/cfitsio/build-universal.sh` if CFITSIO is ever updated.
   Verify with `lipo -archs`.
 - ASC listing text lives in `STORE.md`; screenshots regenerate via

@@ -7,6 +7,7 @@
 
 import AppKit
 import UniformTypeIdentifiers
+import HelioFITSCore
 
 // MARK: - Pure-Swift FITS header reader (no cfitsio)
 
@@ -523,7 +524,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     private func refresh(_ c: Ctx) {
         c.model.prefetchFullRes()   // exact readout/statistics for this HDU
-        c.canvas.image = c.model.image()
+        c.canvas.image = c.model.image().map(NSImage.init)
         c.canvas.caption = c.model.caption()
         c.canvas.limb = c.model.limbCircle()
         if let p = c.model.page {
@@ -536,9 +537,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     /// The exact bytes on screen, named for the HDU they came from.
     private func pngExport(_ c: Ctx) -> (data: Data, filename: String)? {
         guard let img = c.model.image(),
-              let tiff = img.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return nil }
+              let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return nil }
         let base = c.url.deletingPathExtension().lastPathComponent
         var suffix = ""
         if let p = c.model.page, c.model.count > 1 {
