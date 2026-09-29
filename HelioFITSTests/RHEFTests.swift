@@ -5,8 +5,9 @@
 //
 //  The expected values below are ground truth generated in Python from
 //  sunkit-image's actual `apply_upsilon` (the double-sided gamma), with the same
-//  equally-spaced radial binning and ordinal percentile ranking the Swift port
-//  uses (sunkit's `method="numpy"`). If these ever drift, the filter has stopped
+//  equally-spaced radial binning and the average percentile ranking the Swift
+//  port uses (sunkit's default `method="scipy"`, i.e. rankdata "average"). If
+//  these ever drift, the filter has stopped
 //  matching the published algorithm.
 //
 
@@ -43,6 +44,38 @@ struct RHEFTests {
         #expect(out[0..<4].max()! == 1.0)
         #expect(out[4..<8].max()! == 1.0)
         #expect(out.allSatisfy { $0 > 0 && $0 <= 1.0000001 })
+    }
+
+    @Test("Tied values share one rank, as sunkit's default does (no scan-order stripes)")
+    func tiesShareARank() {
+        // Runs of exact zeros and of 3s, as PUNCH L3 has in its zero-filled
+        // corners and occulter. Expected: sunkit-image's own apply_upsilon over
+        // scipy.stats.rankdata(method="average"), per equal-width radial bin.
+        let vals: [Float] = [0, 0, 0, 0, 5, 7, 9,  0, 0, 3, 3, 3, 8, 1]
+        let radii: [Double] = [0.1, 0.3, 0.5, 0.7, 0.9, 1.2, 1.6,  2.1, 2.3, 2.6, 2.9, 3.2, 3.5, 3.9]
+        let expected: [Float] = [0.444452, 0.444452, 0.444452, 0.444452, 0.588939, 0.677488, 1.000000,
+                                 0.371688, 0.371688, 0.588939, 0.588939, 0.588939, 1.000000, 0.473738]
+        let out = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 4, nbins: 2, upsilon: 0.35)
+        for (o, e) in zip(out, expected) {
+            #expect(abs(o - e) < 1e-4, "RHEF output \(o) should match sunkit reference \(e)")
+        }
+    }
+
+    @Test("Decompression noise on a zero fill still counts as a tie")
+    func nearZeroFillIsATie() {
+        // The same data as tiesShareARank, with the zeros replaced by the
+        // row-dependent residuals CFITSIO decodes PUNCH L3's Rice-quantised zero
+        // fill to (astropy gives exact 0.0 for the same pixels). The result must
+        // be the exact-zero result: otherwise each residual gets its own rank and
+        // the fill turns into stripes.
+        let vals: [Float] = [-6.16e-32, 4.31e-32, 0, 1.9e-29, 5, 7, 9,  -6.2e-30, 0, 3, 3, 3, 8, 1]
+        let radii: [Double] = [0.1, 0.3, 0.5, 0.7, 0.9, 1.2, 1.6,  2.1, 2.3, 2.6, 2.9, 3.2, 3.5, 3.9]
+        let expected: [Float] = [0.444452, 0.444452, 0.444452, 0.444452, 0.588939, 0.677488, 1.000000,
+                                 0.371688, 0.371688, 0.588939, 0.588939, 0.588939, 1.000000, 0.473738]
+        let out = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 4, nbins: 2, upsilon: 0.35)
+        for (o, e) in zip(out, expected) {
+            #expect(abs(o - e) < 1e-4, "RHEF output \(o) should match the exact-zero reference \(e)")
+        }
     }
 
     @Test("Non-finite pixels stay NaN (fill), never crash")

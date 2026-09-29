@@ -32,7 +32,7 @@ import Foundation
         let filtered = m.pythonSnippet(path: p)
         print("SNIPPET_RHEF\n\(filtered)\n---")
         #expect(filtered.contains("data = m.data"))
-        #expect(filtered.contains("m = rhef(m, upsilon=0.35, method=\"numpy\")"))
+        #expect(filtered.contains("m = rhef(m, upsilon=0.35)"))
         #expect(filtered.contains("rhef_data = m.data"))
     }
 }

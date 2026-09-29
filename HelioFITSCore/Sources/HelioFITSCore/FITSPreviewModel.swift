@@ -553,9 +553,8 @@ public final class FITSPreviewModel {
     /// concentric annuli about disk centre, rank each annulus's intensities to a
     /// percentile in (0,1], then apply the `upsilon` double-sided gamma.
     ///
-    /// Runs on the display-decimated grid (fast — the "fast RHEF" path uses
-    /// ordinal ranking, sunkit-image's `method="numpy"`, visually identical to
-    /// the average-rank default for continuous data). Disk centre and radius come
+    /// Runs on the display-decimated grid, with sunkit-image's default average
+    /// ranking (ties share a rank; see FITSRenderer.rhefEqualize). Disk centre and radius come
     /// from the same WCS the readout uses; with no limb it falls back to the
     /// image centre so the filter still applies.
     /// Pure RHEF render from a snapshot — safe to call off the main thread.
@@ -714,14 +713,14 @@ public final class FITSPreviewModel {
 
     /// With RHEF on, the lines that reproduce it: sunkit-image's `radial.rhef` is
     /// the reference implementation this viewer's filter was ported from, called
-    /// with the same upsilon and ordinal ranking. HelioFITS runs it on a
+    /// with the same upsilon and its default (average) ranking. HelioFITS runs it on a
     /// display-sized grid; this runs it at full resolution. Verified against
     /// sunkit-image 0.7.0 on an AIA 1700 frame. Empty when RHEF is off.
     private var rhefLines: String {
         guard filter == .rhef else { return "" }
         return """
         from sunkit_image.radial import rhef   # needs sunkit-image with radial.rhef (0.7.0 has it)
-        m = rhef(m, upsilon=0.35, method="numpy")   # the RHEF filter shown in HelioFITS
+        m = rhef(m, upsilon=0.35)   # the RHEF filter shown in HelioFITS
         rhef_data = m.data   # filtered values: per-radius rank in (0, 1]
 
         """
