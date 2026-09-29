@@ -205,14 +205,23 @@ public enum FITSRenderer {
         max(0, Int(fitsshim_image_planes(path, hdu)))
     }
 
+    /// iOS extensions run under tight memory limits, so there the renderer reads
+    /// only the pixels it draws (fitsshim_read_image_max). The Mac reads the full
+    /// plane, which keeps its clip levels exactly as they have always been.
+    #if os(iOS)
+    public static let lowMemoryDefault = true
+    #else
+    public static let lowMemoryDefault = false
+    #endif
+
     public static func render(path: String, maxSide: Int = FITSRenderer.maxSide, hdu: Int? = nil,
-                       plane: Int = 0) throws -> Result {
-        var w: Int = 0, h: Int = 0
+                       plane: Int = 0, lowMemory: Bool = lowMemoryDefault) throws -> Result {
+        var w: Int = 0, h: Int = 0, step: Int = 1
         var pixPtr: UnsafeMutablePointer<Float>? = nil
         var hdrPtr: UnsafeMutablePointer<CChar>? = nil
         let want = hdu ?? selectedHDU(forFileAt: path)
-        let rc = fitsshim_read_image(path, resolveAutoHDU(path: path, want: want), plane,
-                                     &w, &h, &pixPtr, &hdrPtr)
+        let rc = fitsshim_read_image_max(path, resolveAutoHDU(path: path, want: want), plane,
+                                         lowMemory ? maxSide : 0, &w, &h, &step, &pixPtr, &hdrPtr)
         guard rc == 0, let pix = pixPtr, w > 0, h > 0 else {
             throw NSError(domain: "FITS", code: Int(rc),
                           userInfo: [NSLocalizedDescriptionKey: "No readable image HDU (CFITSIO \(rc))"])
@@ -224,19 +233,21 @@ public enum FITSRenderer {
         // Decimate (nearest) so the longest side <= maxSide.
         let factor = max(1, (max(w, h) + maxSide - 1) / maxSide)
         let ow = w / factor, oh = h / factor
+        // Already decimated by the read (step == factor): walk it pixel by pixel.
+        let (bw, k) = step > 1 ? (ow, 1) : (w, factor)
 
-        let (lo, hi) = levels(pix, count: w * h, pLow: pLow, pHigh: pHigh, cmapKey: cmapKey)
+        let (lo, hi) = levels(pix, count: step > 1 ? ow * oh : w * h,
+                              pLow: pLow, pHigh: pHigh, cmapKey: cmapKey)
         let gam = defaultGamma(cmapKey)
         let span = hi - lo
 
         // Build 8-bit gray bytes, flipping vertically (FITS y increases upward).
         var bytes = [UInt8](repeating: 0, count: ow * oh)
         for oy in 0..<oh {
-            let sy = (oh - 1 - oy) * factor   // flip
-            let srow = sy * w
+            let srow = (oh - 1 - oy) * k * bw   // flip
             let drow = oy * ow
             for ox in 0..<ow {
-                let v = pix[srow + ox * factor]
+                let v = pix[srow + ox * k]
                 // NaN = a BLANK/off-disk pixel (see fitsshim_read_image). Map it
                 // to the low end (background) — and NEVER let it reach UInt8(),
                 // which traps on a non-finite Float.

@@ -8,6 +8,14 @@
 int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
                         long *width, long *height,
                         float **pixels, char **header) {
+    long step;
+    return fitsshim_read_image_max(path, hdu_wanted, plane_wanted, 0,
+                                   width, height, &step, pixels, header);
+}
+
+int fitsshim_read_image_max(const char *path, long hdu_wanted, long plane_wanted,
+                            long max_side, long *width, long *height, long *step,
+                            float **pixels, char **header) {
     fitsfile *fptr = NULL;
     int status = 0;
     if (fits_open_file(&fptr, path, READONLY, &status)) return status;
@@ -89,7 +97,12 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
     long nplanes = (naxis >= 3 && naxes[2] > 0) ? naxes[2] : 1;
     long plane = (plane_wanted >= 0 && plane_wanted < nplanes) ? plane_wanted : 0;
 
-    long npix = naxes[0] * naxes[1];
+    long big = naxes[0] > naxes[1] ? naxes[0] : naxes[1];
+    long stp = max_side > 0 ? (big + max_side - 1) / max_side : 1;
+    if (stp < 1) stp = 1;
+    long ow = naxes[0] / stp, oh = naxes[1] / stp;
+    if (ow < 1 || oh < 1) { stp = 1; ow = naxes[0]; oh = naxes[1]; }
+    long npix = ow * oh;
     float *buf = (float *)malloc(sizeof(float) * (size_t)npix);
     char *nulls = (char *)malloc((size_t)npix);
     if (!buf || !nulls) { free(buf); free(nulls); int s = 0; fits_close_file(fptr, &s); return -2; }
@@ -115,7 +128,13 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
     // disk — the reported bug). The `nullarray` mask marks exactly which pixels
     // were undefined; we set those to NaN, which every downstream consumer
     // (levels/readout/stats/render) already treats as "no data" and skips.
-    if (fits_read_pixnull(fptr, TFLOAT, fpixel, npix, buf, nulls, &anynul, &status)) {
+    // Decimated: the same null handling, through the subset reader, which walks
+    // a compressed image tile by tile. blc/trc/inc span exactly ow x oh samples.
+    long trc[4] = {(ow - 1) * stp + 1, (oh - 1) * stp + 1, fpixel[2], 1};
+    long inc[4] = {stp, stp, 1, 1};
+    if (stp > 1 ? fits_read_subsetnull_flt(fptr, 0, naxis, naxes, fpixel, trc, inc,
+                                         buf, nulls, &anynul, &status)
+              : fits_read_pixnull(fptr, TFLOAT, fpixel, npix, buf, nulls, &anynul, &status)) {
         free(buf); free(nulls); int s = 0; fits_close_file(fptr, &s); return status;
     }
     if (anynul) for (long i = 0; i < npix; i++) if (nulls[i]) buf[i] = NAN;
@@ -166,7 +185,7 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
     strlcat(hdr, "\nHDUs in file:\n", 4096);
     strlcat(hdr, inventory, 4096);
 
-    *width = naxes[0]; *height = naxes[1];
+    *width = naxes[0]; *height = naxes[1]; *step = stp;
     *pixels = buf; *header = hdr;
     int s = 0; fits_close_file(fptr, &s);
     return 0;

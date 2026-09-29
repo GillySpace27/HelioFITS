@@ -27,7 +27,7 @@ final class PreviewProvider: QLPreviewProvider, QLPreviewingController {
         <body><img src="cid:image.png" alt="FITS image"><p>\(caption)</p></body></html>
         """
         return QLPreviewReply(dataOfContentType: .html,
-                              contentSize: CGSize(width: q.image.width, height: q.image.height)) { reply in
+                              contentSize: CGSize(width: q.width, height: q.height)) { reply in
             reply.attachments = ["image.png": QLPreviewReplyAttachment(data: q.png, contentType: .png)]
             return Data(html.utf8)
         }
