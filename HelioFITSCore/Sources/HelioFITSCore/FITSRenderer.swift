@@ -559,8 +559,21 @@ public enum FITSRenderer {
     /// Solar Phys. 300, 174): bin pixels into equally-spaced radial annuli, rank
     /// each annulus's finite values to a percentile in (0,1], then apply the
     /// `upsilon` double-sided gamma about the bin's mean rank. Ported from the
-    /// author's sunkit-image `radial.rhef` (ordinal ranking = its `method="numpy"`,
-    /// the fast path). Returns values in [0,1]; NaN where the pixel is non-finite
+    /// author's sunkit-image `radial.rhef` with its default ranking,
+    /// `method="scipy"`: `rankdata(method="average")`, so tied values share the
+    /// mean of the ranks they span. The ordinal ranking this used to port
+    /// (`method="numpy"`) gave every tied pixel a distinct rank in scan order,
+    /// which drew horizontal stripes wherever a frame holds a constant: PUNCH L3
+    /// fills its out-of-field corners and occulter with 0, 20 % of a 4096² frame.
+    ///
+    /// "Tied" means equal to within 1e-9 of the frame's peak |value|, not bit-equal.
+    /// CFITSIO decompresses that Rice-quantised zero fill to a tiny offset that
+    /// differs row by row (±1e-32 … 1e-29, each row being a compression tile),
+    /// where astropy returns exact 0.0; ranked as distinct values those offsets
+    /// drew the same stripes. The tolerance sits far below any real value step (a
+    /// magnetogram's is 3e-6 G; PUNCH's smallest real value is 3e-17 against a
+    /// 1e-20 tolerance), so it only merges noise, and on data without such noise
+    /// the result is sunkit's exactly. Returns values in [0,1]; NaN where the pixel is non-finite
     /// or its radius falls outside the bins. Pure and deterministic — pinned in
     /// the test suite against a sunkit-image reference.
     public static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
@@ -583,6 +596,9 @@ public enum FITSRenderer {
             let b = v.bitPattern
             return (b >> 31) == 1 ? ~b : (b | 0x8000_0000)
         }
+        var peak: Float = 0
+        for v in values where v.isFinite { peak = max(peak, abs(v)) }
+        let tol = 1e-9 * peak                                  // see "Tied" above
         var keys = [UInt64](); keys.reserveCapacity(n)
         for i in 0..<n where values[i].isFinite {
             var b = Int(radii[i] / binW)
@@ -600,14 +616,23 @@ public enum FITSRenderer {
             var end = start + 1
             while end < keys.count, keys[end] >> 53 == bin { end += 1 }
             let m = Double(end - start)
-            // ordinal percentile ranks are 1/m … m/m, so their mean is exactly
-            // (m+1)/(2m) — no need to sum them. upsilon splits about that mean.
+            // Average ranks sum to the same total as ordinal ones, so their mean
+            // is still exactly (m+1)/(2m). upsilon splits about that mean.
             let mean = (m + 1) / (2 * m)
-            for r in start..<end {
-                let idx = Int(keys[r] & idxMask)
-                let pr = Double(r - start + 1) / m
-                out[idx] = Float(pr < mean ? pow(2 * pr, upsilon) / 2
-                                           : 1 - pow(2 - 2 * pr, upsilon) / 2)
+            // Walk runs of tied values (within `tol` of the run's first, which is
+            // its smallest: keys are sorted by value); every member gets the run's
+            // mean rank.
+            var g = start
+            while g < end {
+                let v0 = values[Int(keys[g] & idxMask)]
+                var h = g + 1
+                while h < end, values[Int(keys[h] & idxMask)] - v0 <= tol { h += 1 }
+                // ordinal ranks g-start+1 … h-start; their mean
+                let pr = (Double(g - start + 1) + Double(h - start)) / 2 / m
+                let y = Float(pr < mean ? pow(2 * pr, upsilon) / 2
+                                        : 1 - pow(2 - 2 * pr, upsilon) / 2)
+                for r in g..<h { out[Int(keys[r] & idxMask)] = y }
+                g = h
             }
             start = end
         }

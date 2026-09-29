@@ -6,6 +6,19 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **RHEF drew horizontal stripes over flat regions.** PUNCH L3 fills its
+  out-of-field corners and occulter with exact zeros, a fifth of the frame. The
+  filter ranked tied values one by one in scan order, so a constant region came
+  out as row-by-row bands, and CFITSIO decodes that Rice-compressed zero fill to
+  a tiny offset that differs per row (about 1e-29, where astropy reads exact 0).
+  It now ranks ties the way sunkit-image's `rhef` does by default (average rank,
+  `method="scipy"`), counting values within a billionth of the frame's peak as
+  tied, so the fill stays flat. On data without ties or such noise the output is
+  unchanged. Copy Python now calls `rhef` with
+  that default rather than `method="numpy"`.
+
 ## [1.4.0] - 2026-09-27
 
 Opening the app now opens the viewer, the viewer knows where its file lives, and Copy Python
