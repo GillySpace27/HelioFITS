@@ -19,6 +19,7 @@ SHIM="$PWD"
 
 CFITSIO_VERSION="4.6.4"
 MIN_MACOS="14.5"                # must match MACOSX_DEPLOYMENT_TARGET in the project
+MIN_IOS="17.0"                  # must match the iOS targets and HelioFITSCore/Package.swift
 CONFIGURE_OPTS="--disable-curl --enable-reentrant"   # curl-free: no libcurl dependency
 
 work="$(mktemp -d)"
@@ -31,26 +32,38 @@ curl -sL -o "$work/cfitsio.tar.gz" \
 tar xzf "$work/cfitsio.tar.gz" -C "$work"
 src="$work/cfitsio-$CFITSIO_VERSION"
 
-for arch in arm64 x86_64; do
-  echo "==> building $arch slice"
-  d="$work/build-$arch"
+# One slice per <sdk>:<arch>. The iOS slices are cross-compiles: a --host that
+# differs from this Mac's own triple stops configure from running its test
+# programs (which could not execute here).
+for slice in macosx:arm64 macosx:x86_64 iphoneos:arm64 iphonesimulator:arm64; do
+  sdk="${slice%%:*}"; arch="${slice##*:}"
+  case "$sdk" in
+    macosx)          min="-mmacosx-version-min=$MIN_MACOS"
+                     host=""; [ "$arch" = x86_64 ] && host="--host=x86_64-apple-darwin" ;;
+    iphoneos)        min="-miphoneos-version-min=$MIN_IOS";        host="--host=arm-apple-darwin" ;;
+    iphonesimulator) min="-mios-simulator-version-min=$MIN_IOS";   host="--host=arm-apple-darwin" ;;
+  esac
+  cc="xcrun -sdk $sdk clang -arch $arch $min"
+  echo "==> building $sdk $arch slice"
+  d="$work/build-$sdk-$arch"
   cp -R "$src" "$d"
   ( cd "$d"
-    host=""; [ "$arch" = x86_64 ] && host="--host=x86_64-apple-darwin"
-    CC="clang -arch $arch -mmacosx-version-min=$MIN_MACOS" \
-      ./configure $CONFIGURE_OPTS $host >/dev/null
-    make -j"$(sysctl -n hw.ncpu)" >/dev/null )
+    CC="$cc" ./configure $CONFIGURE_OPTS $host >/dev/null
+    make -j"$(sysctl -n hw.ncpu)" libcfitsio.la >/dev/null )   # the library only: the
+                                                   # fpack/funpack utilities call system(), absent on iOS
   # bake the current fitsshim into this slice
-  clang -c -O2 -arch "$arch" -mmacosx-version-min=$MIN_MACOS -I"$SHIM" \
-    "$SHIM/fitsshim.c" -o "$work/fitsshim-$arch.o"
+  $cc -c -O2 -I"$SHIM" "$SHIM/fitsshim.c" -o "$work/fitsshim-$arch.o"
   ar r "$d/.libs/libcfitsio.a" "$work/fitsshim-$arch.o"
 done
 
-echo "==> lipo -> universal libcfitsio.a"
-lipo -create "$work/build-arm64/.libs/libcfitsio.a" \
-             "$work/build-x86_64/.libs/libcfitsio.a" \
-     -output "$work/libcfitsio.a"
-lipo -info "$work/libcfitsio.a"
+echo "==> lipo -> universal macOS libcfitsio.a"
+mkdir -p "$work/macos" "$work/ios" "$work/iossim"
+lipo -create "$work/build-macosx-arm64/.libs/libcfitsio.a" \
+             "$work/build-macosx-x86_64/.libs/libcfitsio.a" \
+     -output "$work/macos/libcfitsio.a"
+lipo -info "$work/macos/libcfitsio.a"
+cp "$work/build-iphoneos-arm64/.libs/libcfitsio.a" "$work/ios/"
+cp "$work/build-iphonesimulator-arm64/.libs/libcfitsio.a" "$work/iossim/"
 
 # The app links CFITSIO through the HelioFITSCore Swift package, as an xcframework
 # whose module map lets Swift `import CFITSIO`. That xcframework is the ONE copy of
@@ -67,7 +80,11 @@ module CFITSIO {
 MAP
 xcf="$SHIM/../../HelioFITSCore/CFITSIO.xcframework"
 rm -rf "$xcf"
-xcodebuild -create-xcframework -library "$work/libcfitsio.a" -headers "$hdrs" -output "$xcf"
+xcodebuild -create-xcframework \
+  -library "$work/macos/libcfitsio.a"  -headers "$hdrs" \
+  -library "$work/ios/libcfitsio.a"    -headers "$hdrs" \
+  -library "$work/iossim/libcfitsio.a" -headers "$hdrs" \
+  -output "$xcf"
 echo "==> done. Rebuild the app and run the test suite on BOTH arches:"
 echo "    xcodebuild test ... -destination 'platform=macOS,arch=arm64'"
 echo "    xcodebuild test ... -destination 'platform=macOS,arch=x86_64'   # Rosetta"
