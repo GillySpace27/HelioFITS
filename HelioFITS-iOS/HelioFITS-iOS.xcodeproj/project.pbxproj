@@ -1,0 +1,679 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		16030A2BEA484E46D439D410 /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = DDF3DA707A978D5D0119364D /* HelioFITSCore */; };
+		22D379D49149E8A1DE6B2556 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 77C73B345321DED616D20D04 /* Foundation.framework */; };
+		2F1BF39C26451297EA20AC85 /* QuickRender.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD2810723F362DDC2C84ADC /* QuickRender.swift */; };
+		3D3A735D4A1EBA9767B42F73 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 77C73B345321DED616D20D04 /* Foundation.framework */; };
+		4B23C4CDD44F1527F740F7D3 /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B132589FAB9ACA4F0A0711F3 /* PreviewProvider.swift */; };
+		84DF46BFF96B63737E7C1F84 /* HelioFITSPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 85B802A44AECFCB89BC756E9 /* HelioFITSPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8E9E5A61B3F73572CA029E66 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B739759B340E75BC5EF9803 /* ThumbnailProvider.swift */; };
+		9598B7127285404F5641FD72 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 77C73B345321DED616D20D04 /* Foundation.framework */; };
+		AAF04D160813935ED8CECF6D /* HelioFITSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6D0DACB2E84EDD4CF1B463F /* HelioFITSApp.swift */; };
+		B87BB3306FE3AB1602B7DDAB /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 9598B504BBC355600D45595E /* HelioFITSCore */; };
+		B8F02F71D84B394AF8E100FC /* HelioFITSThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 1E38B15C7D5F9678F24F2AEE /* HelioFITSThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		EF80CA266A0D3179F0403B72 /* QuickRender.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD2810723F362DDC2C84ADC /* QuickRender.swift */; };
+		FB729B3C7492B822A52A2F92 /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 96B7FA45DE3475E16D0A56AD /* HelioFITSCore */; };
+		FDB2F672D43E445321DFF47B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 47A8B21861D0D6B6119CC887 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		63F68E5E3D3E086E11B85AC0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1E8EFF622EB842C00D6D1B17 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 73B1460548FC8E4DA7247A96;
+			remoteInfo = HelioFITSThumbnail;
+		};
+		A1859FC2A44FC2A626841F3F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1E8EFF622EB842C00D6D1B17 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 58280CB6780499D2551FC8CE;
+			remoteInfo = HelioFITSPreview;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2CC771920394ED3292C27576 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				B8F02F71D84B394AF8E100FC /* HelioFITSThumbnail.appex in Embed Foundation Extensions */,
+				84DF46BFF96B63737E7C1F84 /* HelioFITSPreview.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		0B739759B340E75BC5EF9803 /* ThumbnailProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ThumbnailProvider.swift; path = ../HelioFITSThumbnail/ThumbnailProvider.swift; sourceTree = SOURCE_ROOT; };
+		1E38B15C7D5F9678F24F2AEE /* HelioFITSThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HelioFITSThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		2B42322DBCA7D0727A998741 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		40731E348C3A606C765196EE /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		47A8B21861D0D6B6119CC887 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		77C73B345321DED616D20D04 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		85B802A44AECFCB89BC756E9 /* HelioFITSPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HelioFITSPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AD8CAD11922FD4FC26717FB1 /* HelioFITS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HelioFITS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		ADD2810723F362DDC2C84ADC /* QuickRender.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = QuickRender.swift; sourceTree = "<group>"; };
+		B132589FAB9ACA4F0A0711F3 /* PreviewProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PreviewProvider.swift; sourceTree = "<group>"; };
+		D6D0DACB2E84EDD4CF1B463F /* HelioFITSApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HelioFITSApp.swift; sourceTree = "<group>"; };
+		D8258131F1A4479773719D70 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		037EF5C74A4C574129D4EE86 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3D3A735D4A1EBA9767B42F73 /* Foundation.framework in Frameworks */,
+				FB729B3C7492B822A52A2F92 /* HelioFITSCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BCBB7188F3FDABF1D593DC76 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9598B7127285404F5641FD72 /* Foundation.framework in Frameworks */,
+				16030A2BEA484E46D439D410 /* HelioFITSCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C20873E9EE95A2EA5C83C850 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				22D379D49149E8A1DE6B2556 /* Foundation.framework in Frameworks */,
+				B87BB3306FE3AB1602B7DDAB /* HelioFITSCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		7AF5D16A1C043C874FE9330D /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				D141D138A59EE37AA42FB71C /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		8FC270666B4722DF528A4A17 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				ADD2810723F362DDC2C84ADC /* QuickRender.swift */,
+			);
+			name = Shared;
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		8FE8F7F6E9808473729F52C7 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				D6D0DACB2E84EDD4CF1B463F /* HelioFITSApp.swift */,
+				47A8B21861D0D6B6119CC887 /* Assets.xcassets */,
+				D8258131F1A4479773719D70 /* Info.plist */,
+			);
+			name = App;
+			path = App;
+			sourceTree = "<group>";
+		};
+		950BDD03687497F7111F56DB = {
+			isa = PBXGroup;
+			children = (
+				F760F4F61D6C3433C3D46C1D /* Products */,
+				7AF5D16A1C043C874FE9330D /* Frameworks */,
+				8FE8F7F6E9808473729F52C7 /* App */,
+				A92F3E1120BDAFE21AE23D68 /* Preview */,
+				E1AFFC3548AF065F391B069E /* Thumbnail */,
+				8FC270666B4722DF528A4A17 /* Shared */,
+			);
+			sourceTree = "<group>";
+		};
+		A92F3E1120BDAFE21AE23D68 /* Preview */ = {
+			isa = PBXGroup;
+			children = (
+				40731E348C3A606C765196EE /* Info.plist */,
+				B132589FAB9ACA4F0A0711F3 /* PreviewProvider.swift */,
+			);
+			name = Preview;
+			path = Preview;
+			sourceTree = "<group>";
+		};
+		D141D138A59EE37AA42FB71C /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				77C73B345321DED616D20D04 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		E1AFFC3548AF065F391B069E /* Thumbnail */ = {
+			isa = PBXGroup;
+			children = (
+				2B42322DBCA7D0727A998741 /* Info.plist */,
+				0B739759B340E75BC5EF9803 /* ThumbnailProvider.swift */,
+			);
+			name = Thumbnail;
+			path = Thumbnail;
+			sourceTree = "<group>";
+		};
+		F760F4F61D6C3433C3D46C1D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AD8CAD11922FD4FC26717FB1 /* HelioFITS.app */,
+				1E38B15C7D5F9678F24F2AEE /* HelioFITSThumbnail.appex */,
+				85B802A44AECFCB89BC756E9 /* HelioFITSPreview.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		58280CB6780499D2551FC8CE /* HelioFITSPreview */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5D50CACF56804A1F5D19054B /* Build configuration list for PBXNativeTarget "HelioFITSPreview" */;
+			buildPhases = (
+				59D7F5E6FCCB3F749A5521B9 /* Sources */,
+				037EF5C74A4C574129D4EE86 /* Frameworks */,
+				3C74A655D6507965B098EC50 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HelioFITSPreview;
+			packageProductDependencies = (
+				96B7FA45DE3475E16D0A56AD /* HelioFITSCore */,
+			);
+			productName = HelioFITSPreview;
+			productReference = 85B802A44AECFCB89BC756E9 /* HelioFITSPreview.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		73B1460548FC8E4DA7247A96 /* HelioFITSThumbnail */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1E73248FA72D22F61A48E35D /* Build configuration list for PBXNativeTarget "HelioFITSThumbnail" */;
+			buildPhases = (
+				E349197B2A5407D29C6B705B /* Sources */,
+				C20873E9EE95A2EA5C83C850 /* Frameworks */,
+				94C6A4BB32045B75ED59F36C /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HelioFITSThumbnail;
+			packageProductDependencies = (
+				9598B504BBC355600D45595E /* HelioFITSCore */,
+			);
+			productName = HelioFITSThumbnail;
+			productReference = 1E38B15C7D5F9678F24F2AEE /* HelioFITSThumbnail.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AA0D440F1A6E574B8898CBBA /* HelioFITS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B135848CB5047ED805C6C48A /* Build configuration list for PBXNativeTarget "HelioFITS" */;
+			buildPhases = (
+				DD130D92263747822736DBD4 /* Sources */,
+				BCBB7188F3FDABF1D593DC76 /* Frameworks */,
+				8736AAFE1E834182FC4E9BDC /* Resources */,
+				2CC771920394ED3292C27576 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E34C492E610DA0AE36EA59FD /* PBXTargetDependency */,
+				EF6A47FED89BB83996399E70 /* PBXTargetDependency */,
+			);
+			name = HelioFITS;
+			packageProductDependencies = (
+				DDF3DA707A978D5D0119364D /* HelioFITSCore */,
+			);
+			productName = HelioFITS;
+			productReference = AD8CAD11922FD4FC26717FB1 /* HelioFITS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1E8EFF622EB842C00D6D1B17 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = B1033484967DBA59C7557B84 /* Build configuration list for PBXProject "HelioFITS-iOS" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 950BDD03687497F7111F56DB;
+			minimizedProjectReferenceProxies = 0;
+			packageReferences = (
+				01D92064D0E1B777C0E2A796 /* XCLocalSwiftPackageReference "HelioFITSCore" */,
+			);
+			preferredProjectObjectVersion = 100;
+			productRefGroup = F760F4F61D6C3433C3D46C1D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0D440F1A6E574B8898CBBA /* HelioFITS */,
+				73B1460548FC8E4DA7247A96 /* HelioFITSThumbnail */,
+				58280CB6780499D2551FC8CE /* HelioFITSPreview */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		3C74A655D6507965B098EC50 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8736AAFE1E834182FC4E9BDC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FDB2F672D43E445321DFF47B /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		94C6A4BB32045B75ED59F36C /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		59D7F5E6FCCB3F749A5521B9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EF80CA266A0D3179F0403B72 /* QuickRender.swift in Sources */,
+				4B23C4CDD44F1527F740F7D3 /* PreviewProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD130D92263747822736DBD4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AAF04D160813935ED8CECF6D /* HelioFITSApp.swift in Sources */,
+				2F1BF39C26451297EA20AC85 /* QuickRender.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E349197B2A5407D29C6B705B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E9E5A61B3F73572CA029E66 /* ThumbnailProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E34C492E610DA0AE36EA59FD /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = HelioFITSThumbnail;
+			target = 73B1460548FC8E4DA7247A96 /* HelioFITSThumbnail */;
+			targetProxy = 63F68E5E3D3E086E11B85AC0 /* PBXContainerItemProxy */;
+		};
+		EF6A47FED89BB83996399E70 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = HelioFITSPreview;
+			target = 58280CB6780499D2551FC8CE /* HelioFITSPreview */;
+			targetProxy = A1859FC2A44FC2A626841F3F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		31B56EA54646139592724B65 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UB45PPC2JS;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HelioFITS;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		39E9E24FA8219F8A3BC32B5C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		5A37178F5B6097CB8E46D317 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UB45PPC2JS;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Preview/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "HelioFITS Preview";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSPreview;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		61E7C5134CFD9A6989F903D5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UB45PPC2JS;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Preview/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "HelioFITS Preview";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSPreview;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		7575FA673807352FAFBBE3A5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UB45PPC2JS;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Thumbnail/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "HelioFITS Thumbnail";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSThumbnail;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		87E710F04703CFBAE0830DAB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UB45PPC2JS;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Thumbnail/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "HelioFITS Thumbnail";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS.HelioFITSThumbnail;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		8FE24FAE75ED1C0F5D743FDE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F61E074448A8527AA0FD4A60 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = UB45PPC2JS;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = App/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = HelioFITS;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.gillyspace27.HelioFITS;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1E73248FA72D22F61A48E35D /* Build configuration list for PBXNativeTarget "HelioFITSThumbnail" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				87E710F04703CFBAE0830DAB /* Release */,
+				7575FA673807352FAFBBE3A5 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		5D50CACF56804A1F5D19054B /* Build configuration list for PBXNativeTarget "HelioFITSPreview" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				61E7C5134CFD9A6989F903D5 /* Release */,
+				5A37178F5B6097CB8E46D317 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B1033484967DBA59C7557B84 /* Build configuration list for PBXProject "HelioFITS-iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8FE24FAE75ED1C0F5D743FDE /* Debug */,
+				39E9E24FA8219F8A3BC32B5C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B135848CB5047ED805C6C48A /* Build configuration list for PBXNativeTarget "HelioFITS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F61E074448A8527AA0FD4A60 /* Release */,
+				31B56EA54646139592724B65 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		01D92064D0E1B777C0E2A796 /* XCLocalSwiftPackageReference "HelioFITSCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../HelioFITSCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		9598B504BBC355600D45595E /* HelioFITSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 01D92064D0E1B777C0E2A796 /* XCLocalSwiftPackageReference "HelioFITSCore" */;
+			productName = HelioFITSCore;
+		};
+		96B7FA45DE3475E16D0A56AD /* HelioFITSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 01D92064D0E1B777C0E2A796 /* XCLocalSwiftPackageReference "HelioFITSCore" */;
+			productName = HelioFITSCore;
+		};
+		DDF3DA707A978D5D0119364D /* HelioFITSCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 01D92064D0E1B777C0E2A796 /* XCLocalSwiftPackageReference "HelioFITSCore" */;
+			productName = HelioFITSCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 1E8EFF622EB842C00D6D1B17 /* Project object */;
+}
