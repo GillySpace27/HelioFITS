@@ -18,54 +18,28 @@ struct HelioFITSApp: App {
     }
 }
 
-struct Opened: Identifiable {
-    let id = UUID()
-    let name: String
-    let render: QuickRender
-}
-
 struct ContentView: View {
     @State private var importing = false
-    @State private var opened: Opened?
-    @State private var failure: String?
-    @State private var loading = false
+    @State private var viewer: Viewer?
 
     var body: some View {
         NavigationStack {
             Group {
-                if let opened {
-                    ScrollView {
-                        VStack(spacing: 12) {
-                            Image(decorative: opened.render.image, scale: 1)
-                                .resizable().scaledToFit()
-                            Text(opened.render.caption)
-                                .font(.footnote).foregroundStyle(Color(white: 0.8))
-                                .multilineTextAlignment(.center).padding(.horizontal)
-                        }
-                    }
-                    .background(Color.black)
-                } else {
-                    welcome
-                }
+                if let viewer { ViewerView(viewer: viewer) } else { welcome }
             }
-            .overlay { if loading { ProgressView() } }
-            .navigationTitle(opened?.name ?? "HelioFITS")
+            .navigationTitle(viewer?.name ?? "HelioFITS")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if opened != nil {
-                    Button("Close") { opened = nil }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if viewer != nil { Button("Close") { viewer = nil } }
+                    Button { importing = true } label: { Label("Open", systemImage: "folder") }
                 }
-                Button { importing = true } label: { Label("Open", systemImage: "folder") }
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.fits]) { result in
-            if case .success(let url) = result { open(url) }
+            if case .success(let url) = result { viewer = Viewer(url: url) }
         }
-        .onOpenURL { open($0) }
-        .alert("Can’t open that file", isPresented: Binding(get: { failure != nil },
-                                                             set: { if !$0 { failure = nil } })) {
-            Button("OK") { failure = nil }
-        } message: { Text(failure ?? "") }
+        .onOpenURL { viewer = Viewer(url: $0) }
     }
 
     private var welcome: some View {
@@ -81,21 +55,5 @@ struct ContentView: View {
             Spacer()
         }
         .padding(24)
-    }
-
-    private func open(_ url: URL) {
-        loading = true
-        Task.detached(priority: .userInitiated) {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            let result = Result { try QuickRender.render(url) }
-            await MainActor.run {
-                loading = false
-                switch result {
-                case .success(let r): opened = Opened(name: url.lastPathComponent, render: r)
-                case .failure(let e): failure = e.localizedDescription
-                }
-            }
-        }
     }
 }

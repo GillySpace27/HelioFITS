@@ -840,19 +840,10 @@ final class FITSToolbar {
     /// it 108 counts, which is enough to clip the quiet Sun away and see
     /// off-limb structure. The tail is genuinely one-sided; matching the two
     /// ends numerically would just preserve the uselessness symmetrically.
-    private static let lowDecades = 2.0 + Foundation.log10(50.0)     // 0.01 % → 50 %
-    private static func pctLow(_ t: Double) -> Double {
-        (pow(10, -2 + lowDecades * min(max(t, 0), 1)) * 1000).rounded() / 1000
-    }
-    private static func posLow(_ pct: Double) -> Double {
-        (Foundation.log10(max(pct, 0.01)) + 2) / lowDecades
-    }
-    private static func pctHigh(_ t: Double) -> Double {
-        ((100 - pow(10, 1 - 3 * min(max(t, 0), 1))) * 1000).rounded() / 1000  // 90 … 99.99 %
-    }
-    private static func posHigh(_ pct: Double) -> Double {
-        (1 - Foundation.log10(max(100 - pct, 0.01))) / 3
-    }
+    private static func pctLow(_ t: Double) -> Double { StretchScale.lowPercent(t) }
+    private static func posLow(_ pct: Double) -> Double { StretchScale.lowPosition(pct) }
+    private static func pctHigh(_ t: Double) -> Double { StretchScale.highPercent(t) }
+    private static func posHigh(_ pct: Double) -> Double { StretchScale.highPosition(pct) }
 
     func readStretch() -> (lo: Double, hi: Double, gamma: Double, log: Bool) {
         (Self.pctLow(sLo.doubleValue), Self.pctHigh(sHi.doubleValue),

@@ -9,9 +9,9 @@
 /* Begin PBXBuildFile section */
 		16030A2BEA484E46D439D410 /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = DDF3DA707A978D5D0119364D /* HelioFITSCore */; };
 		22D379D49149E8A1DE6B2556 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 77C73B345321DED616D20D04 /* Foundation.framework */; };
-		2F1BF39C26451297EA20AC85 /* QuickRender.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD2810723F362DDC2C84ADC /* QuickRender.swift */; };
 		3D3A735D4A1EBA9767B42F73 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 77C73B345321DED616D20D04 /* Foundation.framework */; };
 		4B23C4CDD44F1527F740F7D3 /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B132589FAB9ACA4F0A0711F3 /* PreviewProvider.swift */; };
+		6DB3EB203445397494134451 /* ViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EED76AF4FA75B761F318BED7 /* ViewerView.swift */; };
 		84DF46BFF96B63737E7C1F84 /* HelioFITSPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 85B802A44AECFCB89BC756E9 /* HelioFITSPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8E9E5A61B3F73572CA029E66 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B739759B340E75BC5EF9803 /* ThumbnailProvider.swift */; };
 		9598B7127285404F5641FD72 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 77C73B345321DED616D20D04 /* Foundation.framework */; };
@@ -68,6 +68,7 @@
 		B132589FAB9ACA4F0A0711F3 /* PreviewProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PreviewProvider.swift; sourceTree = "<group>"; };
 		D6D0DACB2E84EDD4CF1B463F /* HelioFITSApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HelioFITSApp.swift; sourceTree = "<group>"; };
 		D8258131F1A4479773719D70 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		EED76AF4FA75B761F318BED7 /* ViewerView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ViewerView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -124,6 +125,7 @@
 				D6D0DACB2E84EDD4CF1B463F /* HelioFITSApp.swift */,
 				47A8B21861D0D6B6119CC887 /* Assets.xcassets */,
 				D8258131F1A4479773719D70 /* Info.plist */,
+				EED76AF4FA75B761F318BED7 /* ViewerView.swift */,
 			);
 			name = App;
 			path = App;
@@ -319,7 +321,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AAF04D160813935ED8CECF6D /* HelioFITSApp.swift in Sources */,
-				2F1BF39C26451297EA20AC85 /* QuickRender.swift in Sources */,
+				6DB3EB203445397494134451 /* ViewerView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
