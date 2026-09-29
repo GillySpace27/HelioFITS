@@ -7,7 +7,7 @@ import PackageDescription
 
 let package = Package(
     name: "HelioFITSCore",
-    platforms: [.macOS("14.5")],
+    platforms: [.macOS("14.5"), .iOS("17.0")],
     products: [.library(name: "HelioFITSCore", targets: ["HelioFITSCore"])],
     targets: [
         // Built by HelioFITSExtension/cfitsio/build-universal.sh: libcfitsio.a with
