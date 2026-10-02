@@ -157,6 +157,15 @@ check_tag_ancestry() {
 }
 CHECKS+=(check_tag_ancestry)
 
+# release-gates.sh behaves (SU-3). Runs scripts/test_release_gates.sh, which uses throwaway repos only.
+# Shown failing with release-gates.sh moved aside:
+#   FAIL check_release_gates: FAIL setup: <repo>/release-gates.sh not found or not executable
+check_release_gates() {
+  local out
+  out="$(bash scripts/test_release_gates.sh 2>&1)" || { grep -m1 '^FAIL' <<<"$out" || echo "scripts/test_release_gates.sh failed"; return 1; }
+}
+CHECKS+=(check_release_gates)
+
 # ---- run ----
 status=0
 for c in "${CHECKS[@]}"; do

@@ -8,10 +8,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PROFILE="HelioFITS-notary"
+PROFILE="${PROFILE:-HelioFITS-notary}"
 ARCH="build/HelioFITS.xcarchive"
 APP="build/HelioFITS.app"
 # ZIP is derived from the built app's version, after the archive.
+
+# Shared release gates before the slow archive and notarization (SU-3).
+SRC_VER=$(sed -n 's/^MARKETING_VERSION = //p' Config/Version.xcconfig)
+./release-gates.sh --product heliofits --version "$SRC_VER" --notes CHANGELOG.md
 
 # Keep the previous run instead of destroying it: zip build/ into the ignored
 # build-attic/ first (a zip cannot be registered with LaunchServices, so a kept
@@ -50,6 +54,7 @@ cp -R "$ARCH/Products/Applications/HelioFITS.app" "$APP"
 VER=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
 BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$APP/Contents/Info.plist")
 ZIP="build/HelioFITS-${VER}-b${BUILD}.zip"
+[ "$VER" = "$SRC_VER" ] || { echo "REFUSING: the archived app says $VER but Config/Version.xcconfig said $SRC_VER" >&2; exit 1; }
 
 echo "==> Embedding FITS Spotlight importer"
 ./embed-importer.sh "$APP" --timestamp
