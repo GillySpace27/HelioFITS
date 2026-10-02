@@ -229,8 +229,11 @@ static void test_tile_size(void) {
     int rc = read_one(big, &w, &h, &pix, &hdr);
     CHECK(rc == FITSSHIM_ERR_TOO_LARGE, "huge ZTILE under the cap: rc %d, want %d", rc, FITSSHIM_ERR_TOO_LARGE);
     const char *wrap = write_tiled("wraptile.fits", 1LL << 40, 1LL << 40);   // product wraps 64 bits
+    // Which layer says no depends on the CFITSIO version: 4.6.4 itself rejects this header while
+    // the shim scans HDUs (rc -1, no image), 4.3.1 reaches the shim's tile check (rc -3). Either
+    // is a refusal before any allocation; what must never happen is a success or a crash.
     rc = read_one(wrap, &w, &h, &pix, &hdr);
-    CHECK(rc == FITSSHIM_ERR_TOO_LARGE, "wrapping ZTILE product: rc %d, want %d", rc, FITSSHIM_ERR_TOO_LARGE);
+    CHECK(rc != 0 && pix == NULL && hdr == NULL, "wrapping ZTILE product must be refused, rc %d", rc);
     // Control: a normal 100 x 1 tile is not refused for size (the heap is empty, so
     // CFITSIO may still fail the read itself).
     const char *ok = write_tiled("oktile.fits", 100, 1);
