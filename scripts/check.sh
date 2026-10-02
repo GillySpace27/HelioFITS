@@ -86,6 +86,28 @@ check_no_em_dash_added() {
 }
 CHECKS+=(check_no_em_dash_added)
 
+# The headers inside each CFITSIO.xcframework slice are copies of the sources in
+# HelioFITSExtension/cfitsio/ made by build-universal.sh. A copy that differs means
+# the library and the headers Swift compiles against have drifted. Works without a stamp.
+# Shown failing on a scratch copy (a comment appended to the ios-arm64 fitsshim.h copy):
+#   FAIL check_shim_header_copies: HelioFITSCore/CFITSIO.xcframework/ios-arm64/Headers/fitsshim.h differs from HelioFITSExtension/cfitsio/fitsshim.h. Re-run HelioFITSExtension/cfitsio/build-universal.sh: editing fitsshim.c alone does nothing, the library is what the app links.
+check_shim_header_copies() {
+  local remedy="Re-run HelioFITSExtension/cfitsio/build-universal.sh: editing fitsshim.c alone does nothing, the library is what the app links."
+  local slice h copy bad=0
+  for slice in macos-arm64_x86_64 ios-arm64 ios-arm64-simulator; do
+    for h in fitsshim.h fitsio.h longnam.h; do
+      copy="HelioFITSCore/CFITSIO.xcframework/$slice/Headers/$h"
+      if [ ! -f "$copy" ]; then echo "$copy missing. $remedy"; bad=1
+      elif ! cmp -s "HelioFITSExtension/cfitsio/$h" "$copy"; then
+        echo "$copy differs from HelioFITSExtension/cfitsio/$h. $remedy"; bad=1
+      fi
+    done
+  done
+  return "$bad"
+}
+CHECKS+=(check_shim_header_copies)
+
+
 # ---- run ----
 status=0
 for c in "${CHECKS[@]}"; do
