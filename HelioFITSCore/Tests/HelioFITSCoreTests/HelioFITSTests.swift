@@ -18,4 +18,17 @@ struct HelioFITSTests {
             #expect(lut?.count == 256 * 3, "\(key) is not 256×RGB")
         }
     }
+
+    @Test("FITSColormaps: 79 tables, the six non-sunpy keys present, each decodes to 768 bytes")
+    func colormapTableShape() {
+        // 73 sunpy 7.0.1 tables plus the six named in the FITSColormaps.swift header.
+        // tools/colormaps/gen_colormaps.py writes that file; change the generator, never the file.
+        #expect(FITSColormaps.tables.count == 79)
+        for key in ["euihrilya", "aspiicswb", "aspiicsfe", "aspiicshe", "aspiicsp", "aspiicsne"] {
+            #expect(FITSColormaps.tables[key] != nil, "\(key) missing")
+        }
+        for key in FITSColormaps.tables.keys.sorted() {
+            #expect(FITSColormaps.lut(key)?.count == 768, "\(key) does not decode to 768 bytes")
+        }
+    }
 }
