@@ -4,9 +4,17 @@ import Foundation
 @testable import HelioFITSCore
 @Suite("python snippet")
 @MainActor struct PySnippet {
-    @Test("cube plane slices the right axis") func cube() {
-        let p = "/Users/gilly/vscode/HelioFITS/PUNCH_L3_PAM_20250920001600_v0l.fits"
-        guard FileManager.default.fileExists(atPath: p) else { return }
+    // Large local files on Gilly's Mac. Elsewhere (CI) they are absent and each
+    // test reports as skipped instead of passing without running. HF-5 keeps
+    // these as the large-file variants and adds fixture variants beside them.
+    nonisolated static let largePAM = "/Users/gilly/vscode/HelioFITS/PUNCH_L3_PAM_20250920001600_v0l.fits"
+    nonisolated static let largeAIA = "/Users/gilly/Downloads/AIA20260624_204500_1700.fits"
+
+    @Test("cube plane slices the right axis",
+          .enabled(if: FileManager.default.fileExists(atPath: PySnippet.largePAM),
+                   "needs the local PUNCH L3 PAM file"))
+    func cube() {
+        let p = PySnippet.largePAM
         let m = FITSPreviewModel.load(path: p, maxSide: 512)
         // find a page whose HDU is a real cube (>1 plane) and pick its last plane
         guard let idx = m.pages.firstIndex(where: { $0.plane == 2 }) else {
@@ -21,9 +29,11 @@ import Foundation
         #expect(s.contains("sunpy.map.Map((data, header))"))
         #expect(!s.contains("hdus="))          // must NOT use the 2-D form on a cube
     }
-    @Test("2-D snippet names the array, and reproduces RHEF only when it is on") func plainAndRHEF() {
-        let p = "/Users/gilly/Downloads/AIA20260624_204500_1700.fits"
-        guard FileManager.default.fileExists(atPath: p) else { return }
+    @Test("2-D snippet names the array, and reproduces RHEF only when it is on",
+          .enabled(if: FileManager.default.fileExists(atPath: PySnippet.largeAIA),
+                   "needs the local AIA file"))
+    func plainAndRHEF() {
+        let p = PySnippet.largeAIA
         let m = FITSPreviewModel.load(path: p, maxSide: 512)
         let plain = m.pythonSnippet(path: p)
         #expect(plain.contains("data = m.data"))
