@@ -45,6 +45,10 @@ final class FITSImageCanvas: NSView {
     var pageCount = 1                              // drives the gesture hint
     var limb: (cx: Double, cy: Double, r: Double)?
     var natSize: CGSize = .zero
+    /// The colorbar to draw in a strip on the left (HF-12); nil draws none and
+    /// reserves no space. Hosts set it from `FITSPreviewModel.colorbar()` on every
+    /// refresh, before asking for `idealSize()`.
+    var colorbar: Colorbar? { didSet { needsDisplay = true } }
     /// Column/compact pane hides the toolbar (Finder won't deliver clicks there).
     /// When set, the gesture hint stays up and names the way out — otherwise the
     /// pane reads as a dead, non-interactive image (panel feedback).
@@ -218,11 +222,17 @@ final class FITSImageCanvas: NSView {
         return ceil(r.height) + 4
     }
 
-    /// Chrome around the drawn image: just the caption strip, sized to the
-    /// (possibly wrapped) caption. No side margins — they would show as dead bars
-    /// once the host sizes itself to our content.
+    /// Width of the colorbar strip on the left: room for a 14 pt bar and labels
+    /// like "1.23e+04". Zero when there is no bar or in the column pane, which is
+    /// too narrow for one. The strip sits left because the statistics card owns the
+    /// top right, the readout chip the top left of the IMAGE, and the toolbar the bottom.
+    private var colorbarStripWidth: CGFloat { colorbar != nil && !compactMode ? 84 : 0 }
+
+    /// Chrome around the drawn image: the caption strip, sized to the (possibly
+    /// wrapped) caption, and the colorbar strip when there is a bar. No other side
+    /// margins - they would show as dead bars once the host sizes itself to our content.
     var chromeInsets: NSEdgeInsets {
-        NSEdgeInsets(top: showsCaption ? captionHeight() + 8 : 0, left: 0, bottom: 0, right: 0)
+        NSEdgeInsets(top: showsCaption ? captionHeight() + 8 : 0, left: colorbarStripWidth, bottom: 0, right: 0)
     }
 
     /// Area available to the image.
@@ -480,6 +490,8 @@ final class FITSImageCanvas: NSView {
                 .draw(in: NSRect(x: 6, y: 4, width: bounds.width - 12, height: captionHeight()))
         }
 
+        if let cb = colorbar, colorbarStripWidth > 0 { drawColorbar(cb) }
+
         guard let img = image, let box = imageRect() else { return }
         NSGraphicsContext.current?.saveGraphicsState()
         NSBezierPath(rect: contentBox()).setClip()        // zoomed image must not spill
@@ -568,6 +580,62 @@ final class FITSImageCanvas: NSView {
             NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
             s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
                               width: sz.width, height: sz.height + 2))
+        }
+    }
+
+    /// The colorbar strip: heading (unit and approx./exact, or the filter's rank
+    /// wording), the colormap as a vertical bar with the brightest colour on top,
+    /// and tick labels at the positions the stretch puts those data values.
+    private func drawColorbar(_ cb: Colorbar) {
+        let ink = NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)
+        let top = contentBox().minY + 8
+        let textWidth = colorbarStripWidth - 14
+
+        let para = NSMutableParagraphStyle()
+        para.lineBreakMode = .byWordWrapping
+        let headText = cb.note.isEmpty ? cb.heading : cb.heading + "\n" + cb.note
+        let head = NSAttributedString(string: headText, attributes: [
+            .font: NSFont.systemFont(ofSize: 10), .foregroundColor: ink, .paragraphStyle: para])
+        let headOpts: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+        let headH = ceil(head.boundingRect(with: NSSize(width: textWidth, height: 200), options: headOpts).height) + 4
+        head.draw(with: NSRect(x: 7, y: top, width: textWidth, height: headH), options: headOpts)
+
+        // Clear of the toolbar row and the zoom chip at the bottom.
+        let barTop = top + headH + 8
+        let barBottom = bounds.height - 64
+        let barH = barBottom - barTop
+        guard barH >= 60 else { return }
+        let barX: CGFloat = 8, barW: CGFloat = 14
+
+        let n = max(2, min(256, Int(barH)))
+        for i in 0..<n {
+            let v = max(0, min(255, Int((1 - (Double(i) + 0.5) / Double(n)) * 255)))
+            if let lut = cb.lut {
+                NSColor(calibratedRed: CGFloat(lut[v * 3]) / 255, green: CGFloat(lut[v * 3 + 1]) / 255,
+                        blue: CGFloat(lut[v * 3 + 2]) / 255, alpha: 1).setFill()
+            } else {
+                NSColor(calibratedWhite: CGFloat(v) / 255, alpha: 1).setFill()
+            }
+            let y0 = barTop + barH * CGFloat(i) / CGFloat(n)
+            NSRect(x: barX, y: y0, width: barW, height: barH / CGFloat(n) + 0.5).fill()
+        }
+        NSColor(calibratedWhite: 1, alpha: 0.45).setStroke()
+        NSBezierPath(rect: NSRect(x: barX, y: barTop, width: barW, height: barH)).stroke()
+
+        // Ticks from the bottom up; a label that would sit on the previous one is skipped.
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        var lastLabelY = CGFloat.infinity
+        for tick in cb.ticks {
+            let y = barBottom - CGFloat(tick.t) * barH
+            let line = NSBezierPath()
+            line.move(to: NSPoint(x: barX + barW, y: y))
+            line.line(to: NSPoint(x: barX + barW + 4, y: y))
+            line.lineWidth = 1
+            line.stroke()
+            guard lastLabelY - y >= 12 else { continue }
+            lastLabelY = y
+            NSAttributedString(string: tick.label, attributes: [.font: font, .foregroundColor: ink])
+                .draw(at: NSPoint(x: barX + barW + 7, y: y - 6))
         }
     }
 

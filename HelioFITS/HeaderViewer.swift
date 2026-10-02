@@ -293,9 +293,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         win.representedURL = c.url
         // Below this the on-image chrome starts overlapping: the statistics card
         // covers the pixel readout under ~645 pt of width, and the stretch panel
-        // and toolbar under ~400 pt of height. The card hides itself when there
+        // and toolbar under ~500 pt of height (HF-12 made the stretch panel taller).
+        // The card hides itself when there
         // is no room, but a floor keeps the window out of the awkward band.
-        win.contentMinSize = NSSize(width: 660, height: 420)
+        win.contentMinSize = NSSize(width: 660, height: 520)
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self
@@ -341,7 +342,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb(_:)),
                               diffSel: #selector(toggleDiff(_:)), tuneSel: #selector(toggleTune(_:)),
                               stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)),
-                              filterSel: #selector(filterChanged(_:)))
+                              filterSel: #selector(filterChanged(_:)),
+                              limitsSel: #selector(limitsChanged(_:)))
         let toolStack = c.tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -520,11 +522,18 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         if c.tools.applyReset(to: c.model) { refresh(c) }
     }
 
+    /// Typed vmin/vmax or a histogram handle: apply the fields, then repaint.
+    @objc private func limitsChanged(_ s: NSView) {
+        guard let c = ctx(for: s) else { return }
+        if c.tools.applyLimits(to: c.model) { refresh(c) }
+    }
+
     private func refresh(_ c: Ctx) {
         c.model.prefetchFullRes()   // exact readout/statistics for this HDU
         c.canvas.image = c.model.image().map(NSImage.init)
         c.canvas.caption = c.model.caption()
         c.canvas.limb = c.model.limbCircle()
+        c.canvas.colorbar = c.model.colorbar()
         if let p = c.model.page {
             c.canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }

@@ -25,6 +25,8 @@ final class Viewer: ObservableObject, Identifiable {
     @Published var image: CGImage?
     @Published var caption = ""
     @Published var readout: String?
+    /// The colorbar for what is on screen (HF-12); nil when there is nothing honest to show.
+    @Published var colorbar: Colorbar?
     @Published var loading = true
     @Published var failed = false
 
@@ -55,6 +57,7 @@ final class Viewer: ObservableObject, Identifiable {
         model.prefetchFullRes()
         image = model.image()
         caption = model.caption()
+        colorbar = model.colorbar(tickCount: 5)
         objectWillChange.send()
     }
 
@@ -95,6 +98,9 @@ struct ViewerView: View {
                     ZoomCanvas(image: viewer.image, limb: viewer.limb,
                                onSample: { viewer.sample(u: $0, v: $1) },
                                onSwipe: { viewer.step($0) })
+                    if let bar = viewer.colorbar {
+                        ColorbarStrip(bar: bar).padding(.horizontal, 16).padding(.top, 6)
+                    }
                     Text(viewer.caption)
                         .font(.footnote).foregroundStyle(Color(white: 0.8))
                         .multilineTextAlignment(.center)
@@ -114,7 +120,7 @@ struct ViewerView: View {
         }
         .toolbar { if !viewer.loading && !viewer.failed { bottomBar } }
         .sheet(isPresented: $showStretch) {
-            StretchPanel(viewer: viewer).presentationDetents([.height(320)])
+            StretchPanel(viewer: viewer).presentationDetents([.height(430), .large])
         }
     }
 
@@ -181,6 +187,8 @@ struct StretchPanel: View {
     @State private var high = 0.0
     @State private var gamma = 0.5
     @State private var log = false
+    @State private var vminText = ""
+    @State private var vmaxText = ""
 
     var body: some View {
         let m = viewer.model
@@ -194,6 +202,7 @@ struct StretchPanel: View {
             slider("High", $high, 0...1, String(format: "%.2f %%", StretchScale.highPercent(high)))
             slider("Gamma", $gamma, 0.1...2, String(format: "%.2f", gamma))
             Toggle("Logarithmic", isOn: $log)
+            limitsRow(m)
             if let l = m.displayLimits() {
                 Text("Clipped to \(FITSRenderer.fmtValue(l.lo)) … \(FITSRenderer.fmtValue(l.hi))\(l.unit.isEmpty ? "" : " \(l.unit)")")
                     .font(.system(.footnote, design: .monospaced)).foregroundStyle(.secondary)
@@ -204,6 +213,7 @@ struct StretchPanel: View {
             low = StretchScale.lowPosition(m.stretch.lo)
             high = StretchScale.highPosition(m.stretch.hi)
             gamma = m.stretch.gamma; log = m.stretch.log
+            syncFields()
         }
         .onChange(of: low) { apply() }
         .onChange(of: high) { apply() }
@@ -225,6 +235,55 @@ struct StretchPanel: View {
         m.stretch = (StretchScale.lowPercent(low), StretchScale.highPercent(high), gamma, log)
         if m.mode != .diff { m.mode = .stretch }
         viewer.refresh()
+        syncFields()      // a moved percentile slider drops typed limits
+    }
+
+    /// Typed vmin / vmax (HF-12). Empty means "auto": the percentile rule, shown as
+    /// the placeholder. One empty field keeps the current value for that end.
+    private func limitsRow(_ m: FITSPreviewModel) -> some View {
+        let cur = m.displayLimits()
+        return HStack(spacing: 8) {
+            Text("Min / Max").lineLimit(1).fixedSize()
+                .frame(minWidth: 64, alignment: .leading)
+            TextField(cur.map { Colorbar.limitText($0.lo) } ?? "n/a", text: $vminText)
+                .accessibilityLabel("Display minimum")
+            TextField(cur.map { Colorbar.limitText($0.hi) } ?? "n/a", text: $vmaxText)
+                .accessibilityLabel("Display maximum")
+            Button("Auto") { vminText = ""; vmaxText = ""; applyTyped() }
+        }
+        .textFieldStyle(.roundedBorder)
+        .keyboardType(.numbersAndPunctuation)
+        .font(.system(.footnote, design: .monospaced))
+        .onSubmit { applyTyped() }
+        .disabled(m.filter != .none)
+    }
+
+    /// Read the two fields into the model. Not a number, or an empty or reversed
+    /// range: the model is left alone and the fields snap back.
+    private func applyTyped() {
+        let m = viewer.model
+        let loText = vminText.trimmingCharacters(in: .whitespaces)
+        let hiText = vmaxText.trimmingCharacters(in: .whitespaces)
+        if loText.isEmpty && hiText.isEmpty {
+            m.clearLimits()
+        } else {
+            let cur = m.displayLimits()
+            let lo = loText.isEmpty ? cur?.lo : Float(loText)
+            let hi = hiText.isEmpty ? cur?.hi : Float(hiText)
+            if let lo, let hi {
+                if m.mode != .diff { m.mode = .stretch }
+                m.setLimits(lo: lo, hi: hi)
+            }
+        }
+        viewer.refresh()
+        syncFields()
+    }
+
+    /// Typed limits show as typed; otherwise the fields are empty (auto).
+    private func syncFields() {
+        let o = viewer.model.stretchOverride
+        vminText = o.map { Colorbar.limitText($0.lo) } ?? ""
+        vmaxText = o.map { Colorbar.limitText($0.hi) } ?? ""
     }
 
     /// Reset the model first, then move the sliders to what it now holds, so the
@@ -238,6 +297,70 @@ struct StretchPanel: View {
         gamma = m.stretch.gamma
         log = m.stretch.log
         if rerender { viewer.refresh() }
+        syncFields()
+    }
+}
+
+// MARK: - Colorbar
+
+/// A horizontal colorbar under the image: the colormap, then tick labels at the
+/// positions the stretch gives those data values, under a heading that says
+/// whether the limits are approximate (percentile estimate), exact (typed) or a
+/// filter's rank range.
+struct ColorbarStrip: View {
+    let bar: Colorbar
+
+    private func color(_ v: Int) -> Color {
+        if let lut = bar.lut {
+            return Color(red: Double(lut[v * 3]) / 255, green: Double(lut[v * 3 + 1]) / 255,
+                         blue: Double(lut[v * 3 + 2]) / 255)
+        }
+        return Color(white: Double(v) / 255)
+    }
+
+    /// Ticks left to right, dropping any whose label would sit on the previous one.
+    private func visibleTicks(width: CGFloat) -> [Colorbar.Tick] {
+        var out: [Colorbar.Tick] = []
+        var lastX = -CGFloat.infinity
+        for tick in bar.ticks {
+            let x = CGFloat(tick.t) * width
+            if x - lastX >= 40 { out.append(tick); lastX = x }
+        }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(bar.note.isEmpty ? bar.heading : "\(bar.heading), \(bar.note)")
+                .font(.caption2).foregroundStyle(Color(white: 0.8))
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .topLeading) {
+                    Canvas { ctx, size in
+                        let n = max(2, min(256, Int(size.width)))
+                        for i in 0..<n {
+                            let v = max(0, min(255, Int((Double(i) + 0.5) / Double(n) * 255)))
+                            let x = size.width * CGFloat(i) / CGFloat(n)
+                            ctx.fill(Path(CGRect(x: x, y: 0, width: size.width / CGFloat(n) + 0.5, height: 12)),
+                                     with: .color(color(v)))
+                        }
+                    }
+                    .frame(height: 12)
+                    .overlay(Rectangle().stroke(Color.white.opacity(0.45), lineWidth: 0.5).frame(height: 12),
+                             alignment: .top)
+                    ForEach(visibleTicks(width: w), id: \.t) { tick in
+                        Text(tick.label)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Color(white: 0.85))
+                            .position(x: min(max(CGFloat(tick.t) * w, 16), w - 16), y: 22)
+                    }
+                }
+            }
+            .frame(height: 30)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Colorbar, \(bar.heading)\(bar.note.isEmpty ? "" : ", " + bar.note), "
+                            + "from \(Colorbar.limitText(bar.lo)) to \(Colorbar.limitText(bar.hi))")
     }
 }
 

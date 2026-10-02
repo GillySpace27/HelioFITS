@@ -74,7 +74,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
         tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb), diffSel: #selector(toggleDiff),
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
-                            resetSel: #selector(resetStretch), filterSel: #selector(filterChanged))
+                            resetSel: #selector(resetStretch), filterSel: #selector(filterChanged),
+                            limitsSel: #selector(limitsChanged(_:)))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -107,9 +108,10 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         // in the COLUMN pane — only scroll. Hide controls that could never be
         // used there and lean on scroll-to-blink.
         // The card needs ~645 pt of width before it stops covering the readout,
-        // and ~400 pt of height before it stops covering the stretch panel and
+        // and ~500 pt of height before it stops covering the stretch panel (taller
+        // since HF-12 added the vmin/vmax fields and the histogram) and
         // the toolbar. Below that the image matters more than the statistics.
-        statsFits = view.bounds.width >= 645 && view.bounds.height >= 400
+        statsFits = view.bounds.width >= 645 && view.bounds.height >= 500
         if !statsFits { stats.isHidden = true }
         let isCompact = view.bounds.width < 380
         guard isCompact != compact else { return }
@@ -183,6 +185,10 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     @objc private func resetStretch() {
         if tools.applyReset(to: model) { refresh() }
     }
+    /// Typed vmin/vmax or a histogram handle: apply the fields, then repaint.
+    @objc private func limitsChanged(_ sender: Any?) {
+        if tools.applyLimits(to: model) { refresh() }
+    }
 
     private func region(_ r: (u0: Double, v0: Double, u1: Double, v1: Double)?) {
         guard !compact, statsFits, let r,
@@ -201,6 +207,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         canvas.image = model.image().map(NSImage.init)
         canvas.caption = model.caption()
         canvas.limb = compact ? nil : model.limbCircle()
+        canvas.colorbar = compact ? nil : model.colorbar()
         if let p = model.page {
             canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }
