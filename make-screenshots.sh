@@ -22,16 +22,28 @@
 #   # composite an image you already have (repeatable) — e.g. the README figures
 #   ./make-screenshots.sh --compose docs/before-after.png "From grey icons to the Sun"
 #
-# Output lands in build/screenshots/ numbered in creation order, so run the
-# --compose calls in the order you want them to appear. Delete the directory to
-# start a fresh set.
+# Output lands in screenshots/<VER>/ (git-ignored; VER defaults to the app's
+# MARKETING_VERSION), numbered in creation order, so run the --compose calls in
+# the order you want them to appear. No script wipes it: to redo a set, start a
+# new folder, e.g. VER=1.4.0-retake ./make-screenshots.sh ...
 #
 # Re-shoot whenever the UI changes: the v1.0 set showed the pre-redesign window
 # and had to be thrown away. See RELEASING.md.
 set -euo pipefail
 cd "$(dirname "$0")"
 
-OUT="build/screenshots"
+# One folder per version, kept: screenshots/<VER>/. VER may be set by the caller;
+# otherwise MARKETING_VERSION from Config/Version.xcconfig when it exists, else
+# the first MARKETING_VERSION in the mac project.
+if [ -z "${VER:-}" ]; then
+    if [ -f Config/Version.xcconfig ]; then
+        VER=$(sed -n 's/^MARKETING_VERSION *= *\([0-9.]*\).*/\1/p' Config/Version.xcconfig | head -n 1)
+    else
+        VER=$(grep -m 1 -oE 'MARKETING_VERSION = [0-9.]+' HelioFITS.xcodeproj/project.pbxproj | awk '{print $3}')
+    fi
+fi
+[ -n "${VER:-}" ] || { echo "cannot read the version; run as VER=<version> $0 ..."; exit 1; }
+OUT="screenshots/$VER"
 W=2560; H=1600          # the retina size; Apple accepts it and it looks sharpest
 OWNER="${OWNER:-HelioFITS}"
 CAPTIONS="${CAPTIONS:-}"
