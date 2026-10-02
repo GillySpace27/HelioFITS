@@ -14,6 +14,7 @@ class ThumbnailProvider: QLThumbnailProvider {
 
     override func provideThumbnail(for request: QLFileThumbnailRequest,
                                    _ handler: @escaping (QLThumbnailReply?, Error?) -> Void) {
+        FITSRenderer.limitInputForExtension()   // before any read: refuse huge or gzip/PKZIP input
         let px = Int(max(request.maximumSize.width, request.maximumSize.height) * request.scale)
         log.info("thumbnail: \(request.fileURL.lastPathComponent, privacy: .public) @ \(px)px")
         do {

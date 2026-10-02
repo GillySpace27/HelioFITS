@@ -17,7 +17,7 @@ let package = Package(
                 linkerSettings: [.linkedLibrary("z")]),
         // Headless tests: `swift test --package-path HelioFITSCore`. No app launch,
         // nothing registered with LaunchServices. Tests that need the app module
-        // (canvas, toolbar, FITSHeader) stay hosted in HelioFITSTests/.
+        // (canvas, toolbar) stay hosted in HelioFITSTests/.
         .testTarget(name: "HelioFITSCoreTests", dependencies: ["HelioFITSCore", "CFITSIO"]),
     ]
 )

@@ -80,7 +80,10 @@ actions and get passed in via `--done`; everything from "tag pushed" onward
 is independently verified live:
 
     python3 .claude/skills/ship-heliofits/scripts/release_status.py <VERSION> <BUILD> \
-      --done preflight,version,tests,changelog
+      --done preflight,tests,changelog
+
+The version milestone is read from `Config/Version.xcconfig`, so `--done version`
+is ignored.
 
 Paste its output directly into the response — don't reformat or summarize
 it, that defeats the point of a stable, scannable format Gilly can pattern-
@@ -107,12 +110,11 @@ what the tracker shows as ready).
 2. **Clean tree.** `git status --short` — commit or stash anything unexpected
    before touching version numbers.
 
-3. **Bump the version**, all ten targets in one shot:
+3. **Bump the version** in its one place, `Config/Version.xcconfig`:
 
-       sed -i '' 's/MARKETING_VERSION = <OLD>;/MARKETING_VERSION = <NEW>;/g' HelioFITS.xcodeproj/project.pbxproj
-       sed -i '' 's/CURRENT_PROJECT_VERSION = <OLDN>;/CURRENT_PROJECT_VERSION = <NEWN>;/g' HelioFITS.xcodeproj/project.pbxproj
-       grep -oE "MARKETING_VERSION = [0-9.]+;|CURRENT_PROJECT_VERSION = [0-9]+;" HelioFITS.xcodeproj/project.pbxproj | sort | uniq -c
-       # expect: 10 of each, matching the new values
+       scripts/bump-version.sh <NEW> <NEWN>
+       # refuses NEWN not above the newest v*-build.N tag (exit 1); exit 3 if any
+       # mac target resolves other values; prints the commit and tag commands
 
 4. **Run the tests.** `pkill -x HelioFITS` first (never `pkill` again while a
    run is in flight — the test host IS the app, and killing it produces a

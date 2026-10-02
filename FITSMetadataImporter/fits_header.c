@@ -161,7 +161,7 @@ int fits_read_meta(const char *path, fits_meta *out) {
             }
             size_t got = fread(block, 1, BLOCK_LEN, f);
             if (got < BLOCK_LEN) {            // no full block -> stop
-                if (got == 0 && header_blocks == 0) { fclose(f); goto done; }
+                if (got == 0 && header_blocks == 0) goto done;   // done: closes f
                 end_seen = 1; break;
             }
             header_blocks++;

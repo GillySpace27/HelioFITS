@@ -12,6 +12,8 @@
 #                  scheme named HelioFITS, so -project is always passed.
 #   tooling        bash -n and py_compile over every tracked script, the tracker and
 #                  watch self-tests, and the Spotlight importer on its ad hoc path.
+#   fixtures       ubuntu: scripts/make_fixtures.py --selftest, then regenerates the synthetic
+#                  fixtures and diffs them against HelioFITSTests/Fixtures (HF-5).
 #   lint           swift format lint with .swift-format. Advisory: never blocks.
 #
 # Tests that need files only present on Gilly's Mac report as skipped, not passed.
@@ -155,6 +157,7 @@ jobs:
       - name: Self-tests
         run: |
           python3 .claude/skills/ship-heliofits/scripts/release_status.py --selftest
+          python3 .claude/skills/ship-heliofits/scripts/test_release_feed.py
           python3 scripts/watch.py --selftest
       - name: Spotlight importer (ad hoc signing path)
         run: |
@@ -173,3 +176,42 @@ jobs:
         run: xcodebuild -version && swift --version
       - name: swift format lint (advisory)
         run: git ls-files -z '*.swift' | xargs -0 swift format lint --configuration .swift-format
+
+  colormaps:
+    # FITSColormaps.swift is generated; this regenerates it from the pinned
+    # sunpy and the six CSVs in tools/colormaps/extra/ and fails on any byte of
+    # difference. Fix the generator, never the Swift file (HF-6).
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pinned generator inputs
+        run: python3 -m pip install -r tools/colormaps/requirements.txt
+      - name: Regenerate and diff (no output means identical)
+        run: python3 tools/colormaps/gen_colormaps.py | diff -u HelioFITSCore/Sources/HelioFITSCore/FITSColormaps.swift -
+
+  fixtures:
+    # HelioFITSTests/Fixtures holds only synthetic files (no mission data until Gilly
+    # answers register question 21). They are generated, so a hand edit or a script
+    # change that moves a byte shows up here as a diff. Regenerate with
+    # python3 scripts/make_fixtures.py --synthetic after moving the old files aside.
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pinned inputs
+        run: python3 -m pip install -r scripts/requirements-fixtures.txt
+      - name: make_fixtures.py self-test
+        run: python3 scripts/make_fixtures.py --selftest
+      - name: Regenerate the synthetic fixtures and diff (no output means identical)
+        run: |
+          python3 scripts/make_fixtures.py --synthetic --tests-out "$RUNNER_TEMP/fixtures"
+          diff -r "$RUNNER_TEMP/fixtures" HelioFITSTests/Fixtures

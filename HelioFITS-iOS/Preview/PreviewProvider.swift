@@ -7,9 +7,11 @@
 
 import QuickLook
 import UniformTypeIdentifiers
+import HelioFITSCore
 
 final class PreviewProvider: QLPreviewProvider, QLPreviewingController {
     func providePreview(for request: QLFilePreviewRequest) async throws -> QLPreviewReply {
+        FITSRenderer.limitInputForExtension()   // extension only: the app itself sets no limit
         let q = try QuickRender.render(request.fileURL)
         let caption = q.caption
             .replacingOccurrences(of: "&", with: "&amp;")

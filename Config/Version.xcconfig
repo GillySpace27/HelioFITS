@@ -1,0 +1,5 @@
+// The one version source for the macOS targets (HelioFITS, both extensions, both test
+// bundles). Edit with scripts/bump-version.sh, never by hand; the iOS project keeps its
+// own values until Gilly decides (map Q3).
+MARKETING_VERSION = 1.4.0
+CURRENT_PROJECT_VERSION = 10

@@ -9,14 +9,21 @@ session's own actions and can't be re-derived from outside state, so they
 are passed in by the caller; everything from "tag pushed" onward is checked
 live.
 
-Usage: python3 release_status.py <VERSION> <BUILD> [--done preflight,version,tests,changelog]
-  python3 release_status.py 1.3.1 8 --done preflight,version,tests,changelog
+The "version" milestone is the exception: it is read from Config/Version.xcconfig
+(the one mac version source, HF-10), so --done version is ignored.
+
+Usage: python3 release_status.py <VERSION> <BUILD> [--done preflight,tests,changelog]
+  python3 release_status.py 1.3.1 8 --done preflight,tests,changelog
 """
-import sys, os, json, subprocess, argparse, datetime
+import sys, os, re, json, subprocess, argparse, datetime, tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 APP_ID = "6790952544"
 ASC_API = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asc_api.py")
+# The repo root is four levels above this scripts/ folder. (REPO above stops at .claude/,
+# which git tolerates as a cwd; this path must not depend on it.)
+XCCONFIG = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         "..", "..", "..", "..", "Config", "Version.xcconfig"))
 
 MILESTONES = [
     ("preflight",   "Pre-flight (clean tree, library rebuilt if shim changed)"),
@@ -42,8 +49,7 @@ MILESTONES = [
 # `api` steps are ASC writes the Orrery itself can perform.
 HOW = {
     "preflight":   ("shell", "./HelioFITSExtension/cfitsio/build-universal.sh   # only if fitsshim.c changed"),
-    "version":     ("shell", "sed -i '' 's/MARKETING_VERSION = [0-9.]*;/MARKETING_VERSION = {V};/g' HelioFITS.xcodeproj/project.pbxproj && "
-                             "sed -i '' 's/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = {B};/g' HelioFITS.xcodeproj/project.pbxproj   # then verify 10 of each"),
+    "version":     ("shell", "scripts/bump-version.sh {V} {B}   # edits Config/Version.xcconfig, then checks every mac target resolved it"),
     "tests":       ("shell", "pkill -x HelioFITS; xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS -destination 'platform=macOS,arch=arm64' DEVELOPMENT_TEAM=UB45PPC2JS CODE_SIGN_IDENTITY=\"-\" CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES"),
     "changelog":   ("edit",  "Write the [{V}] section in CHANGELOG.md — long form, grouped Added/Changed/Fixed, issues linked."),
     "tag":         ("shell", "git tag -a v{V}-build.{B} -m \"{V} (build {B})\""),
@@ -74,7 +80,31 @@ def shots_verdict(states):
     return len(done) == len(states), note
 
 
+def xcconfig_version(path=XCCONFIG):
+    """(MARKETING_VERSION, CURRENT_PROJECT_VERSION) from Config/Version.xcconfig, or
+    None when the file is missing or does not hold exactly one line of each."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return None
+    ver = re.findall(r"^MARKETING_VERSION = (\S+)$", text, re.M)
+    build = re.findall(r"^CURRENT_PROJECT_VERSION = (\S+)$", text, re.M)
+    if len(ver) != 1 or len(build) != 1:
+        return None
+    return ver[0], build[0]
+
+
 def _selftest():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "Version.xcconfig")
+        assert xcconfig_version(p) is None
+        with open(p, "w") as f:
+            f.write("// comment\nMARKETING_VERSION = 1.4.1\nCURRENT_PROJECT_VERSION = 11\n")
+        assert xcconfig_version(p) == ("1.4.1", "11")
+        with open(p, "a") as f:
+            f.write("MARKETING_VERSION = 9.9\n")
+        assert xcconfig_version(p) is None
     assert shots_verdict([]) == (False, None)
     assert shots_verdict(["COMPLETE"] * 5) == (True, "5 delivered")
     assert shots_verdict(["COMPLETE", "AWAITING_UPLOAD"]) == (False, "1 delivered, 1 not yet")
@@ -109,6 +139,13 @@ def asc_get(path):
 def check_live(version, build):
     tag = f"v{version}-build.{build}"
     state = {}
+
+    got = xcconfig_version()
+    state["version"] = got == (version, build)
+    if got is None:
+        state["_notes"] = {**state.get("_notes", {}), "version": "Config/Version.xcconfig missing or malformed"}
+    elif not state["version"]:
+        state["_notes"] = {**state.get("_notes", {}), "version": "xcconfig says %s (%s)" % got}
 
     tags_local = sh(["git", "tag", "-l", tag])
     state["tag"] = tag in tags_local.splitlines()
@@ -212,11 +249,61 @@ def render(version, build, done_flags, live_state):
         lines.append(f"(App Store Connect appStoreState: {raw})")
     return "\n".join(lines)
 
+FEED_PRODUCT = "heliofits"
+APP_STORE_URL = "https://apps.apple.com/app/id" + APP_ID
+CHANGELOG = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                          "..", "..", "..", "..", "CHANGELOG.md"))
+
+
+def feed_notes(changelog_text, version, fallback):
+    """One plain sentence for the family feed: the intro paragraph under `## [version]`, else `fallback`."""
+    m = re.search(r"^## \[" + re.escape(version) + r"\][^\n]*\n(.*?)(?=^## |^### |\Z)", changelog_text, re.S | re.M)
+    if m:
+        for para in m.group(1).split("\n\n"):
+            text = " ".join(para.split())
+            if text and not text.startswith(("-", "*", "|", ">", "`", "#")):
+                return text[:400].rstrip().replace(chr(0x2014), ";")
+    return fallback
+
+
+def record_release(live_state, version, build, changelog_text, today, site, run=subprocess.run):
+    """Append this release to the HelioSoftware feed, only when App Store Connect says READY_FOR_SALE.
+
+    Returns (ok, message). ok is False only when the writer failed or is missing; a release that is not
+    live yet is (True, "record: skipped ..."). Never claims a version live before Apple does (SU-11)."""
+    if not live_state.get("released"):
+        raw = live_state.get("_asc_state_raw") or "unknown"
+        return True, "record: skipped, App Store state is %s, not READY_FOR_SALE" % raw
+    feed = os.path.join(site, "heliosoftware", "feed")
+    tool = os.path.join(feed, "append_record.py")
+    if not os.path.isfile(tool):
+        return False, "record: %s not found; set SITE to the Website checkout" % tool
+    notes = feed_notes(changelog_text, version, "HelioFITS %s (build %s)" % (version, build))
+    with tempfile.TemporaryDirectory() as d:
+        nf = os.path.join(d, "notes.txt")
+        with open(nf, "w", encoding="utf-8") as f:
+            f.write(notes + "\n")
+        argv = [sys.executable, tool, "--product", FEED_PRODUCT, "--version", version, "--build", str(build),
+                "--date", today, "--channel", "mac-app-store", "--url", APP_STORE_URL, "--notes-file", nf]
+        r = run(argv, capture_output=True, text=True)
+    if r.returncode == 3:
+        return True, "record: HelioFITS %s build %s is already in the feed" % (version, build)
+    if r.returncode != 0:
+        return False, "record: writer failed (exit %d): %s" % (r.returncode, (r.stderr or "").strip()[-200:])
+    r = run([sys.executable, os.path.join(feed, "build_feed.py")], capture_output=True, text=True)
+    if r.returncode != 0:
+        return False, "record: appended, but build_feed.py failed (exit %d): %s" % (r.returncode, (r.stderr or "").strip()[-200:])
+    return True, ("record: appended HelioFITS %s build %s in %s; commit and push the Website is Gilly's step"
+                  % (version, build, site))
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("version", nargs="?", default="")
     p.add_argument("build", nargs="?", default="")
     p.add_argument("--done", default="", help="comma-separated session-only milestones to mark done: preflight,version,tests,changelog")
+    p.add_argument("--record", action="store_true",
+                   help="append this release to the HelioSoftware feed in $SITE (default ~/vscode/Website), only if App Store Connect says READY_FOR_SALE")
     p.add_argument("--selftest", action="store_true", help="run the screenshot-verdict asserts and exit")
     p.add_argument("--emit", action="store_true",
                    help="also write a timestamped snapshot to ~/.claude/runbooks/state/ "
@@ -226,6 +313,8 @@ if __name__ == "__main__":
     if args.selftest:
         _selftest()
         sys.exit(0)
+    if args.record and not (args.version and args.build):
+        p.error("--record needs <version> <build>")
     done_flags = {k: True for k in args.done.split(",") if k}
     live_state = check_live(args.version, args.build)
     print(render(args.version, args.build, done_flags, live_state))
@@ -256,3 +345,16 @@ if __name__ == "__main__":
         with open(os.path.join(d, "ship-heliofits.json"), "w") as f:
             json.dump(snap, f, indent=2)
         print(f"\n(snapshot written to {d}/ship-heliofits.json)")
+
+    if args.record:
+        site = os.environ.get("SITE", os.path.expanduser("~/vscode/Website"))
+        try:
+            with open(CHANGELOG, encoding="utf-8") as fh:
+                changelog = fh.read()
+        except OSError:
+            changelog = ""
+        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        ok, msg = record_release(live_state, args.version, args.build, changelog, today, site)
+        print(msg)
+        if not ok:
+            sys.exit(1)

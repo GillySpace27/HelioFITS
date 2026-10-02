@@ -1,6 +1,32 @@
 #ifndef FITSSHIM_H
 #define FITSSHIM_H
 
+// Input limit. By default the shim is unlimited, which is what the main app uses.
+// The Finder Quick Look and Thumbnail extensions (macOS and iOS) parse files
+// they did not choose, so each calls fitsshim_set_max_pixels(1 << 28) once at
+// start (16384 x 16384, FITSRenderer.extensionMaxPixels). While the limit is
+// above 0, in this process:
+//   - fitsshim_read_image returns FITSSHIM_ERR_TOO_LARGE when the chosen HDU's
+//     NAXIS1 * NAXIS2 (one plane) exceeds the limit or the product overflows 64
+//     bits, or, for a tile-compressed image, when the tile size does, all before
+//     any allocation;
+//   - every entry point returns FITSSHIM_ERR_COMPRESSED, without calling CFITSIO,
+//     for a gzip, PKZIP, bzip2, compress, pack or LZH wrapped file (CFITSIO
+//     inflates those into memory at the size the file declares, up to 4 GiB);
+//   - only a real readable file is opened: a name that cannot be fopen'ed
+//     (stdin "-", a URL, mem://, or a name CFITSIO would retry as name.gz) gets
+//     CFITSIO status 104 (FILE_NOT_OPENED) instead of reaching CFITSIO.
+// The limit is process-wide. Set it once before other threads call the shim.
+// 0 or a negative value means unlimited. Without a limit only the overflow check
+// applies, so an impossible size is refused (FITSSHIM_ERR_TOO_LARGE) instead of
+// wrapping to a tiny allocation.
+#define FITSSHIM_ERR_NO_IMAGE   (-1)   /* no image HDU anywhere in the file */
+#define FITSSHIM_ERR_ALLOC      (-2)   /* malloc failed */
+#define FITSSHIM_ERR_TOO_LARGE  (-3)   /* over the pixel limit, or the size overflows */
+#define FITSSHIM_ERR_COMPRESSED (-4)   /* gzip/PKZIP/... wrapped file, refused under a limit */
+void fitsshim_set_max_pixels(long long max_pixels);
+long long fitsshim_max_pixels(void);
+
 // Reads an image HDU (transparently decompresses CompImageHDU).
 // hdu_wanted: 0-based HDU index (astropy numbering) to display, or -1 for
 // auto (first HDU with a >=2D image). If the requested HDU has no 2D image,
@@ -12,7 +38,7 @@
 // bottom-up FITS order, exactly ONE plane's worth of samples) and *header
 // (NUL-terminated summary including which HDU/plane rendered and an
 // inventory of all HDUs). Caller frees *pixels and *header. Nonzero return
-// is a CFITSIO status (or -1 no image anywhere).
+// is a CFITSIO status, or one of the negative FITSSHIM_ERR_* codes above.
 int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
                         long *width, long *height,
                         float **pixels, char **header);
@@ -31,7 +57,8 @@ int fitsshim_read_image_max(const char *path, long hdu_wanted, long plane_wanted
 
 // 0-based indices of HDUs containing >=2D images. Writes up to max_indices
 // into indices; returns the total number of image HDUs found (may exceed
-// max_indices), or negative CFITSIO status on error.
+// max_indices), or negative CFITSIO status on error (FITSSHIM_ERR_COMPRESSED
+// under an input limit).
 int fitsshim_image_hdus(const char *path, long *indices, int max_indices);
 
 // Number of selectable planes in one 0-based image HDU: 1 for a plain 2D

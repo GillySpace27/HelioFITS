@@ -32,3 +32,6 @@ screenshots/
 # HelioFITSCore package build output
 HelioFITSCore/.build/
 HelioFITSCore/.swiftpm/
+
+# Fuzz build output: CFITSIO build, harness binaries, corpora, crash files (HF-11)
+Fuzz/out/

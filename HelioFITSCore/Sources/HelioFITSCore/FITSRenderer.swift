@@ -16,6 +16,34 @@ public enum FITSRenderer {
     public static let gamma: Float = 0.5     // <1 brightens faint structure (sqrt)
     public static let maxSide = 1024         // cap preview dimension
 
+    /// Pixels (per plane) the Finder extensions accept: 2^28 = 16384 x 16384. They parse files
+    /// Finder hands them, so they refuse more than this, and gzip/PKZIP wrapped input, instead of
+    /// letting a 5 KB header ask for gigabytes (SECURITY.md "Known findings"). The main app sets
+    /// no limit. Keep equal to EXTENSION_MAX_PIXELS in Fuzz/fitsshim_fuzz.c.
+    public static let extensionMaxPixels = 1 << 28
+
+    /// Every Quick Look and Thumbnail extension calls this once before it reads a file. The limit
+    /// is process-wide inside the shim, so the main app, which never calls it, stays unlimited.
+    public static func limitInputForExtension() {
+        fitsshim_set_max_pixels(Int64(extensionMaxPixels))
+    }
+
+    /// Removes the limit again. Only tests call this; no shipped target does.
+    public static func clearInputLimit() { fitsshim_set_max_pixels(0) }
+
+    /// The text of the error `render` throws when the shim returns `rc` (a CFITSIO status or a
+    /// negative FITSSHIM_ERR_* code). The extensions show it through their existing failure path.
+    public static func readFailureMessage(_ rc: Int32) -> String {
+        switch rc {
+        case Int32(FITSSHIM_ERR_TOO_LARGE):
+            return "Image too large to preview here (over \(extensionMaxPixels) pixels); open it in HelioFITS (CFITSIO \(rc))"
+        case Int32(FITSSHIM_ERR_COMPRESSED):
+            return "Compressed FITS files are not previewed here; open it in HelioFITS (CFITSIO \(rc))"
+        default:
+            return "No readable image HDU (CFITSIO \(rc))"
+        }
+    }
+
 
     // Shared with the container app (HDU-selection UI) via app group.
     public static let appGroup = "UB45PPC2JS.com.gillyspace27.fits"
@@ -224,7 +252,7 @@ public enum FITSRenderer {
                                          lowMemory ? maxSide : 0, &w, &h, &step, &pixPtr, &hdrPtr)
         guard rc == 0, let pix = pixPtr, w > 0, h > 0 else {
             throw NSError(domain: "FITS", code: Int(rc),
-                          userInfo: [NSLocalizedDescriptionKey: "No readable image HDU (CFITSIO \(rc))"])
+                          userInfo: [NSLocalizedDescriptionKey: readFailureMessage(rc)])
         }
         defer { free(pixPtr); free(hdrPtr) }
         let header = hdrPtr.map { String(cString: $0) } ?? ""
@@ -279,8 +307,14 @@ public enum FITSRenderer {
 
 
     /// Parse one keyword's value out of a raw FITS card block (the shim's
-    /// fits_hdr2str output — 80-char cards, newline-joined; fall back to 80-char
+    /// fits_hdr2str output: 80-char cards, newline-joined; fall back to 80-char
     /// chunking if the separator is absent). Unquotes strings, drops comments.
+    ///
+    /// Input format: raw cards, `KEYWORD = value / comment` with "=" in column 9,
+    /// as returned by `cards(path:hdu:)` (fitsshim_header_cards) or by
+    /// `FITSHeader.dump(path:)`; on multi-HDU text the first match wins. Not for
+    /// `Result.header`, the shim's summary, which has no "=" column: use
+    /// `headerVal` there. HeaderParityTests pins the two against one file.
     public static func cardVal(_ cards: String, _ key: String) -> String? {
         let lines: [String] = cards.contains("\n")
             ? cards.split(separator: "\n").map(String.init)
@@ -793,6 +827,11 @@ public enum FITSRenderer {
 
     /// Value of a keyword in the shim's header summary ("KEY      value" lines,
     /// 8-char key + space). Strips FITS string quotes.
+    ///
+    /// Input format: `Result.header` from fitsshim_read_image, one `%-9s %s` line
+    /// per keyword the shim copies (TELESCOP through PROD_ID, fitsshim.c); it has
+    /// no NAXISn lines, so read `natW`/`natH` instead. Matches on line prefix with
+    /// no keyword boundary. Not for raw cards: use `cardVal` there.
     public static func headerVal(_ h: String, _ key: String) -> String? {
         for line in h.split(separator: "\n") where line.hasPrefix(key) {
             let v = String(line.dropFirst(9)).trimmingCharacters(in: .whitespaces)
