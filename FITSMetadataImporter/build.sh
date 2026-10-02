@@ -34,5 +34,6 @@ cp "$SRC/Info.plist"      "$BUNDLE/Contents/Info.plist"
 cp "$SRC/schema.xml"      "$BUNDLE/Contents/Resources/schema.xml"
 cp "$SRC/schema.strings"  "$BUNDLE/Contents/Resources/English.lproj/schema.strings"
 
-codesign --force "${SIGN_OPTS[@]}" --sign "$SIGN_ID" "$BUNDLE"
+# ${SIGN_OPTS[@]+...} keeps an empty array legal under set -u (bash 3.2 on macOS and CI runners)
+codesign --force ${SIGN_OPTS[@]+"${SIGN_OPTS[@]}"} --sign "$SIGN_ID" "$BUNDLE"
 echo "Built: $BUNDLE"
