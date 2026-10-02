@@ -20,6 +20,15 @@ generates App Store profiles at export). `ship.sh` alone requests **Developer
 ID** via command-line overrides. Do not pin the project to either identity;
 that's what broke the store path the first time.
 
+**Release gates (SU-3):** `preflight.sh` and `ship.sh` run `./release-gates.sh`,
+which refuses an unpushed HEAD, a HEAD that is not an ancestor of `origin/main`,
+disagreeing versions, a U+2014 in `CHANGELOG.md`, or a Friday from 12:00 local.
+Each refusal names its override (`ALLOW_FRIDAY=yes-gilly` and so on); set one
+only on Gilly's yes for that release. Rolling back: "Rolling back" below, and
+`python3 ~/.claude/skills/runbook-drift/scripts/rollback_plan.py heliofits`
+prints the commands without running them (that script is SU-3 Task 9, on
+Gilly's machine, not in this repository).
+
 ## Every release, in order
 
 0. **Did you touch `fitsshim.c`? Rebuild the library.** `fitsshim.c` is in NO
