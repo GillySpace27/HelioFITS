@@ -128,6 +128,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     func preparePreviewOfFile(at url: URL, completionHandler handler: @escaping (Error?) -> Void) {
         logger.info("preparePreviewOfFile: \(url.path, privacy: .public)")
+        FITSRenderer.limitInputForExtension()   // before any read: refuse huge or gzip/PKZIP input
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let m = FITSPreviewModel.load(path: url.path)
