@@ -8,7 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		01BC9D342A3C101708CEDA1B /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8BD5F28682761BE7F9C2B117 /* Cocoa.framework */; };
-		046801A8F1AE81BBBED87E38 /* FITSPreviewCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */; };
 		135CAAE27665EC1A06C450BC /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 0E59D3CF4B15A9E629D39739 /* HelioFITSCore */; };
 		2CDAC07023C0F7A3709504A0 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A3186F702CE436DD00395F60 /* QuickLook.framework */; };
 		5B0B6DAF069F7C753A49F279 /* QuickLookThumbnailing.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */; };
@@ -89,7 +88,6 @@
 		A3AE31E72CE3ED570080470D /* Quartz.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Quartz.framework; path = System/Library/Frameworks/Quartz.framework; sourceTree = SDKROOT; };
 		A3C301A02CF129DE00DF1E56 /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
 		A3C301A72CF12A1B00DF1E56 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
-		B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = FITSPreviewCore.swift; path = HelioFITSExtension/FITSPreviewCore.swift; sourceTree = "<group>"; };
 		C8815A478097ECDE81A6098F /* ThumbnailProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLookThumbnailing.framework; path = System/Library/Frameworks/QuickLookThumbnailing.framework; sourceTree = SDKROOT; };
 		F5B74F42E4084BD7999E17A2 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = HelioFITSThumbnail/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -142,6 +140,11 @@
 				A3AE31F62CE3ED570080470D /* Exceptions for "HelioFITSExtension" folder in "HelioFITSExtension" target */,
 			);
 			path = HelioFITSExtension;
+			sourceTree = "<group>";
+		};
+		F17A5C0E2B9D4E6F8A3C1D57 /* HelioFITSMacUI */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = HelioFITSMacUI;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -224,11 +227,11 @@
 				A3AE31C72CE3ED1C0080470D /* HelioFITSTests */,
 				A3AE31D12CE3ED1C0080470D /* HelioFITSUITests */,
 				A3AE31E92CE3ED570080470D /* HelioFITSExtension */,
+				F17A5C0E2B9D4E6F8A3C1D57 /* HelioFITSMacUI */,
 				A3AE31E62CE3ED570080470D /* Frameworks */,
 				A3AE31B42CE3ED1A0080470D /* Products */,
 				E8255A57AF32E296D56F5A88 /* HelioFITSThumbnail */,
 				DF70237BEE853CE3E62B3331 /* QuickLookThumbnailing.framework */,
-				B7AD35FB2A3184DA60D387B6 /* FITSPreviewCore.swift */,
 				2F262A203006DD5700F1EF79 /* Recovered References */,
 			);
 			sourceTree = "<group>";
@@ -307,6 +310,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A3AE31B52CE3ED1A0080470D /* HelioFITS */,
+				F17A5C0E2B9D4E6F8A3C1D57 /* HelioFITSMacUI */,
 			);
 			name = HelioFITS;
 			packageProductDependencies = (
@@ -372,6 +376,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				A3AE31E92CE3ED570080470D /* HelioFITSExtension */,
+				F17A5C0E2B9D4E6F8A3C1D57 /* HelioFITSMacUI */,
 			);
 			name = HelioFITSExtension;
 			packageProductDependencies = (
@@ -480,7 +485,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				046801A8F1AE81BBBED87E38 /* FITSPreviewCore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
