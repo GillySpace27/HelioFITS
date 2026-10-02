@@ -1,0 +1,78 @@
+# Fuzz the two C parsers that read untrusted FITS bytes (HF-11): the CFITSIO
+# shim linked into every HelioFITS target and the Spotlight importer's header
+# reader. Weekly for 10 minutes per harness, 2 minutes on a PR that touches
+# them, and on demand. A crash fails the job and its input is uploaded as an
+# artifact; commit that input under Fuzz/regressions/<harness>/ with the fix.
+name: fuzz
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: "Fuzzing time per harness (libFuzzer -max_total_time)"
+        default: "600"
+      canary:
+        description: "Build with FUZZ_CANARY=1 (deliberate out-of-bounds read; verification only)"
+        type: boolean
+        default: false
+  pull_request:
+    paths:
+      - "Fuzz/**"
+      - ".github/workflows/fuzz.yml"
+      - "HelioFITSExtension/cfitsio/fitsshim.c"
+      - "HelioFITSExtension/cfitsio/fitsshim.h"
+      - "HelioFITSExtension/cfitsio/build-universal.sh"
+      - "FITSMetadataImporter/fits_header.c"
+      - "FITSMetadataImporter/fits_header.h"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [fitsshim_fuzz, fits_header_fuzz]
+    env:
+      CC: clang-18
+      FUZZ_CANARY: ${{ inputs.canary && '1' || '' }}
+      SECONDS_PER_HARNESS: ${{ inputs.seconds || (github.event_name == 'pull_request' && '120') || '600' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain (clang 18 with the libFuzzer runtime, zlib)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang-18 libclang-rt-18-dev zlib1g-dev
+      - name: Build CFITSIO and the harnesses
+        run: bash Fuzz/build.sh ${{ matrix.harness }}
+      - name: Replay regression inputs
+        run: |
+          shopt -s nullglob
+          inputs=(Fuzz/regressions/${{ matrix.harness }}/*)
+          if [ ${#inputs[@]} -eq 0 ]; then echo "no regression inputs for ${{ matrix.harness }}"; exit 0; fi
+          Fuzz/out/${{ matrix.harness }} "${inputs[@]}"
+      - name: Fuzz for ${{ env.SECONDS_PER_HARNESS }} s
+        working-directory: Fuzz/out
+        run: |
+          ./${{ matrix.harness }} -max_total_time="$SECONDS_PER_HARNESS" -print_final_stats=1 \
+            corpus/${{ matrix.harness }}
+      - name: Upload crash inputs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.harness }}-crashes
+          path: |
+            Fuzz/out/crash-*
+            Fuzz/out/leak-*
+            Fuzz/out/oom-*
+            Fuzz/out/timeout-*
+          if-no-files-found: ignore
