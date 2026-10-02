@@ -6,6 +6,16 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+### Security
+
+- **The Finder Quick Look and Thumbnail extensions refuse oversized and compressed
+  input.** A 5 KB header could ask the CFITSIO shim for gigabytes, and a gzip or PKZIP
+  file made CFITSIO allocate up to 4 GiB. The extensions (macOS and iOS) now set a
+  2^28 pixel limit (16384 x 16384) and show their usual "cannot preview" result for
+  anything over it and for gzip, PKZIP, bzip2, compress, pack or LZH files. The main app
+  is unchanged (no limit). Takes effect after `build-universal.sh` rebuilds the xcframework.
+  See SECURITY.md.
+
 ### Fixed
 
 - **RHEF drew horizontal stripes over flat regions.** PUNCH L3 fills its

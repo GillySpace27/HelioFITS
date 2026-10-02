@@ -60,14 +60,17 @@ jobs:
           inputs=(Fuzz/regressions/${{ matrix.harness }}/*)
           if [ ${#inputs[@]} -eq 0 ]; then echo "no regression inputs for ${{ matrix.harness }}"; exit 0; fi
           Fuzz/out/${{ matrix.harness }} "${inputs[@]}"
+      - name: Input limit test (cap, overflow, gzip/PKZIP, unlimited path)
+        if: matrix.harness == 'fitsshim_fuzz'
+        run: Fuzz/out/shim_cap_test
       - name: Fuzz for ${{ env.SECONDS_PER_HARNESS }} s
         working-directory: Fuzz/out
         run: |
-          # libFuzzer's default malloc limit (2048 MB) is kept on purpose. Two accepted
-          # findings used to trip it and were hidden by raising the limit to 4097 MB; the
-          # fitsshim harness now skips exactly those two input kinds (gzip or PKZIP magic, and a
-          # header with NAXIS1 * NAXIS2 above 2^26) so a new large allocation is reported.
-          # Both are open, see "Known findings (not fixed)" in SECURITY.md.
+          # libFuzzer's default malloc limit (2048 MB) is kept on purpose. The fitsshim
+          # harness runs the shim as the extensions do, with the 2^28 pixel limit set
+          # (fitsshim_set_max_pixels), so an oversized header and gzip or PKZIP input
+          # are refused by the shim and need no skip; any other large allocation is
+          # reported. See "Known findings" in SECURITY.md.
           # ASAN_OPTIONS=allocator_may_return_null=1: a header-driven calloc whose
           # count * size overflows (CFITSIO ffbinit, TFIELDS read from the header) aborts
           # under ASan by default, but in the shipped app calloc returns NULL and ffbinit

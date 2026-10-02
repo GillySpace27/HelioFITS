@@ -4,13 +4,66 @@
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
+#include <limits.h>
+#include <stdatomic.h>
+
+// Process-wide input limit; see "Input limit" in fitsshim.h. 0 = unlimited (main app).
+static _Atomic long long g_max_pixels = 0;
+
+void fitsshim_set_max_pixels(long long max_pixels) {
+    atomic_store(&g_max_pixels, max_pixels > 0 ? max_pixels : 0);
+}
+
+long long fitsshim_max_pixels(void) { return atomic_load(&g_max_pixels); }
+
+// 1 if the file starts with a magic CFITSIO's file_is_compressed() inflates into
+// memory (gzip, PKZIP, pack, compress, LZH, bzip2), 0 if not, -1 if it cannot be read.
+static int starts_with_compression_magic(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+    unsigned char m[2] = {0, 0};
+    size_t got = fread(m, 1, 2, f);
+    fclose(f);
+    if (got < 2) return 0;
+    if (m[0] == 0x1f && (m[1] == 0x8b || m[1] == 0x9d || m[1] == 0x1e || m[1] == 0xa0)) return 1;
+    if (m[0] == 'P' && m[1] == 'K') return 1;
+    if (m[0] == 'B' && m[1] == 'Z') return 1;
+    return 0;
+}
+
+// fits_open_file behind the input limit. Returns 0 and sets *fptr, or a nonzero code
+// that is FITSSHIM_ERR_COMPRESSED or a positive CFITSIO status; *status carries the
+// CFITSIO status for the second kind. With no limit this is exactly fits_open_file.
+static int open_guarded(fitsfile **fptr, const char *path, int *status) {
+    if (atomic_load(&g_max_pixels) > 0) {
+        int wrapped = starts_with_compression_magic(path);
+        if (wrapped > 0) return FITSSHIM_ERR_COMPRESSED;
+        if (wrapped < 0) { *status = FILE_NOT_OPENED; return FILE_NOT_OPENED; }
+    }
+    if (fits_open_file(fptr, path, READONLY, status)) return *status;
+    return 0;
+}
+
+// Pixels in one plane, or 0 when the count is not a valid allocation: not positive,
+// wider than 64 bits, or more than SIZE_MAX / sizeof(float) (the flag array is one
+// byte per pixel, so the float buffer is the binding one). The division form never
+// overflows, unlike checking the product afterwards.
+static long long plane_pixels(long w, long h) {
+    if (w <= 0 || h <= 0) return 0;
+    if ((long long)w > LLONG_MAX / (long long)h) return 0;
+    long long n = (long long)w * (long long)h;
+    if ((unsigned long long)n > (unsigned long long)SIZE_MAX / sizeof(float)) return 0;
+    return n;
+}
 
 int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
                         long *width, long *height,
                         float **pixels, char **header) {
     fitsfile *fptr = NULL;
     int status = 0;
-    if (fits_open_file(&fptr, path, READONLY, &status)) return status;
+    const long long max_pixels = atomic_load(&g_max_pixels);
+    int guard = open_guarded(&fptr, path, &status);
+    if (guard) return guard;
 
     int nhdus = 0;
     fits_get_num_hdus(fptr, &nhdus, &status);
@@ -65,7 +118,7 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
     }
 
     int chosen = wanted_ok ? (int)hdu_wanted + 1 : first_image;
-    if (chosen < 0) { int s = 0; fits_close_file(fptr, &s); return -1; }
+    if (chosen < 0) { int s = 0; fits_close_file(fptr, &s); return FITSSHIM_ERR_NO_IMAGE; }
 
     int htype = 0; status = 0;
     fits_movabs_hdu(fptr, chosen, &htype, &status);
@@ -83,16 +136,40 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
     status = 0;
     fits_get_img_size(fptr, naxis, naxes, &status);
     if (status || naxes[0] <= 0 || naxes[1] <= 0) {
-        int s = 0; fits_close_file(fptr, &s); return status ? status : -1;
+        int s = 0; fits_close_file(fptr, &s); return status ? status : FITSSHIM_ERR_NO_IMAGE;
     }
 
     long nplanes = (naxis >= 3 && naxes[2] > 0) ? naxes[2] : 1;
     long plane = (plane_wanted >= 0 && plane_wanted < nplanes) ? plane_wanted : 0;
 
-    long npix = naxes[0] * naxes[1];
+    // Size check BEFORE any allocation. The product comes from the file's header, so it is
+    // untrusted: a 5,760-byte file can claim 30000 x 30000 (3.6 GB), or dimensions whose
+    // 64-bit product wraps to a small number.
+    long long plane_px = plane_pixels(naxes[0], naxes[1]);
+    if (plane_px == 0 || (max_pixels > 0 && plane_px > max_pixels)) {
+        int s = 0; fits_close_file(fptr, &s); return FITSSHIM_ERR_TOO_LARGE;
+    }
+    if (max_pixels > 0) {
+        // A tile-compressed image decompresses a whole tile into memory; its size also
+        // comes from the header (ZTILEn, default: one row). Same bound as the image.
+        int sc = 0;
+        if (fits_is_compressed_image(fptr, &sc)) {
+            long long tile = 1;
+            for (int ax = 0; ax < naxis; ax++) {
+                char key[16]; snprintf(key, sizeof(key), "ZTILE%d", ax + 1);
+                long long t = (ax == 0) ? (long long)naxes[0] : 1; int st = 0;
+                fits_read_key(fptr, TLONGLONG, key, &t, NULL, &st);
+                if (t <= 0 || tile > LLONG_MAX / t) { tile = LLONG_MAX; break; }
+                tile *= t;
+            }
+            if (tile > max_pixels) { int s = 0; fits_close_file(fptr, &s); return FITSSHIM_ERR_TOO_LARGE; }
+        }
+    }
+
+    long npix = (long)plane_px;
     float *buf = (float *)malloc(sizeof(float) * (size_t)npix);
     char *nulls = (char *)malloc((size_t)npix);
-    if (!buf || !nulls) { free(buf); free(nulls); int s = 0; fits_close_file(fptr, &s); return -2; }
+    if (!buf || !nulls) { free(buf); free(nulls); int s = 0; fits_close_file(fptr, &s); return FITSSHIM_ERR_ALLOC; }
 
     // fpixel needs one entry per axis of the HDU, not a hardcoded 2. The old
     // code passed a 2-element array to an HDU that could have 3+ axes, so
@@ -175,7 +252,8 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
 int fitsshim_image_hdus(const char *path, long *indices, int max_indices) {
     fitsfile *fptr = NULL;
     int status = 0;
-    if (fits_open_file(&fptr, path, READONLY, &status)) return -status;
+    int guard = open_guarded(&fptr, path, &status);
+    if (guard) return guard == FITSSHIM_ERR_COMPRESSED ? guard : -status;
     int nhdus = 0, found = 0;
     fits_get_num_hdus(fptr, &nhdus, &status);
     for (int i = 1; i <= nhdus; i++) {
@@ -198,7 +276,8 @@ int fitsshim_image_hdus(const char *path, long *indices, int max_indices) {
 int fitsshim_image_planes(const char *path, long hdu) {
     fitsfile *fptr = NULL;
     int status = 0;
-    if (fits_open_file(&fptr, path, READONLY, &status)) return -status;
+    int guard = open_guarded(&fptr, path, &status);
+    if (guard) return guard == FITSSHIM_ERR_COMPRESSED ? guard : -status;
     int htype = 0;
     fits_movabs_hdu(fptr, (int)hdu + 1, &htype, &status);
     int naxis = 0; status = 0;
@@ -215,7 +294,8 @@ int fitsshim_image_planes(const char *path, long hdu) {
 int fitsshim_header_cards(const char *path, long hdu, char **cards) {
     fitsfile *fptr = NULL;
     int status = 0;
-    if (fits_open_file(&fptr, path, READONLY, &status)) return status;
+    int guard = open_guarded(&fptr, path, &status);
+    if (guard) return guard;
     int htype = 0;
     fits_movabs_hdu(fptr, (int)hdu + 1, &htype, &status);
     char *raw = NULL; int nkeys = 0;
