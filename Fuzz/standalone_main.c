@@ -7,8 +7,11 @@
 #include <stdlib.h>
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
+// Optional, as in libFuzzer: the harness may define it to set up the process once.
+__attribute__((weak)) int LLVMFuzzerInitialize(int *argc, char ***argv);
 
 int main(int argc, char **argv) {
+    if (LLVMFuzzerInitialize) LLVMFuzzerInitialize(&argc, &argv);
     for (int i = 1; i < argc; i++) {
         FILE *f = fopen(argv[i], "rb");
         if (!f) { fprintf(stderr, "cannot open %s\n", argv[i]); return 2; }

@@ -13,7 +13,8 @@
 #                                               # importer harness needs no CFITSIO
 #
 # Everything lands in Fuzz/out/ (git-ignored): the harness binaries
-# Fuzz/out/fitsshim_fuzz and Fuzz/out/fits_header_fuzz, the CFITSIO build, and
+# Fuzz/out/fitsshim_fuzz and Fuzz/out/fits_header_fuzz (plus Fuzz/out/shim_cap_test, the
+# deterministic input-limit test, whenever fitsshim_fuzz is built), the CFITSIO build, and
 # Fuzz/out/corpus/<harness>/ seeded from HelioFITSTests/Fixtures/*.fits and
 # Fuzz/regressions/<harness>/*. Nothing outside Fuzz/out/ is written.
 set -euo pipefail
@@ -89,6 +90,11 @@ if wants fitsshim_fuzz; then
   "$CC" $CFLAGS_FUZZ $SAN_LINK $DEFS -I"$SHIM_DIR" \
     "$ROOT/Fuzz/fitsshim_fuzz.c" $DRIVER "$OUT/fitsshim.o" "$lib" -lz -lm -lpthread \
     -o "$OUT/fitsshim_fuzz"
+  # Deterministic test of the input limit (cap, overflow, gzip/PKZIP, unlimited path).
+  # Same shim object and CFITSIO as the fuzzer, with ASan; run it: Fuzz/out/shim_cap_test
+  "$CC" $CFLAGS_FUZZ -fsanitize=address $DEFS -I"$SHIM_DIR" \
+    "$ROOT/Fuzz/shim_cap_test.c" "$OUT/fitsshim.o" "$lib" -lz -lm -lpthread \
+    -o "$OUT/shim_cap_test"
 fi
 if wants fits_header_fuzz; then
   "$CC" $CFLAGS_FUZZ $SAN_LINK $DEFS -I"$IMPORTER_DIR" \
