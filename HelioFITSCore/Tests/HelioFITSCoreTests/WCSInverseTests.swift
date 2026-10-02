@@ -18,13 +18,13 @@ private func cards(_ pairs: [(String, String)]) -> String {
     }.joined(separator: "\n")
 }
 
-private func header(proj: String, unit: String, cdelt: String, crpix: String,
+private func header(proj: String, unit: String, cdelt: String, crpix: String, crpix2: String? = nil,
                     crval: (String, String) = ("0.0", "0.0"), crota: String? = nil) -> String {
     var c: [(String, String)] = [
         ("CTYPE1", "'HPLN-\(proj)'"), ("CTYPE2", "'HPLT-\(proj)'"),
         ("CUNIT1", "'\(unit)'"), ("CUNIT2", "'\(unit)'"),
         ("CDELT1", cdelt), ("CDELT2", cdelt),
-        ("CRPIX1", crpix), ("CRPIX2", crpix),
+        ("CRPIX1", crpix), ("CRPIX2", crpix2 ?? crpix),
         ("CRVAL1", crval.0), ("CRVAL2", crval.1),
         ("LONPOLE", "180.0"), ("RSUN_OBS", "960.0"),
     ]
@@ -92,7 +92,8 @@ struct WCSInverseTests {
 
     @Test("CAR (plate carree, synoptic maps) matches astropy")
     func car() throws {
-        let w = try wcs(header(proj: "CAR", unit: "deg", cdelt: "0.1", crpix: "1800.5"))
+        // CRPIX = (1800.5, 900.5): a 360 x 180 degree map at 0.1 degrees per pixel.
+        let w = try wcs(header(proj: "CAR", unit: "deg", cdelt: "0.1", crpix: "1800.5", crpix2: "900.5"))
         check(w, [(10800.0, 3600.0, 1830.5, 910.5),
                   (-5000.0, 2000.0, 1786.611111, 906.055556)])
     }
@@ -104,7 +105,7 @@ struct WCSInverseTests {
             header(proj: "TAN", unit: "arcsec", cdelt: "2.4", crpix: "512.5"),
             header(proj: "TAN", unit: "arcsec", cdelt: "0.6", crpix: "2048.5", crota: "12.5"),
             header(proj: "SIN", unit: "arcsec", cdelt: "50.0", crpix: "256.5"),
-            header(proj: "CAR", unit: "deg", cdelt: "0.1", crpix: "1800.5"),
+            header(proj: "CAR", unit: "deg", cdelt: "0.1", crpix: "1800.5", crpix2: "900.5"),
         ]
         for h in headers {
             let w = try wcs(h)

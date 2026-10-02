@@ -234,7 +234,8 @@ struct CompareModelTests {
 
     @Test("rings: on only when the page has them; a frame without WCS refuses the toggle")
     func ringsToggle() throws {
-        let withWCS = try model(extra: wcsCards(natCdelt: "1.0", crpix: "4.5"))
+        // 8 px at 200 arcsec: the corners are 1131 arcsec out, so the 0.5 and 1 R_sun rings (960 arcsec Sun) cross it.
+        let withWCS = try model(extra: wcsCards(natCdelt: "200.0", crpix: "4.5"))
         let without = try model(extra: [])
         #expect(withWCS.hasRings)
         #expect(withWCS.toggleRings() && withWCS.ringsOn)

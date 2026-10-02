@@ -417,21 +417,26 @@ public enum FITSRenderer {
                 let a = tx / 3600 * d2r, d = ty / 3600 * d2r
                 let a0 = cv1 * d2r, d0 = cv2 * d2r
                 let da = a - a0
-                // Native latitude of the point, and its longitude measured from the native meridian.
+                // The point's native coordinates. cos(theta) is taken from the vector
+                // (cx, cy) = cos(theta) * (cos, sin)(phi - lonpole) rather than from asin
+                // of sin(theta): near the fiducial point sin(theta) is within 1e-10 of 1
+                // and asin would throw away the small-angle precision (a 4 arcsec field).
                 let sinTheta = sin(d) * sin(d0) + cos(d) * cos(d0) * cos(da)
-                let theta = asin(max(-1, min(1, sinTheta)))
-                let dphi = atan2(-cos(d) * sin(da), sin(d) * cos(d0) - cos(d) * sin(d0) * cos(da))
+                let cy = -cos(d) * sin(da)
+                let cx = sin(d) * cos(d0) - cos(d) * sin(d0) * cos(da)
+                let cosTheta = (cx * cx + cy * cy).squareRoot()
+                let dphi = atan2(cy, cx)
                 let phi = dphi + lonpole * d2r
                 let r: Double                                   // degrees from the reference pixel
                 switch proj {
                 case "TAN":
-                    guard theta > 1e-9 else { return nil }
-                    r = cos(theta) / sin(theta) / d2r
+                    guard sinTheta > 1e-9 else { return nil }
+                    r = cosTheta / sinTheta / d2r
                 case "ARC":
-                    r = 90 - theta / d2r
+                    r = atan2(cosTheta, sinTheta) / d2r         // 90 - theta, without cancellation
                 case "SIN":
-                    guard theta >= 0 else { return nil }
-                    r = cos(theta) / d2r
+                    guard sinTheta >= 0 else { return nil }
+                    r = cosTheta / d2r
                 default:
                     return nil
                 }

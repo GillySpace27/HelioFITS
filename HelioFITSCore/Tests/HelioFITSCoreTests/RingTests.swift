@@ -108,17 +108,17 @@ struct RingTests {
         #expect(r.spokes.allSatisfy { !$0.segments.isEmpty })
     }
 
-    @Test("the 1 R_sun ring starts where astropy puts PA 0, in normalized coordinates")
+    @Test("the innermost ring starts where astropy puts PA 0, in normalized coordinates")
     func normalizedCoordinates() throws {
         let w = try #require(FITSRenderer.solarWCS(cards: punchCards, isSolar: true))
         let r = try #require(SolarRings.make(wcs: w, natW: 4096, natH: 4096))
-        let ring = try #require(r.rings.first(where: { $0.k == 1 }))
+        let ring = try #require(r.rings.first)
+        #expect(ring.k == 0.5 && ring.label == "0.5 R☉")
         let first = try #require(ring.segments.first?.first)
-        // astropy pixel (2048.0, 2059.6936) -> u = (fx - 0.5) / W, v = (H + 0.5 - fy) / H
+        // astropy pixel (2048.0, 2053.84676002) -> u = (fx - 0.5) / W, v = (H + 0.5 - fy) / H
         #expect(abs(first.x - (2048.0 - 0.5) / 4096) < 1e-6)
-        #expect(abs(first.y - (4096 + 0.5 - 2059.6936) / 4096) < 1e-6)
-        #expect(ring.label == "1 R☉")
-        #expect(SolarRings.label(k: 0.5) == "0.5 R☉")
+        #expect(abs(first.y - (4096 + 0.5 - 2053.84676002) / 4096) < 1e-6)
+        #expect(SolarRings.label(k: 1) == "1 R☉")
     }
 
     @Test("a narrow frame gets only the rings that cross it")
