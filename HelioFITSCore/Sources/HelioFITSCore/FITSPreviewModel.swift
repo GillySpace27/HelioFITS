@@ -55,6 +55,15 @@ public final class FITSPreviewModel {
     public var cur = 0
     public var mode: Mode = .plain
     public var limbOn = false
+    /// Plane-of-sky radius rings and position-angle spokes over the image (HF-15).
+    /// Only meaningful when `hasRings`; the toggle refuses otherwise.
+    public var ringsOn = false
+    /// The second file of a compare (HF-15) and how it is shown. Set through
+    /// `setCompare(model:mode:)`; the logic lives in FITSPreviewModel+Compare.swift.
+    public internal(set) var compareModel: FITSPreviewModel?
+    public internal(set) var compareMode: CompareMode?
+    /// The last registered second image, kept until the inputs change.
+    var registeredCache: (key: String, image: CGImage?)?
     public var stretch = (lo: 0.5, hi: 99.5, gamma: 0.5, log: false) {
         didSet {
             // Moving a percentile slider hands control back to the percentile rule;
