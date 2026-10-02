@@ -4,32 +4,50 @@
 #
 #   scripts/bump-version.sh <VER> <BUILD>        e.g. scripts/bump-version.sh 1.4.1 11
 #
-# Refuses a build number that is not above the newest v<VER>-build.<N> tag (App
-# Store Connect rejects a reused one only after the archive is made). Edits the
+# Refuses (before touching anything) a VER that is not plain x.y.z or is below the
+# newest v<VER>-build.<N> tag's version, and a BUILD that is not a positive integer
+# without a leading zero or is not above both the newest tag's build and the current
+# CURRENT_PROJECT_VERSION (App Store Connect rejects a reused build only after the
+# archive is made). Edits the
 # two setting lines and nothing else. Commits, tags and pushes nothing: it prints
 # those commands. The iOS project keeps its own version until Gilly decides (map Q3).
 #
-# Exit 0 done; 1 refused (build not above the newest tag, or the xcconfig is not in
-# its two-line shape); 2 usage error; 3 a mac target did not resolve the new values.
+# Exit 0 done; 1 refused (version or build too low, or the xcconfig is not in its
+# two-line shape); 2 usage error (VER or BUILD malformed); 3 a mac target did not resolve the new values.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 XCC="Config/Version.xcconfig"
 PROJ="HelioFITS.xcodeproj"
 
-usage() { echo "usage: scripts/bump-version.sh <VER> <BUILD>   (VER like 1.4.1, BUILD a whole number)" >&2; exit 2; }
+usage() { echo "usage: scripts/bump-version.sh <VER> <BUILD>   (VER like 1.4.1, BUILD a whole number without a leading zero)" >&2; exit 2; }
 [ $# -eq 2 ] || usage
 VER="$1"; BUILD="$2"
-[[ "$VER" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]] || usage
-[[ "$BUILD" =~ ^[0-9]+$ ]] || usage
+[[ "$VER" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || usage
+[[ "$BUILD" =~ ^[1-9][0-9]*$ ]] || usage
+
+# Compare dotted versions numerically; a two-part tag such as v1.2-build.6 counts as 1.2.0.
+ver_lt() {   # true when $1 < $2
+    local IFS=. a b i
+    read -r -a a <<< "$1"; read -r -a b <<< "$2"
+    for i in 0 1 2; do
+        if [ "${a[i]:-0}" -lt "${b[i]:-0}" ]; then return 0; fi
+        if [ "${a[i]:-0}" -gt "${b[i]:-0}" ]; then return 1; fi
+    done
+    return 1
+}
 
 # Newest release tag by build number.
-MAX=0; NEWEST="(none)"
+MAX=0; NEWEST="(none)"; NEWEST_VER=""
 while IFS= read -r t; do
-    if [[ "$t" =~ ^v[0-9][0-9.]*-build\.([0-9]+)$ ]] && [ "${BASH_REMATCH[1]}" -gt "$MAX" ]; then
-        MAX="${BASH_REMATCH[1]}"; NEWEST="$t"
+    if [[ "$t" =~ ^v([0-9][0-9.]*)-build\.([0-9]+)$ ]] && [ "${BASH_REMATCH[2]}" -gt "$MAX" ]; then
+        MAX="${BASH_REMATCH[2]}"; NEWEST="$t"; NEWEST_VER="${BASH_REMATCH[1]}"
     fi
 done < <(git tag -l 'v*-build.*')
+if [ -n "$NEWEST_VER" ] && ver_lt "$VER" "$NEWEST_VER"; then
+    echo "REFUSING: version $VER is below $NEWEST_VER ($NEWEST); a release never goes backwards." >&2
+    exit 1
+fi
 if [ "$BUILD" -le "$MAX" ]; then
     echo "REFUSING: build $BUILD is not above $MAX ($NEWEST); App Store Connect rejects a reused build number. Use $((MAX + 1)) or higher." >&2
     exit 1
@@ -44,6 +62,10 @@ if [ "$nv" -ne 1 ] || [ "$nb" -ne 1 ]; then
 fi
 OLD_VER="$(awk 'sub(/^MARKETING_VERSION = /, "") { print; exit }' "$XCC")"
 OLD_BUILD="$(awk 'sub(/^CURRENT_PROJECT_VERSION = /, "") { print; exit }' "$XCC")"
+if [ "$BUILD" -le "$OLD_BUILD" ]; then
+    echo "REFUSING: build $BUILD is not above the current CURRENT_PROJECT_VERSION $OLD_BUILD in $XCC. Use $((OLD_BUILD + 1)) or higher." >&2
+    exit 1
+fi
 
 tmp="$(mktemp "${TMPDIR:-/tmp}/bump-version.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT
