@@ -23,6 +23,7 @@ struct CallbackSubscriberTests {
     /// onZoomChanged waits on Gilly's call (register question 15): wire it, or keep it here.
     static let allowlist: [String: String] = [
         "onZoomChanged": "canvas refreshes its own readout after firing (L382, L446); no host needs it yet",
+        "onCompareChanged": "compare is a viewer-window feature (the Quick Look extension cannot open a second file); HelioFITS/HeaderViewer.swift does subscribe",
     ]
 
     /// Where FITSImageCanvas lives. HF-7 moves it to HelioFITSMacUI/; the first file that exists wins.

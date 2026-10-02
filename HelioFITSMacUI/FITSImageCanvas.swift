@@ -15,7 +15,7 @@
 //      fit (1x)     measure a region     measure       ✛ crosshair
 //      zoomed in    pan                  measure       ✋ / ✊ open-closed hand
 //
-//  Pan is meaningless at fit — there is nothing to pan to — so a plain drag
+//  Pan is meaningless at fit - there is nothing to pan to - so a plain drag
 //  measures there; once you zoom in, a plain drag pans, as in every image
 //  viewer. The on-screen hint re-states the current gestures, and reappears
 //  while ⌘ is held.
@@ -49,8 +49,26 @@ final class FITSImageCanvas: NSView {
     /// reserves no space. Hosts set it from `FITSPreviewModel.colorbar()` on every
     /// refresh, before asking for `idealSize()`.
     var colorbar: Colorbar? { didSet { needsDisplay = true } }
+
+    // MARK: compare and rings (HF-15)
+    /// Rings and spokes to draw over the image; nil draws none.
+    var rings: SolarRings? { didSet { needsDisplay = true } }
+    /// The second file, already registered onto this image's grid by helioprojective
+    /// coordinates (`FITSPreviewModel.registeredCompareImage`), and how it is shown.
+    var compareImage: NSImage? { didSet { updateBlinkTimer(); needsDisplay = true } }
+    var compareMode: FITSPreviewModel.CompareMode? { didSet { updateBlinkTimer(); needsDisplay = true } }
+    /// Where the swipe divider sits, as a fraction of the image area's width.
+    var swipeFraction: CGFloat = 0.5 { didSet { needsDisplay = true } }
+    /// Blink: which image is up, and whether the timer is running. Blink has an off
+    /// switch (`blinkPaused`), and does not start by itself when the system asks for
+    /// reduced motion; an option-click on the image flips it by hand in either case.
+    private(set) var blinkShowsSecond = false
+    var blinkPaused = false { didSet { updateBlinkTimer() } }
+    private var blinkTimer: Timer?
+    private var swipeDragging = false
+    private let compareGap: CGFloat = 6
     /// Column/compact pane hides the toolbar (Finder won't deliver clicks there).
-    /// When set, the gesture hint stays up and names the way out — otherwise the
+    /// When set, the gesture hint stays up and names the way out - otherwise the
     /// pane reads as a dead, non-interactive image (panel feedback).
     var compactMode = false { didSet { needsDisplay = true } }
     /// Selection in normalized image coords (0…1, top-left origin) so it stays
@@ -62,13 +80,16 @@ final class FITSImageCanvas: NSView {
     var onHover: ((Double, Double)?) -> Void = { _ in }     // normalized, or nil
     var onRegion: (((u0: Double, v0: Double, u1: Double, v1: Double)?) -> Void)?
     var onZoomChanged: (() -> Void)?
+    /// Fired when the compare view changes without a mouse event over the image:
+    /// the blink flips, or the swipe divider is dragged. Hosts re-sample the readout.
+    var onCompareChanged: (() -> Void)?
 
     // MARK: accessibility
     //
     // Everything here is drawn, not built from controls, so VoiceOver sees one
     // roleless view unless we say otherwise. The caption already names the HDU,
     // instrument, wavelength and dimensions, and the readout already carries the
-    // pixel value and helioprojective coordinate — expose those rather than
+    // pixel value and helioprojective coordinate - expose those rather than
     // inventing a second description that could drift from what is on screen.
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .image }
@@ -100,7 +121,7 @@ final class FITSImageCanvas: NSView {
 
     /// What a plain drag does *right now*.
     ///
-    /// Pan is meaningless at fit — there is nothing to pan to — so a plain drag
+    /// Pan is meaningless at fit - there is nothing to pan to - so a plain drag
     /// measures. Once you zoom in, a plain drag pans, which is what every image
     /// viewer does; hold ⌘ then to measure instead. The cursor always says which.
     enum DragMode { case measure, pan }
@@ -133,7 +154,7 @@ final class FITSImageCanvas: NSView {
         // hover and no modifier keys there, so advertising drag-to-measure or
         // ⌥-scroll is false; and the full string measured 728 pt in a pane that
         // is by definition under 380, so it was drawn clipped off the left edge
-        // with "press Space" — the only actionable part — entirely off-screen.
+        // with "press Space" - the only actionable part - entirely off-screen.
         if compactMode {
             return pageCount > 1 ? "press Space  ·  scroll to blink layers" : "press Space"
         }
@@ -166,7 +187,7 @@ final class FITSImageCanvas: NSView {
         super.viewDidMoveToWindow()
         guard window != nil, flagsMonitor == nil else { return }
         // ⌘ can be pressed with the mouse perfectly still, which produces no
-        // mouse event at all — watch the modifier itself so the cursor and the
+        // mouse event at all - watch the modifier itself so the cursor and the
         // hint update the instant the key goes down, not on the next wiggle.
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] e in
             guard let self else { return e }
@@ -179,7 +200,43 @@ final class FITSImageCanvas: NSView {
         }
     }
 
-    deinit { if let m = flagsMonitor { NSEvent.removeMonitor(m) } }
+    deinit {
+        if let m = flagsMonitor { NSEvent.removeMonitor(m) }
+        blinkTimer?.invalidate()
+    }
+
+    private func updateBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
+        guard compareMode == .blink, compareImage != nil, !blinkPaused,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.9, repeats: true) { [weak self] _ in
+            self?.flipBlink()
+        }
+    }
+
+    private func flipBlink() {
+        blinkShowsSecond.toggle()
+        needsDisplay = true
+        onCompareChanged?()
+    }
+
+    /// X of the swipe divider in view coordinates.
+    private func swipeDividerX() -> CGFloat {
+        let c = contentBox()
+        return c.minX + swipeFraction * c.width
+    }
+
+    /// How far the second panel sits to the right of the first in a side-by-side compare.
+    private var comparePanelShift: CGFloat { contentBox().width + compareGap }
+
+    /// A pointer position in the second side-by-side panel, expressed in the first
+    /// panel's coordinates, so every gesture works on either side.
+    private func canvasPoint(_ p: NSPoint) -> NSPoint {
+        guard compareMode == .sideBySide, compareImage != nil,
+              p.x >= contentBox().maxX + compareGap / 2 else { return p }
+        return NSPoint(x: p.x - comparePanelShift, y: p.y)
+    }
 
     override init(frame f: NSRect) {
         super.init(frame: f)
@@ -190,7 +247,7 @@ final class FITSImageCanvas: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = tracking { removeTrackingArea(t) }
-        // .activeAlways — a hosted preview never becomes the key window.
+        // .activeAlways - a hosted preview never becomes the key window.
         let t = NSTrackingArea(rect: bounds,
                                options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
                                owner: self, userInfo: nil)
@@ -200,7 +257,7 @@ final class FITSImageCanvas: NSView {
 
     // MARK: geometry
 
-    /// Caption text style — centred and word-wrapping so a long HDU/EXTNAME name
+    /// Caption text style - centred and word-wrapping so a long HDU/EXTNAME name
     /// stays fully readable even in a narrow Get Info / column-pane preview.
     private var captionAttrs: [NSAttributedString.Key: Any] {
         let para = NSMutableParagraphStyle()
@@ -218,7 +275,7 @@ final class FITSImageCanvas: NSView {
             .boundingRect(with: NSSize(width: bounds.width - 12, height: 1000),
                           options: [.usesLineFragmentOrigin, .usesFontLeading])
         // boundingRect under-measures the last fragment vs the leading draw(in:)
-        // actually uses, clipping the final line — pad by a line's worth.
+        // actually uses, clipping the final line - pad by a line's worth.
         return ceil(r.height) + 4
     }
 
@@ -238,12 +295,14 @@ final class FITSImageCanvas: NSView {
     /// Area available to the image.
     private func contentBox() -> NSRect {
         let i = chromeInsets
+        var w = max(1, bounds.width - i.left - i.right)
+        if compareMode == .sideBySide, compareImage != nil { w = max(1, (w - compareGap) / 2) }
         return NSRect(x: i.left, y: i.top,
-                      width: max(1, bounds.width - i.left - i.right),
+                      width: w,
                       height: max(1, bounds.height - i.top - i.bottom))
     }
 
-    /// The canvas size at which the image fills exactly — no letterboxing.
+    /// The canvas size at which the image fills exactly - no letterboxing.
     /// Hosts hand this to Quick Look via `preferredContentSize` (Quick Look
     /// sizes the preview panel to the content; without it the panel keeps a
     /// default shape and a square Sun sits inside dark pillars).
@@ -288,7 +347,7 @@ final class FITSImageCanvas: NSView {
 
     // MARK: keyboard
     //
-    // The preview was mouse-only — no way to blink layers, zoom, or read the
+    // The preview was mouse-only - no way to blink layers, zoom, or read the
     // pixel value without a pointing device (panel: the #1 gap for both the
     // keyboard-first and the VoiceOver tester). Arrows blink layers, ⌘ +/−/0
     // zoom, ⌘C copies the current readout, "?" re-shows the gesture hint. The
@@ -351,7 +410,7 @@ final class FITSImageCanvas: NSView {
     }
 
     @objc private func pinch(_ g: NSMagnificationGestureRecognizer) {
-        let p = g.location(in: self)
+        let p = canvasPoint(g.location(in: self))
         setZoom(zoom * (1 + g.magnification), about: p)
         g.magnification = 0
     }
@@ -359,7 +418,7 @@ final class FITSImageCanvas: NSView {
     // MARK: events
 
     override func scrollWheel(with e: NSEvent) {
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
         let now = Date()
 
         // Scrolling DOWN advances to the next HDU (like paging down a document),
@@ -406,14 +465,15 @@ final class FITSImageCanvas: NSView {
     }
 
     override func magnify(with e: NSEvent) {
-        setZoom(zoom * (1 + e.magnification), about: convert(e.locationInWindow, from: nil))
+        setZoom(zoom * (1 + e.magnification), about: canvasPoint(convert(e.locationInWindow, from: nil)))
     }
 
     override func mouseMoved(with e: NSEvent) {
         mouseInside = true
         cmdDown = e.modifierFlags.contains(.command)
         cursorForMode.set()
-        lastPointer = convert(e.locationInWindow, from: nil)
+        lastPointer = canvasPoint(convert(e.locationInWindow, from: nil))
+        if compareMode != nil { needsDisplay = true }          // the linked crosshair follows the pointer
         guard dragStart == nil, panStart == nil else { return }
         onHover(normalized(lastPointer!))
     }
@@ -439,7 +499,17 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseDown(with e: NSEvent) {
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
+        if compareMode == .swipe, compareImage != nil, abs(p.x - swipeDividerX()) < 8,
+           contentBox().contains(p) {
+            swipeDragging = true                          // the divider, not a measurement
+            return
+        }
+        if compareMode == .blink, compareImage != nil, e.clickCount == 1,
+           imageRect()?.contains(p) == true, dragMode == .measure, e.modifierFlags.contains(.option) {
+            flipBlink()                                   // option-click flips by hand
+            return
+        }
         if e.clickCount == 2 { resetZoom(); return }
         cmdDown = e.modifierFlags.contains(.command)
         guard imageRect()?.contains(p) == true else { return }
@@ -451,7 +521,13 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseDragged(with e: NSEvent) {
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
+        if swipeDragging {
+            let c = contentBox()
+            swipeFraction = min(max((p.x - c.minX) / c.width, 0), 1)
+            onCompareChanged?()
+            return
+        }
         lastPointer = p
         if let s = panStart {
             pan = CGPoint(x: s.pan.x + (p.x - s.mouse.x), y: s.pan.y + (p.y - s.mouse.y))
@@ -467,10 +543,11 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseUp(with e: NSEvent) {
+        if swipeDragging { swipeDragging = false; return }
         let wasPanning = panStart != nil
         defer { dragStart = nil; panStart = nil; stateChanged() }
         guard !wasPanning, let s = dragStart else { return }
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
         if abs(p.x - s.x) + abs(p.y - s.y) < 8 {          // a click clears
             selection = nil
             onRegion?(nil)
@@ -493,7 +570,76 @@ final class FITSImageCanvas: NSView {
         if let cb = colorbar, colorbarStripWidth > 0 { drawColorbar(cb) }
 
         guard let img = image, let box = imageRect() else { return }
+        // Compare: the second image is registered onto the first's grid by
+        // helioprojective coordinates, so every mode draws it with the SAME geometry.
+        let second = compareMode == nil ? nil : compareImage
+        switch compareMode {
+        case .some(.blink) where second != nil:
+            drawPanel(blinkShowsSecond ? second! : img, box: box, shift: 0, swipeOver: nil)
+        case .some(.swipe) where second != nil:
+            drawPanel(img, box: box, shift: 0, swipeOver: second)
+        case .some(.sideBySide) where second != nil:
+            drawPanel(img, box: box, shift: 0, swipeOver: nil)
+            drawPanel(second!, box: box, shift: comparePanelShift, swipeOver: nil)
+        default:
+            drawPanel(img, box: box, shift: 0, swipeOver: nil)
+        }
+        if second != nil { drawCompareBadges() }
+
+        if isZoomed {
+            // Bottom-LEFT: top-right now belongs to the statistics card, and the
+            // top strip already holds the caption.
+            chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
+                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+        }
+        if let t = readout {
+            // The readout IS the product for a scientist - it was the smallest type
+            // on screen. Bumped to 13pt (panel feedback: unreadable at 11).
+            // Pinned to the top-left of the image area: the readout is two lines
+            // and grows with the value, so at the bottom it collided with the
+            // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
+            // below the caption strip, so this clears that too.
+            chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
+                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+                 anchorTop: true)
+        }
+        // The hint describes the gestures available RIGHT NOW. It also reappears
+        // while ⌘ is held - that is the moment you are asking "what does this do?"
+        // The readout is top-left and the hint is bottom-centre, so they cannot
+        // collide; suppressing the hint whenever a readout was live meant the
+        // flash on zoom never appeared at all, because zooming requires the
+        // pointer to be over the image.
+        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
+            let s = NSAttributedString(string: h, attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
+            var sz = s.size()
+            sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
+            // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
+            // is pinned to the bottom of the host. The hint used to be drawn
+            // straight over those controls. The column pane hides the toolbar,
+            // so there it can sit low.
+            let toolbarClearance: CGFloat = compactMode ? 14 : 56
+            let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
+                           y: bounds.height - sz.height - toolbarClearance,
+                           width: sz.width + 20, height: sz.height + 7)
+            NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
+            NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
+            s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
+                              width: sz.width, height: sz.height + 2))
+        }
+    }
+
+    /// One image panel: the image, then every overlay in the SAME geometry. `shift`
+    /// moves the whole panel right (the second panel of a side-by-side compare);
+    /// `swipeOver` is drawn on top to the right of the swipe divider.
+    private func drawPanel(_ img: NSImage, box: NSRect, shift: CGFloat, swipeOver: NSImage?) {
         NSGraphicsContext.current?.saveGraphicsState()
+        if shift != 0 {
+            let t = NSAffineTransform()
+            t.translateX(by: shift, yBy: 0)
+            t.concat()
+        }
         NSBezierPath(rect: contentBox()).setClip()        // zoomed image must not spill
         NSGraphicsContext.current?.imageInterpolation = zoom > 4 ? .none : .default
         // respectFlipped is REQUIRED: this view is flipped (row 0 at top, which the
@@ -501,8 +647,32 @@ final class FITSImageCanvas: NSView {
         // that and renders the image upside down. Reported by the EUI PI on a file
         // with a polar coronal hole, where the flip is finally visible by eye (#11);
         // a full-disk AIA or PUNCH frame is symmetric enough to hide it.
-        img.draw(in: box, from: .zero, operation: .copy, fraction: 1,
+        // A registered compare image is transparent outside its footprint, so lay the
+        // background down first and composite over it (opaque images look the same).
+        NSColor(calibratedWhite: 0.07, alpha: 1).setFill()
+        contentBox().fill()
+        img.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
                  respectFlipped: true, hints: nil)
+
+        if let over = swipeOver {
+            NSGraphicsContext.current?.saveGraphicsState()
+            let x = swipeDividerX()
+            let c = contentBox()
+            NSBezierPath(rect: NSRect(x: x, y: c.minY, width: max(0, c.maxX - x), height: c.height)).setClip()
+            over.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
+                      respectFlipped: true, hints: nil)
+            NSGraphicsContext.current?.restoreGraphicsState()
+            NSColor(calibratedWhite: 1, alpha: 0.9).setFill()
+            NSRect(x: x - 0.5, y: c.minY, width: 1, height: c.height).fill()
+            let grip = NSBezierPath(roundedRect: NSRect(x: x - 5, y: c.midY - 14, width: 10, height: 28),
+                                    xRadius: 4, yRadius: 4)
+            NSColor(calibratedWhite: 0.1, alpha: 0.85).setFill()
+            grip.fill()
+            NSColor(calibratedWhite: 1, alpha: 0.9).setStroke()
+            grip.lineWidth = 1
+            grip.stroke()
+        }
+
 
         if let l = limb, natSize.width > 0, l.r > 0 {
             let sx = box.width / natSize.width
@@ -537,49 +707,90 @@ final class FITSImageCanvas: NSView {
             NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 1).setStroke()
             p.stroke()
         }
-        NSGraphicsContext.current?.restoreGraphicsState()
 
-        if isZoomed {
-            // Bottom-LEFT: top-right now belongs to the statistics card, and the
-            // top strip already holds the caption.
-            chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
-                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+        if let r = rings { drawRings(r) }
+        drawCrosshair()
+        NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    /// Rings and spokes from the solar WCS. Dark underline, then colour on top, like
+    /// the limb, so the lines read over corona and over black sky.
+    private func drawRings(_ r: SolarRings) {
+        func path(_ segments: [[CGPoint]]) -> NSBezierPath {
+            let p = NSBezierPath()
+            for seg in segments {
+                guard let first = seg.first, let a = viewPoint(u: Double(first.x), v: Double(first.y)) else { continue }
+                p.move(to: a)
+                for q in seg.dropFirst() {
+                    if let b = viewPoint(u: Double(q.x), v: Double(q.y)) { p.line(to: b) }
+                }
+            }
+            return p
         }
-        if let t = readout {
-            // The readout IS the product for a scientist — it was the smallest type
-            // on screen. Bumped to 13pt (panel feedback: unreadable at 11).
-            // Pinned to the top-left of the image area: the readout is two lines
-            // and grows with the value, so at the bottom it collided with the
-            // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
-            // below the caption strip, so this clears that too.
-            chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
-                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
-                 anchorTop: true)
+        let ink = NSColor(calibratedRed: 0.55, green: 0.85, blue: 1, alpha: 0.95)
+        for sp in r.spokes {
+            let p = path(sp.segments)
+            p.lineWidth = 2.5
+            NSColor(calibratedWhite: 0, alpha: 0.5).setStroke()
+            p.stroke()
+            let q = path(sp.segments)
+            q.lineWidth = 0.8
+            q.setLineDash([3, 4], count: 2, phase: 0)
+            ink.withAlphaComponent(0.8).setStroke()
+            q.stroke()
         }
-        // The hint describes the gestures available RIGHT NOW. It also reappears
-        // while ⌘ is held — that is the moment you are asking "what does this do?"
-        // The readout is top-left and the hint is bottom-centre, so they cannot
-        // collide; suppressing the hint whenever a readout was live meant the
-        // flash on zoom never appeared at all, because zooming requires the
-        // pointer to be over the image.
-        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
-            let s = NSAttributedString(string: h, attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
-            var sz = s.size()
-            sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
-            // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
-            // is pinned to the bottom of the host. The hint used to be drawn
-            // straight over those controls. The column pane hides the toolbar,
-            // so there it can sit low.
-            let toolbarClearance: CGFloat = compactMode ? 14 : 56
-            let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
-                           y: bounds.height - sz.height - toolbarClearance,
-                           width: sz.width + 20, height: sz.height + 7)
-            NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
-            NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
-            s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
-                              width: sz.width, height: sz.height + 2))
+        for ring in r.rings {
+            let p = path(ring.segments)
+            p.lineWidth = 3.5
+            NSColor(calibratedWhite: 0, alpha: 0.6).setStroke()
+            p.stroke()
+            let q = path(ring.segments)
+            q.lineWidth = 1.2
+            ink.setStroke()
+            q.stroke()
+            if let at = ring.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
+                chip(ring.label, at: v, font: .monospacedSystemFont(ofSize: 10, weight: .regular))
+            }
+        }
+        for sp in r.spokes {
+            if let at = sp.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
+                chip(String(format: "%.0f\u{00B0}", sp.positionAngleDegrees), at: v,
+                     font: .monospacedSystemFont(ofSize: 9, weight: .regular))
+            }
+        }
+    }
+
+    /// Linked crosshair at the pointer, drawn in every compare panel (the registered
+    /// images share one geometry, so one position is the same Sun feature in all).
+    private func drawCrosshair() {
+        guard compareMode != nil, compareImage != nil, mouseInside, let lp = lastPointer,
+              let n = normalized(lp), let c = viewPoint(u: n.u, v: n.v), let box = imageRect() else { return }
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: box.minX, y: c.y)); p.line(to: NSPoint(x: box.maxX, y: c.y))
+        p.move(to: NSPoint(x: c.x, y: box.minY)); p.line(to: NSPoint(x: c.x, y: box.maxY))
+        p.lineWidth = 0.8
+        NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 0.7).setStroke()
+        p.stroke()
+    }
+
+    /// "A" and "B" tags so it is always clear which file is being looked at.
+    private func drawCompareBadges() {
+        let c = contentBox()
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+        switch compareMode {
+        case .some(.blink):
+            chip(blinkShowsSecond ? "B" : "A", at: NSPoint(x: c.maxX - 8, y: c.minY + 8), font: font,
+                 rightAligned: true, anchorTop: true)
+        case .some(.swipe):
+            let x = swipeDividerX()
+            chip("A", at: NSPoint(x: x - 12, y: c.minY + 8), font: font, rightAligned: true, anchorTop: true)
+            chip("B", at: NSPoint(x: x + 12, y: c.minY + 8), font: font, anchorTop: true)
+        case .some(.sideBySide):
+            chip("A", at: NSPoint(x: c.maxX - 8, y: c.minY + 8), font: font, rightAligned: true, anchorTop: true)
+            chip("B", at: NSPoint(x: c.maxX + comparePanelShift - 8, y: c.minY + 8),
+                 font: font, rightAligned: true, anchorTop: true)
+        case .none:
+            break
         }
     }
 

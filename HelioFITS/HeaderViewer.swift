@@ -177,6 +177,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let canvas = FITSImageCanvas()
         let stats = FITSStatsCard()
         var tools: FITSToolbar!
+        lazy var compare = FITSCompareController(model: { [unowned self] in self.model },
+                                                 canvas: self.canvas,
+                                                 refresh: { [unowned self] in self.onCompareRefresh() })
+        var onCompareRefresh: () -> Void = {}
         let popup = NSPopUpButton()
         let save = NSButton()
         let copy = NSButton()
@@ -319,7 +323,17 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.onHover = { [weak c] n in
             guard let c else { return }
             c.canvas.readout = n.flatMap { c.model.readout(u: $0.0, v: $0.1) }
+            // Compare: the same place on the Sun in the second file, or why there is none.
+            if let n, let extra = c.model.compareReadout(u: n.0, v: n.1) {
+                c.canvas.readout = [c.canvas.readout, extra].compactMap { $0 }.joined(separator: "\n")
+            }
             c.canvas.needsDisplay = true
+        }
+        // Blink flips and swipe drags change what is under a stationary pointer.
+        c.canvas.onCompareChanged = { [weak c] in c?.canvas.refreshReadout() }
+        c.onCompareRefresh = { [weak self, weak c] in
+            guard let self, let c else { return }
+            self.refresh(c)
         }
         c.canvas.onRegion = { [weak self, weak c] r in
             guard let self, let c else { return }
@@ -343,7 +357,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                               diffSel: #selector(toggleDiff(_:)), tuneSel: #selector(toggleTune(_:)),
                               stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)),
                               filterSel: #selector(filterChanged(_:)),
-                              limitsSel: #selector(limitsChanged(_:)))
+                              limitsSel: #selector(limitsChanged(_:)),
+                              ringsSel: #selector(toggleRings(_:)), compareSel: #selector(compareClicked(_:)))
         let toolStack = c.tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -501,6 +516,17 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         if c.model.toggleDiff() { refresh(c) }
     }
 
+    @objc private func toggleRings(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        if c.model.toggleRings() { refresh(c) }
+    }
+
+    /// The Compare chip opens a menu: pick the second file, the mode, stop.
+    @objc private func compareClicked(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        c.compare.showMenu(relativeTo: s)
+    }
+
     @objc private func toggleTune(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
         if c.model.toggleStretch() { refresh(c) }
@@ -534,6 +560,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.caption = c.model.caption()
         c.canvas.limb = c.model.limbCircle()
         c.canvas.colorbar = c.model.colorbar()
+        c.canvas.rings = c.model.ringsOn ? c.model.rings() : nil
+        // Compare: the second image already lined up on this one's grid. Image first,
+        // then mode, so the canvas never sees a mode with nothing to show.
+        c.canvas.compareImage = c.model.registeredCompareImage().map(NSImage.init)
+        c.canvas.compareMode = c.canvas.compareImage == nil ? nil : c.model.compareMode
         if let p = c.model.page {
             c.canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }

@@ -64,6 +64,9 @@ public final class FITSPreviewModel {
     public internal(set) var compareMode: CompareMode?
     /// The last registered second image, kept until the inputs change.
     var registeredCache: (key: String, image: CGImage?)?
+    /// The last link verdict. Reading the two headers is disk I/O and the verdict is
+    /// asked on every pointer move, so it is kept until a page or file changes.
+    var linkCache: (key: String, status: CompareLink)?
     public var stretch = (lo: 0.5, hi: 99.5, gamma: 0.5, log: false) {
         didSet {
             // Moving a percentile slider hands control back to the percentile rule;

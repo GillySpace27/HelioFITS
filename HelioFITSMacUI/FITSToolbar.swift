@@ -12,6 +12,9 @@ import HelioFITSCore
 /// theirs from here so the controls, tooltips and behaviour can't diverge.
 final class FITSToolbar {
     let limb = NSButton(), diff = NSButton(), tune = NSButton()
+    /// Optional chips (HF-15): present only when the host passes a selector.
+    let rings = NSButton(), compare = NSButton()
+    private let hasRingsChip: Bool, hasCompareChip: Bool
     let filterMenu = NSPopUpButton(frame: .zero, pullsDown: false)
     let panel = NSView()
     let sLo = NSSlider(), sHi = NSSlider(), sG = NSSlider()
@@ -32,7 +35,9 @@ final class FITSToolbar {
     ///   convention from HF-7). The host answers by calling `applyLimits(to:)`.
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
          tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector,
-         limitsSel: Selector? = nil) {
+         limitsSel: Selector? = nil, ringsSel: Selector? = nil, compareSel: Selector? = nil) {
+        self.hasRingsChip = ringsSel != nil
+        self.hasCompareChip = compareSel != nil
         self.limitsSel = limitsSel
         self.limitsTarget = target
         // These float over the image. A standard translucent bezel disappears
@@ -57,6 +62,14 @@ final class FITSToolbar {
         mk(limb, "Limb", "Show the solar limb: the photosphere's edge, from RSUN_OBS", limbSel)
         mk(diff, "Diff", "Running difference: this HDU minus the previous one (how CMEs, waves and dimmings are spotted)", diffSel)
         mk(tune, "Stretch", "Adjust the brightness stretch (percentile clip, gamma, log)", tuneSel)
+        if let ringsSel {
+            mk(rings, "Rings", "Plane-of-sky solar radius rings and position-angle spokes, from the file's solar WCS", ringsSel)
+            rings.setAccessibilityLabel("Show solar radius rings")
+        }
+        if let compareSel {
+            mk(compare, "Compare", "Compare with a second file, lined up by helioprojective coordinates", compareSel)
+            compare.setAccessibilityLabel("Compare with a second file")
+        }
         limb.setAccessibilityLabel("Show solar limb")
         diff.setAccessibilityLabel("Running difference with previous layer")
         tune.setAccessibilityLabel("Adjust brightness stretch")
@@ -249,7 +262,11 @@ final class FITSToolbar {
     }
 
     var stack: NSStackView {
-        let s = NSStackView(views: [filterMenu, limb, diff, tune])
+        var views: [NSView] = [filterMenu, limb]
+        if hasRingsChip { views.append(rings) }
+        views += [diff, tune]
+        if hasCompareChip { views.append(compare) }
+        let s = NSStackView(views: views)
         s.spacing = 6
         return s
     }
@@ -335,10 +352,21 @@ final class FITSToolbar {
         ])
     }
 
+    /// Grey out the Rings chip (do not hide it) when the page cannot have rings, and
+    /// say why in its tooltip.
+    func setRingsGreyed(_ greyed: Bool, on: Bool = false, model: FITSPreviewModel? = nil) {
+        paint(rings, on: on && !greyed, enabled: !greyed)
+        rings.toolTip = greyed
+            ? "Rings need a solar WCS and a known solar radius (RSUN_OBS, RSUN_ARC or DSUN_OBS) in the header"
+            : "Plane-of-sky solar radius rings and position-angle spokes, from the file's solar WCS"
+    }
+
     /// Reflect model state in the controls.
     func sync(model: FITSPreviewModel) {
         paint(limb, on: model.limbOn, enabled: model.hasLimb)
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
+        if hasRingsChip { setRingsGreyed(!model.hasRings, on: model.ringsOn, model: model) }
+        if hasCompareChip { paint(compare, on: model.compareModel != nil, enabled: true) }
         // The stretch composes with a filter rather than being clobbered by it
         // (#14): RHEF sets the ordering, the stretch maps that to the ramp.
         paint(tune, on: model.mode == .stretch, enabled: true)

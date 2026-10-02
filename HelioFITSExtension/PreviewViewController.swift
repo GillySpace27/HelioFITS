@@ -75,7 +75,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb), diffSel: #selector(toggleDiff),
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
                             resetSel: #selector(resetStretch), filterSel: #selector(filterChanged),
-                            limitsSel: #selector(limitsChanged(_:)))
+                            limitsSel: #selector(limitsChanged(_:)), ringsSel: #selector(toggleRings))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -176,6 +176,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     @objc private func toggleLimb() { if model.toggleLimb() { refresh() } }
     @objc private func toggleDiff() { if model.toggleDiff() { refresh() } }
+    @objc private func toggleRings() { if model.toggleRings() { refresh() } }
     @objc private func toggleTune() { if model.toggleStretch() { refresh() } }
     @objc private func filterChanged() { if model.setFilter(tools.readFilter()) { refresh() } }
     @objc private func stretchChanged() {
@@ -208,6 +209,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         canvas.caption = model.caption()
         canvas.limb = compact ? nil : model.limbCircle()
         canvas.colorbar = compact ? nil : model.colorbar()
+        canvas.rings = (model.ringsOn && !compact) ? model.rings() : nil
         if let p = model.page {
             canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }

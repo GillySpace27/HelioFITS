@@ -27,6 +27,8 @@ final class Viewer: ObservableObject, Identifiable {
     @Published var readout: String?
     /// The colorbar for what is on screen (HF-12); nil when there is nothing honest to show.
     @Published var colorbar: Colorbar?
+    /// Rings and spokes to draw (HF-15); nil when off or when the page has none.
+    @Published var rings: SolarRings?
     @Published var loading = true
     @Published var failed = false
 
@@ -58,6 +60,7 @@ final class Viewer: ObservableObject, Identifiable {
         image = model.image()
         caption = model.caption()
         colorbar = model.colorbar(tickCount: 5)
+        rings = model.ringsOn ? model.rings() : nil
         objectWillChange.send()
     }
 
@@ -95,7 +98,7 @@ struct ViewerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 0) {
-                    ZoomCanvas(image: viewer.image, limb: viewer.limb,
+                    ZoomCanvas(image: viewer.image, limb: viewer.limb, rings: viewer.rings,
                                onSample: { viewer.sample(u: $0, v: $1) },
                                onSwipe: { viewer.step($0) })
                     if let bar = viewer.colorbar {
@@ -152,6 +155,11 @@ struct ViewerView: View {
                 Label("Limb", systemImage: "circle.dashed")
             }
             .disabled(!m.hasLimb)
+            Toggle(isOn: Binding(get: { m.ringsOn && m.hasRings },
+                                 set: { if $0 != m.ringsOn, m.toggleRings() { viewer.refresh() } })) {
+                Label("Rings", systemImage: "circle.circle")
+            }
+            .disabled(!m.hasRings)
             Toggle(isOn: Binding(get: { m.mode == .diff }, set: { if $0 != (m.mode == .diff), m.toggleDiff() { viewer.refresh() } })) {
                 Label("Difference", systemImage: "minus.square")
             }
@@ -369,6 +377,7 @@ struct ColorbarStrip: View {
 struct ZoomCanvas: UIViewRepresentable {
     let image: CGImage?
     let limb: (u: Double, v: Double, r: Double)?
+    let rings: SolarRings?
     let onSample: (Double, Double) -> Void
     let onSwipe: (Int) -> Void
 
@@ -382,6 +391,7 @@ struct ZoomCanvas: UIViewRepresentable {
         v.onSample = onSample; v.onSwipe = onSwipe
         if v.imageView.image?.cgImage !== image { v.imageView.image = image.map { UIImage(cgImage: $0) } }
         v.limb = limb
+        v.rings = rings
     }
 }
 
@@ -391,6 +401,9 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     var onSample: ((Double, Double) -> Void)?
     var onSwipe: ((Int) -> Void)?
     var limb: (u: Double, v: Double, r: Double)? { didSet { layoutLimb() } }
+    /// Plane-of-sky rings and spokes (HF-15), drawn like the limb: dark line under a coloured one.
+    var rings: SolarRings? { didSet { layoutRings() } }
+    private let ringsUnder = CAShapeLayer(), ringsOver = CAShapeLayer()
 
     init() {
         super.init(frame: .zero)
@@ -406,6 +419,11 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
         for (l, w, c, dash) in [(limbUnder, 3.5, UIColor.black.withAlphaComponent(0.85), nil),
                                 (limbOver, 1.2, UIColor.white, [6, 5] as [NSNumber]?)] {
             l.fillColor = nil; l.strokeColor = c.cgColor; l.lineWidth = w; l.lineDashPattern = dash
+            imageView.layer.addSublayer(l)
+        }
+        for (l, w, c) in [(ringsUnder, 3.0, UIColor.black.withAlphaComponent(0.6)),
+                          (ringsOver, 1.1, UIColor(red: 0.55, green: 0.85, blue: 1, alpha: 0.95))] {
+            l.fillColor = nil; l.strokeColor = c.cgColor; l.lineWidth = w
             imageView.layer.addSublayer(l)
         }
 
@@ -431,6 +449,7 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
             imageView.frame = bounds
             contentSize = bounds.size
             layoutLimb()
+            layoutRings()
         }
     }
 
@@ -439,6 +458,7 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         // Keep the limb line a constant on-screen width while zooming.
         limbUnder.lineWidth = 3.5 / zoomScale; limbOver.lineWidth = 1.2 / zoomScale
+        ringsUnder.lineWidth = 3.0 / zoomScale; ringsOver.lineWidth = 1.1 / zoomScale
     }
 
     /// The rect the aspect-fitted image occupies, in imageView coordinates.
@@ -457,6 +477,22 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
         let rad = l.r * r.width
         let path = UIBezierPath(ovalIn: CGRect(x: c.x - rad, y: c.y - rad, width: 2 * rad, height: 2 * rad)).cgPath
         limbUnder.path = path; limbOver.path = path
+    }
+
+    /// Rings and spokes as one path in imageView coordinates (normalized u, v scaled by the image rect).
+    private func layoutRings() {
+        guard let rs = rings, imageRect.width > 0 else { ringsUnder.path = nil; ringsOver.path = nil; return }
+        let r = imageRect
+        func pt(_ p: CGPoint) -> CGPoint { CGPoint(x: r.minX + p.x * r.width, y: r.minY + p.y * r.height) }
+        let path = CGMutablePath()
+        for segs in rs.spokes.map(\.segments) + rs.rings.map(\.segments) {
+            for seg in segs {
+                guard let first = seg.first else { continue }
+                path.move(to: pt(first))
+                for q in seg.dropFirst() { path.addLine(to: pt(q)) }
+            }
+        }
+        ringsUnder.path = path; ringsOver.path = path
     }
 
     @objc private func pressed(_ g: UILongPressGestureRecognizer) {

@@ -88,6 +88,7 @@ extension FITSPreviewModel {
         compareModel = model
         compareMode = newMode
         registeredCache = nil
+        linkCache = nil
         return changed
     }
 
@@ -102,9 +103,13 @@ extension FITSPreviewModel {
     public func compareLinkStatus() -> CompareLink? {
         guard let b = compareModel else { return nil }
         guard let pa = page, pa.wcs != nil, let pb = b.page, pb.wcs != nil else { return .noWCS }
+        let key = "\(path)#\(pa.hdu)|\(b.path)#\(pb.hdu)"
+        if let c = linkCache, c.key == key { return c.status }
         let oa = Self.observer(FITSRenderer.cards(path: path, hdu: pa.hdu))
         let ob = Self.observer(FITSRenderer.cards(path: b.path, hdu: pb.hdu))
-        return Self.linkStatus(a: oa, b: ob)
+        let status = Self.linkStatus(a: oa, b: ob)
+        linkCache = (key, status)
+        return status
     }
 
     /// The observer comparison on its own, so it can be tested without files.
