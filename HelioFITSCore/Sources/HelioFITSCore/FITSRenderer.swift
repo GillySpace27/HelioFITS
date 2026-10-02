@@ -398,6 +398,55 @@ public enum FITSRenderer {
             return (tx / d2r * 3600, ty / d2r * 3600)
         }
 
+        /// Helioprojective (Tx, Ty) in arcsec → FITS pixel (1-based, y up): the exact
+        /// inverse of `hpc`, through the same spherical rotation read backwards
+        /// (Calabretta & Greisen 2002, eq. 2 inverted) and the zenithal
+        /// projection's r(theta). nil for a non-finite input, a singular matrix, or
+        /// a point the projection cannot show (TAN and SIN do not reach the far
+        /// hemisphere from the fiducial point). Pinned to astropy in WCSInverseTests.
+        public func pixel(tx: Double, ty: Double) -> (fx: Double, fy: Double)? {
+            guard tx.isFinite, ty.isFinite else { return nil }
+            let d2r = Double.pi / 180
+            let det = m11 * m22 - m12 * m21
+            guard det != 0 else { return nil }
+
+            let x: Double, y: Double
+            if proj == "CAR" {
+                (x, y) = (tx / 3600 - cv1, ty / 3600 - cv2)
+            } else {
+                let a = tx / 3600 * d2r, d = ty / 3600 * d2r
+                let a0 = cv1 * d2r, d0 = cv2 * d2r
+                let da = a - a0
+                // The point's native coordinates. cos(theta) is taken from the vector
+                // (cx, cy) = cos(theta) * (cos, sin)(phi - lonpole) rather than from asin
+                // of sin(theta): near the fiducial point sin(theta) is within 1e-10 of 1
+                // and asin would throw away the small-angle precision (a 4 arcsec field).
+                let sinTheta = sin(d) * sin(d0) + cos(d) * cos(d0) * cos(da)
+                let cy = -cos(d) * sin(da)
+                let cx = sin(d) * cos(d0) - cos(d) * sin(d0) * cos(da)
+                let cosTheta = (cx * cx + cy * cy).squareRoot()
+                let dphi = atan2(cy, cx)
+                let phi = dphi + lonpole * d2r
+                let r: Double                                   // degrees from the reference pixel
+                switch proj {
+                case "TAN":
+                    guard sinTheta > 1e-9 else { return nil }
+                    r = cosTheta / sinTheta / d2r
+                case "ARC":
+                    r = atan2(cosTheta, sinTheta) / d2r         // 90 - theta, without cancellation
+                case "SIN":
+                    guard sinTheta >= 0 else { return nil }
+                    r = cosTheta / d2r
+                default:
+                    return nil
+                }
+                (x, y) = (r * sin(phi), -r * cos(phi))
+            }
+            let fx = cp1 + (m22 * x - m12 * y) / det
+            let fy = cp2 + (-m21 * x + m11 * y) / det
+            return (fx.isFinite && fy.isFinite) ? (fx, fy) : nil
+        }
+
         /// Everything the preview's JS needs — including the limb circle
         /// precomputed here, so no coordinate math is duplicated in JS.
         public var dict: [String: Any] {
@@ -406,6 +455,13 @@ public enum FITSRenderer {
              "lonpole": lonpole, "proj": proj, "rsun": rsun,
              "cx": cx, "cy": cy, "rpx": rpx]
         }
+    }
+
+    /// Inverse of `SolarWCS.hpc`: helioprojective (Tx, Ty) in arcsec to a FITS pixel
+    /// (1-based, y up, fractional). nil when the point cannot be placed. Kept as a
+    /// renderer-level name so hosts and later tasks have one entry point.
+    public static func hpcInverse(tx: Double, ty: Double, wcs: SolarWCS) -> (x: Double, y: Double)? {
+        wcs.pixel(tx: tx, ty: ty).map { (x: $0.fx, y: $0.fy) }
     }
 
     /// Arcsec per CUNIT. CDELT/CRVAL are expressed in CUNIT, which is NOT always

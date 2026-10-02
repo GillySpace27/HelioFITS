@@ -7,7 +7,6 @@
 
 import Testing
 import Foundation
-@testable import HelioFITS
 @testable import HelioFITSCore
 
 @Suite("Colormap matching")
@@ -113,8 +112,7 @@ struct HeaderKeyContractTests {
     /// exactly how the ASPIICS filter branches shipped unable to fire.
     @Test("every keyword the colormap matcher reads is emitted by the shim")
     func matcherKeysAreEmitted() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
+        let root = RepoPaths.root
         let swift = try String(contentsOf: root.appendingPathComponent("HelioFITSCore/Sources/HelioFITSCore/FITSRenderer.swift"),
                                encoding: .utf8)
         let c = try String(contentsOf: root.appendingPathComponent("HelioFITSExtension/cfitsio/fitsshim.c"),
@@ -149,8 +147,7 @@ struct HeaderKeyContractTests {
     /// So check the artefact the app actually links.
     @Test("the BUILT libcfitsio.a contains every keyword the matcher reads")
     func builtLibraryIsCurrent() throws {
-        let root = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent()
+        let root = RepoPaths.root
         let swift = try String(contentsOf: root.appendingPathComponent("HelioFITSCore/Sources/HelioFITSCore/FITSRenderer.swift"),
                                encoding: .utf8)
         let lib = try Data(contentsOf: root.appendingPathComponent("HelioFITSCore/CFITSIO.xcframework/macos-arm64_x86_64/libcfitsio.a"))

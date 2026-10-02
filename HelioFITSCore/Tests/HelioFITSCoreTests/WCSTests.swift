@@ -16,7 +16,6 @@
 //
 
 import Testing
-@testable import HelioFITS
 @testable import HelioFITSCore
 
 /// Build an 80-column FITS card block, the shape CFITSIO's fits_hdr2str returns.

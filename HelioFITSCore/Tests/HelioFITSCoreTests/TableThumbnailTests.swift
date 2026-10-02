@@ -11,7 +11,6 @@
 import Testing
 import Foundation
 import CoreGraphics
-@testable import HelioFITS
 @testable import HelioFITSCore
 
 /// A minimal, valid image-less FITS: a primary header with NAXIS=0 and no data.

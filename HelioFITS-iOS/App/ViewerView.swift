@@ -25,6 +25,10 @@ final class Viewer: ObservableObject, Identifiable {
     @Published var image: CGImage?
     @Published var caption = ""
     @Published var readout: String?
+    /// The colorbar for what is on screen (HF-12); nil when there is nothing honest to show.
+    @Published var colorbar: Colorbar?
+    /// Rings and spokes to draw (HF-15); nil when off or when the page has none.
+    @Published var rings: SolarRings?
     @Published var loading = true
     @Published var failed = false
 
@@ -55,6 +59,8 @@ final class Viewer: ObservableObject, Identifiable {
         model.prefetchFullRes()
         image = model.image()
         caption = model.caption()
+        colorbar = model.colorbar(tickCount: 5)
+        rings = model.ringsOn ? model.rings() : nil
         objectWillChange.send()
     }
 
@@ -92,9 +98,12 @@ struct ViewerView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 0) {
-                    ZoomCanvas(image: viewer.image, limb: viewer.limb,
+                    ZoomCanvas(image: viewer.image, limb: viewer.limb, rings: viewer.rings,
                                onSample: { viewer.sample(u: $0, v: $1) },
                                onSwipe: { viewer.step($0) })
+                    if let bar = viewer.colorbar {
+                        ColorbarStrip(bar: bar).padding(.horizontal, 16).padding(.top, 6)
+                    }
                     Text(viewer.caption)
                         .font(.footnote).foregroundStyle(Color(white: 0.8))
                         .multilineTextAlignment(.center)
@@ -114,7 +123,7 @@ struct ViewerView: View {
         }
         .toolbar { if !viewer.loading && !viewer.failed { bottomBar } }
         .sheet(isPresented: $showStretch) {
-            StretchPanel(viewer: viewer).presentationDetents([.height(320)])
+            StretchPanel(viewer: viewer).presentationDetents([.height(430), .large])
         }
     }
 
@@ -135,18 +144,23 @@ struct ViewerView: View {
             }
             Spacer()
             Menu {
-                Picker("Filter", selection: Binding(get: { m.filter }, set: { m.filter = $0; viewer.refresh() })) {
+                Picker("Filter", selection: Binding(get: { m.filter }, set: { if m.setFilter($0) { viewer.refresh() } })) {
                     Text("No filter").tag(FITSPreviewModel.Filter.none)
                     Text("RHEF — reveal faint corona").tag(FITSPreviewModel.Filter.rhef)
                 }
             } label: {
                 Label(m.filter == .rhef ? "RHEF" : "Filter", systemImage: "camera.filters")
             }
-            Toggle(isOn: Binding(get: { m.limbOn }, set: { m.limbOn = $0; viewer.refresh() })) {
+            Toggle(isOn: Binding(get: { m.limbOn }, set: { if $0 != m.limbOn, m.toggleLimb() { viewer.refresh() } })) {
                 Label("Limb", systemImage: "circle.dashed")
             }
             .disabled(!m.hasLimb)
-            Toggle(isOn: Binding(get: { m.mode == .diff }, set: { m.mode = $0 ? .diff : .plain; viewer.refresh() })) {
+            Toggle(isOn: Binding(get: { m.ringsOn && m.hasRings },
+                                 set: { if $0 != m.ringsOn, m.toggleRings() { viewer.refresh() } })) {
+                Label("Rings", systemImage: "circle.circle")
+            }
+            .disabled(!m.hasRings)
+            Toggle(isOn: Binding(get: { m.mode == .diff }, set: { if $0 != (m.mode == .diff), m.toggleDiff() { viewer.refresh() } })) {
                 Label("Difference", systemImage: "minus.square")
             }
             .disabled(!m.canDiff)
@@ -181,6 +195,8 @@ struct StretchPanel: View {
     @State private var high = 0.0
     @State private var gamma = 0.5
     @State private var log = false
+    @State private var vminText = ""
+    @State private var vmaxText = ""
 
     var body: some View {
         let m = viewer.model
@@ -194,6 +210,7 @@ struct StretchPanel: View {
             slider("High", $high, 0...1, String(format: "%.2f %%", StretchScale.highPercent(high)))
             slider("Gamma", $gamma, 0.1...2, String(format: "%.2f", gamma))
             Toggle("Logarithmic", isOn: $log)
+            limitsRow(m)
             if let l = m.displayLimits() {
                 Text("Clipped to \(FITSRenderer.fmtValue(l.lo)) … \(FITSRenderer.fmtValue(l.hi))\(l.unit.isEmpty ? "" : " \(l.unit)")")
                     .font(.system(.footnote, design: .monospaced)).foregroundStyle(.secondary)
@@ -204,6 +221,7 @@ struct StretchPanel: View {
             low = StretchScale.lowPosition(m.stretch.lo)
             high = StretchScale.highPosition(m.stretch.hi)
             gamma = m.stretch.gamma; log = m.stretch.log
+            syncFields()
         }
         .onChange(of: low) { apply() }
         .onChange(of: high) { apply() }
@@ -225,13 +243,132 @@ struct StretchPanel: View {
         m.stretch = (StretchScale.lowPercent(low), StretchScale.highPercent(high), gamma, log)
         if m.mode != .diff { m.mode = .stretch }
         viewer.refresh()
+        syncFields()      // a moved percentile slider drops typed limits
     }
 
+    /// Typed vmin / vmax (HF-12). Empty means "auto": the percentile rule, shown as
+    /// the placeholder. One empty field keeps the current value for that end.
+    private func limitsRow(_ m: FITSPreviewModel) -> some View {
+        let cur = m.displayLimits()
+        return HStack(spacing: 8) {
+            Text("Min / Max").lineLimit(1).fixedSize()
+                .frame(minWidth: 64, alignment: .leading)
+            TextField(cur.map { Colorbar.limitText($0.lo) } ?? "n/a", text: $vminText)
+                .accessibilityLabel("Display minimum")
+            TextField(cur.map { Colorbar.limitText($0.hi) } ?? "n/a", text: $vmaxText)
+                .accessibilityLabel("Display maximum")
+            Button("Auto") { vminText = ""; vmaxText = ""; applyTyped() }
+        }
+        .textFieldStyle(.roundedBorder)
+        .keyboardType(.numbersAndPunctuation)
+        .font(.system(.footnote, design: .monospaced))
+        .onSubmit { applyTyped() }
+        .disabled(m.filter != .none)
+    }
+
+    /// Read the two fields into the model. Not a number, or an empty or reversed
+    /// range: the model is left alone and the fields snap back.
+    private func applyTyped() {
+        let m = viewer.model
+        let loText = vminText.trimmingCharacters(in: .whitespaces)
+        let hiText = vmaxText.trimmingCharacters(in: .whitespaces)
+        if loText.isEmpty && hiText.isEmpty {
+            m.clearLimits()
+        } else {
+            let cur = m.displayLimits()
+            let lo = loText.isEmpty ? cur?.lo : Float(loText)
+            let hi = hiText.isEmpty ? cur?.hi : Float(hiText)
+            if let lo, let hi {
+                if m.mode != .diff { m.mode = .stretch }
+                m.setLimits(lo: lo, hi: hi)
+            }
+        }
+        viewer.refresh()
+        syncFields()
+    }
+
+    /// Typed limits show as typed; otherwise the fields are empty (auto).
+    private func syncFields() {
+        let o = viewer.model.stretchOverride
+        vminText = o.map { Colorbar.limitText($0.lo) } ?? ""
+        vmaxText = o.map { Colorbar.limitText($0.hi) } ?? ""
+    }
+
+    /// Reset the model first, then move the sliders to what it now holds, so the
+    /// panel and the image cannot disagree. The onChange handlers then re-apply
+    /// the same values (the slider mapping round-trips the defaults exactly).
     private func reset() {
-        low = StretchScale.lowPosition(FITSRenderer.pLow)
-        high = StretchScale.highPosition(FITSRenderer.pHigh)
-        gamma = Double(FITSRenderer.defaultGamma(viewer.model.page?.res.cmapKey))
-        log = false
+        let m = viewer.model
+        let rerender = m.resetStretch(cmapKey: m.page?.res.cmapKey)
+        low = StretchScale.lowPosition(m.stretch.lo)
+        high = StretchScale.highPosition(m.stretch.hi)
+        gamma = m.stretch.gamma
+        log = m.stretch.log
+        if rerender { viewer.refresh() }
+        syncFields()
+    }
+}
+
+// MARK: - Colorbar
+
+/// A horizontal colorbar under the image: the colormap, then tick labels at the
+/// positions the stretch gives those data values, under a heading that says
+/// whether the limits are approximate (percentile estimate), exact (typed) or a
+/// filter's rank range.
+struct ColorbarStrip: View {
+    let bar: Colorbar
+
+    private func color(_ v: Int) -> Color {
+        if let lut = bar.lut {
+            return Color(red: Double(lut[v * 3]) / 255, green: Double(lut[v * 3 + 1]) / 255,
+                         blue: Double(lut[v * 3 + 2]) / 255)
+        }
+        return Color(white: Double(v) / 255)
+    }
+
+    /// Ticks left to right, dropping any whose label would sit on the previous one.
+    private func visibleTicks(width: CGFloat) -> [Colorbar.Tick] {
+        var out: [Colorbar.Tick] = []
+        var lastX = -CGFloat.infinity
+        for tick in bar.ticks {
+            let x = CGFloat(tick.t) * width
+            if x - lastX >= 40 { out.append(tick); lastX = x }
+        }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(bar.note.isEmpty ? bar.heading : "\(bar.heading), \(bar.note)")
+                .font(.caption2).foregroundStyle(Color(white: 0.8))
+            GeometryReader { geo in
+                let w = geo.size.width
+                ZStack(alignment: .topLeading) {
+                    Canvas { ctx, size in
+                        let n = max(2, min(256, Int(size.width)))
+                        for i in 0..<n {
+                            let v = max(0, min(255, Int((Double(i) + 0.5) / Double(n) * 255)))
+                            let x = size.width * CGFloat(i) / CGFloat(n)
+                            ctx.fill(Path(CGRect(x: x, y: 0, width: size.width / CGFloat(n) + 0.5, height: 12)),
+                                     with: .color(color(v)))
+                        }
+                    }
+                    .frame(height: 12)
+                    .overlay(Rectangle().stroke(Color.white.opacity(0.45), lineWidth: 0.5).frame(height: 12),
+                             alignment: .top)
+                    ForEach(visibleTicks(width: w), id: \.t) { tick in
+                        Text(tick.label)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Color(white: 0.85))
+                            .position(x: min(max(CGFloat(tick.t) * w, 16), w - 16), y: 22)
+                    }
+                }
+            }
+            .frame(height: 30)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Colorbar, \(bar.heading)\(bar.note.isEmpty ? "" : ", " + bar.note), "
+                            + "from \(Colorbar.limitText(bar.lo)) to \(Colorbar.limitText(bar.hi))")
     }
 }
 
@@ -240,6 +377,7 @@ struct StretchPanel: View {
 struct ZoomCanvas: UIViewRepresentable {
     let image: CGImage?
     let limb: (u: Double, v: Double, r: Double)?
+    let rings: SolarRings?
     let onSample: (Double, Double) -> Void
     let onSwipe: (Int) -> Void
 
@@ -253,6 +391,7 @@ struct ZoomCanvas: UIViewRepresentable {
         v.onSample = onSample; v.onSwipe = onSwipe
         if v.imageView.image?.cgImage !== image { v.imageView.image = image.map { UIImage(cgImage: $0) } }
         v.limb = limb
+        v.rings = rings
     }
 }
 
@@ -262,6 +401,9 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     var onSample: ((Double, Double) -> Void)?
     var onSwipe: ((Int) -> Void)?
     var limb: (u: Double, v: Double, r: Double)? { didSet { layoutLimb() } }
+    /// Plane-of-sky rings and spokes (HF-15), drawn like the limb: dark line under a coloured one.
+    var rings: SolarRings? { didSet { layoutRings() } }
+    private let ringsUnder = CAShapeLayer(), ringsOver = CAShapeLayer()
 
     init() {
         super.init(frame: .zero)
@@ -277,6 +419,11 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
         for (l, w, c, dash) in [(limbUnder, 3.5, UIColor.black.withAlphaComponent(0.85), nil),
                                 (limbOver, 1.2, UIColor.white, [6, 5] as [NSNumber]?)] {
             l.fillColor = nil; l.strokeColor = c.cgColor; l.lineWidth = w; l.lineDashPattern = dash
+            imageView.layer.addSublayer(l)
+        }
+        for (l, w, c) in [(ringsUnder, 3.0, UIColor.black.withAlphaComponent(0.6)),
+                          (ringsOver, 1.1, UIColor(red: 0.55, green: 0.85, blue: 1, alpha: 0.95))] {
+            l.fillColor = nil; l.strokeColor = c.cgColor; l.lineWidth = w
             imageView.layer.addSublayer(l)
         }
 
@@ -302,6 +449,7 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
             imageView.frame = bounds
             contentSize = bounds.size
             layoutLimb()
+            layoutRings()
         }
     }
 
@@ -310,6 +458,7 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     func scrollViewDidZoom(_ scrollView: UIScrollView) {
         // Keep the limb line a constant on-screen width while zooming.
         limbUnder.lineWidth = 3.5 / zoomScale; limbOver.lineWidth = 1.2 / zoomScale
+        ringsUnder.lineWidth = 3.0 / zoomScale; ringsOver.lineWidth = 1.1 / zoomScale
     }
 
     /// The rect the aspect-fitted image occupies, in imageView coordinates.
@@ -328,6 +477,22 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
         let rad = l.r * r.width
         let path = UIBezierPath(ovalIn: CGRect(x: c.x - rad, y: c.y - rad, width: 2 * rad, height: 2 * rad)).cgPath
         limbUnder.path = path; limbOver.path = path
+    }
+
+    /// Rings and spokes as one path in imageView coordinates (normalized u, v scaled by the image rect).
+    private func layoutRings() {
+        guard let rs = rings, imageRect.width > 0 else { ringsUnder.path = nil; ringsOver.path = nil; return }
+        let r = imageRect
+        func pt(_ p: CGPoint) -> CGPoint { CGPoint(x: r.minX + p.x * r.width, y: r.minY + p.y * r.height) }
+        let path = CGMutablePath()
+        for segs in rs.spokes.map(\.segments) + rs.rings.map(\.segments) {
+            for seg in segs {
+                guard let first = seg.first else { continue }
+                path.move(to: pt(first))
+                for q in seg.dropFirst() { path.addLine(to: pt(q)) }
+            }
+        }
+        ringsUnder.path = path; ringsOver.path = path
     }
 
     @objc private func pressed(_ g: UILongPressGestureRecognizer) {

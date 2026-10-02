@@ -160,7 +160,7 @@ private extension String {
 /// the "View HDU header" Quick Action).
 ///
 /// It hosts the SAME interactive surface as the Quick Look preview
-/// (FITSPreviewCore): scroll to blink HDUs, hover for (x,y)=z + helioprojective
+/// (HelioFITSMacUI/): scroll to blink HDUs, hover for (x,y)=z + helioprojective
 /// coordinates, drag to measure a region, plus the limb / running-difference /
 /// stretch tools — and adds the full header underneath, an HDU picker, PNG
 /// export and a paste-ready sunpy snippet.
@@ -177,6 +177,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let canvas = FITSImageCanvas()
         let stats = FITSStatsCard()
         var tools: FITSToolbar!
+        lazy var compare = FITSCompareController(model: { [unowned self] in self.model },
+                                                 canvas: self.canvas,
+                                                 refresh: { [unowned self] in self.onCompareRefresh() })
+        var onCompareRefresh: () -> Void = {}
         let popup = NSPopUpButton()
         let save = NSButton()
         let copy = NSButton()
@@ -293,9 +297,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         win.representedURL = c.url
         // Below this the on-image chrome starts overlapping: the statistics card
         // covers the pixel readout under ~645 pt of width, and the stretch panel
-        // and toolbar under ~400 pt of height. The card hides itself when there
+        // and toolbar under ~500 pt of height (HF-12 made the stretch panel taller).
+        // The card hides itself when there
         // is no room, but a floor keeps the window out of the awkward band.
-        win.contentMinSize = NSSize(width: 660, height: 420)
+        win.contentMinSize = NSSize(width: 660, height: 520)
         win.center()
         win.isReleasedWhenClosed = false
         win.delegate = self
@@ -318,7 +323,17 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.onHover = { [weak c] n in
             guard let c else { return }
             c.canvas.readout = n.flatMap { c.model.readout(u: $0.0, v: $0.1) }
+            // Compare: the same place on the Sun in the second file, or why there is none.
+            if let n, let extra = c.model.compareReadout(u: n.0, v: n.1) {
+                c.canvas.readout = [c.canvas.readout, extra].compactMap { $0 }.joined(separator: "\n")
+            }
             c.canvas.needsDisplay = true
+        }
+        // Blink flips and swipe drags change what is under a stationary pointer.
+        c.canvas.onCompareChanged = { [weak c] in c?.canvas.refreshReadout() }
+        c.onCompareRefresh = { [weak self, weak c] in
+            guard let self, let c else { return }
+            self.refresh(c)
         }
         c.canvas.onRegion = { [weak self, weak c] r in
             guard let self, let c else { return }
@@ -341,7 +356,9 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb(_:)),
                               diffSel: #selector(toggleDiff(_:)), tuneSel: #selector(toggleTune(_:)),
                               stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)),
-                              filterSel: #selector(filterChanged(_:)))
+                              filterSel: #selector(filterChanged(_:)),
+                              limitsSel: #selector(limitsChanged(_:)),
+                              ringsSel: #selector(toggleRings(_:)), compareSel: #selector(compareClicked(_:)))
         let toolStack = c.tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -491,22 +508,33 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     @objc private func toggleLimb(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.limbOn.toggle(); refresh(c)
+        if c.model.toggleLimb() { refresh(c) }
     }
 
     @objc private func toggleDiff(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.mode = (c.model.mode == .diff) ? .plain : .diff; refresh(c)
+        if c.model.toggleDiff() { refresh(c) }
+    }
+
+    @objc private func toggleRings(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        if c.model.toggleRings() { refresh(c) }
+    }
+
+    /// The Compare chip opens a menu: pick the second file, the mode, stop.
+    @objc private func compareClicked(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        c.compare.showMenu(relativeTo: s)
     }
 
     @objc private func toggleTune(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.mode = (c.model.mode == .stretch) ? .plain : .stretch; refresh(c)
+        if c.model.toggleStretch() { refresh(c) }
     }
 
     @objc private func filterChanged(_ s: NSPopUpButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.filter = c.tools.readFilter(); refresh(c)
+        if c.model.setFilter(c.tools.readFilter()) { refresh(c) }
     }
 
     @objc private func stretchChanged(_ s: NSControl) {
@@ -517,9 +545,13 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     @objc private func resetStretch(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.tools.resetStretch(cmapKey: c.model.page?.res.cmapKey)
-        c.model.stretch = c.tools.readStretch()
-        if c.model.mode == .stretch { refresh(c) }
+        if c.tools.applyReset(to: c.model) { refresh(c) }
+    }
+
+    /// Typed vmin/vmax or a histogram handle: apply the fields, then repaint.
+    @objc private func limitsChanged(_ s: NSView) {
+        guard let c = ctx(for: s) else { return }
+        if c.tools.applyLimits(to: c.model) { refresh(c) }
     }
 
     private func refresh(_ c: Ctx) {
@@ -527,6 +559,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.image = c.model.image().map(NSImage.init)
         c.canvas.caption = c.model.caption()
         c.canvas.limb = c.model.limbCircle()
+        c.canvas.colorbar = c.model.colorbar()
+        c.canvas.rings = c.model.ringsOn ? c.model.rings() : nil
+        // Compare: the second image already lined up on this one's grid. Image first,
+        // then mode, so the canvas never sees a mode with nothing to show.
+        c.canvas.compareImage = c.model.registeredCompareImage().map(NSImage.init)
+        c.canvas.compareMode = c.canvas.compareImage == nil ? nil : c.model.compareMode
         if let p = c.model.page {
             c.canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }

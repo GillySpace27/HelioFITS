@@ -193,8 +193,12 @@ xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS -configuration Release
 The app is universal (Apple Silicon and Intel): the vendored CFITSIO library in
 `HelioFITSCore/CFITSIO.xcframework` carries both Mac slices, and
 `lipo -archs HelioFITSCore/CFITSIO.xcframework/macos-arm64_x86_64/libcfitsio.a`
-prints `x86_64 arm64`. Tests live under `HelioFITSTests/` (the WCS math is pinned
-against astropy ground truth); run them with the scheme's Test action, then
+prints `x86_64 arm64`. The core tests (the WCS math pinned against astropy ground
+truth, colormaps, cubes, RHEF, the readout) live under
+`HelioFITSCore/Tests/HelioFITSCoreTests/` and run headless with
+`swift test --package-path HelioFITSCore`, without launching the app. Tests that need
+the app (canvas, toolbar, stretch panel, header reader) live under `HelioFITSTests/`;
+run them with the scheme's Test action, then
 `./lsclean.sh`. `ship.sh` documents the notarized release flow and `RELEASING.md`
 the full two-channel process. Contributors and coding agents start at `CLAUDE.md`;
 `bash scripts/check.sh` runs the fast static checks.

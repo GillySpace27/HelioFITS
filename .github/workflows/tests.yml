@@ -6,8 +6,8 @@
 #   test-x86_64    the same tests on the Intel slice under Rosetta (the vendored
 #                  libcfitsio.a in HelioFITSCore/CFITSIO.xcframework is universal).
 #   release-build  Release configuration build, arm64, ad hoc signing.
-#   core           HelioFITSCore package: swift build (swift test once the core
-#                  test target lands).
+#   core           HelioFITSCore package: swift test, the headless core tests (no app
+#                  launch, nothing registered with LaunchServices).
 #   ios            HelioFITS-iOS for the Simulator, unsigned. Both projects have a
 #                  scheme named HelioFITS, so -project is always passed.
 #   tooling        bash -n and py_compile over every tracked script, the tracker and
@@ -123,8 +123,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Toolchain
         run: xcodebuild -version && swift --version
-      - name: Build the core package
-        run: swift build --package-path HelioFITSCore
+      - name: Test the core package (headless, no app launch)
+        run: swift test --package-path HelioFITSCore
 
   ios:
     needs: check

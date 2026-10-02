@@ -55,7 +55,12 @@ that's what broke the store path the first time.
    must move together: desynchronising the extensions from the app fails the
    upload, which is why the verification grep above is not optional.)
 
-3. **Run the tests** (hosted in the GUI app — quit any running HelioFITS first
+3. **Run the tests.** First the core package, headless, in seconds (no app
+   launch, nothing registered with LaunchServices):
+
+       swift test --package-path HelioFITSCore
+
+   Then the rest (hosted in the GUI app - quit any running HelioFITS first
    or the runner hangs, and do NOT `pkill HelioFITS` while a run is in flight:
    the test host IS the app, so killing it fails the run with "crashed with
    signal term before establishing connection", which looks like a real failure

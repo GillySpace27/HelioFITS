@@ -10,7 +10,6 @@
 
 import Testing
 import AppKit
-@testable import HelioFITS
 @testable import HelioFITSCore
 
 @Suite("Filter + stretch compose (#14)") @MainActor
@@ -30,7 +29,7 @@ struct FilterStretchTests {
     }
 
     private func png(_ img: CGImage?) throws -> Data {
-        let i = NSImage(try #require(img))
+        let i = NSImage(cgImage: try #require(img), size: .zero)
         let t = try #require(i.tiffRepresentation)
         let r = try #require(NSBitmapImageRep(data: t))
         return try #require(r.representation(using: .png, properties: [:]))
