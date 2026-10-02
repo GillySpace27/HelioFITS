@@ -15,8 +15,11 @@
 #
 # The tarball must match CFITSIO_SHA256 or nothing is built. The xcframework it
 # replaces is copied to build-attic/CFITSIO.xcframework-<UTC>/ first (git-ignored,
-# never pruned), and HelioFITSCore/CFITSIO.stamp records what was baked in;
-# scripts/check.sh compares the stamp with the current fitsshim.c and fitsshim.h.
+# never pruned), and HelioFITSCore/CFITSIO.stamp records what was baked in.
+# Today scripts/check.sh checks only the header copies in the xcframework
+# (check_shim_header_copies); it does not read the stamp. Planned (HF-6 Task 7, not
+# done): a check_cfitsio_stamp that compares the stamp with the current fitsshim.c
+# and fitsshim.h. The stamp file does not exist until this script has run once.
 #
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -26,8 +29,8 @@ SHIM="$PWD"
 # HEASARC. First computed on a GitHub Actions runner (run 37040823717, 2026-10-02) because
 # the session that wrote this could not reach HEASARC; cross-check it once on a Mac:
 #   curl -fsSL https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-4.6.4.tar.gz | shasum -a 256
-# Change the two lines together. Fuzz/build.sh and
-# scripts/check.sh read both with sed, so keep each value alone on its line.
+# Change the two lines together. Fuzz/build.sh reads both with sed, so keep each
+# value alone on its line. (HF-6 Task 7, not done, plans for check.sh to read them the same way.)
 CFITSIO_VERSION="4.6.4"
 CFITSIO_SHA256="227b637b91c9820ea96f39a65eb087f053de567d82f4338e2884f123f8183c55"
 MIN_MACOS="14.5"                # must match MACOSX_DEPLOYMENT_TARGET in the project
@@ -121,7 +124,8 @@ xcodebuild -create-xcframework \
   -output "$xcf"
 
 # Record what was baked in. Keyed on source hashes, not on libcfitsio.a (static
-# archives embed timestamps). scripts/check.sh and scripts/watch.py read this.
+# archives embed timestamps). scripts/watch.py reads cfitsio_version from it today;
+# scripts/check.sh will read the hashes once check_cfitsio_stamp exists (HF-6 Task 7).
 stamp="$root/HelioFITSCore/CFITSIO.stamp"
 {
   echo "cfitsio_version=$CFITSIO_VERSION"
