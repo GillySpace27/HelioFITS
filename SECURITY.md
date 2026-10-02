@@ -2,7 +2,7 @@
 
 HelioFITS parses untrusted FITS files inside Finder-invoked extensions, so
 malformed-file handling is a security surface we take seriously (the header
-parser is fuzz-tested against hostile inputs).
+parser is tested against hand-built hostile and truncated inputs).
 
 To report a vulnerability privately, use GitHub's private vulnerability
 reporting on this repository (Security tab → Report a vulnerability). Please
