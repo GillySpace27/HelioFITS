@@ -1,7 +1,8 @@
 # CI: run the unit tests + an ad-hoc Release build on every push/PR.
 #
-# Runner must be arm64 (macos-14 or later): the vendored libcfitsio.a has no
-# x86_64 slice, so Intel runners cannot link. Tests are HOSTED in the GUI app;
+# Runner: macos-15 (arm64). The vendored libcfitsio.a in
+# HelioFITSCore/CFITSIO.xcframework is universal (x86_64 arm64); x86_64 tests run
+# locally under Rosetta (RELEASING.md step 3). Tests are HOSTED in the GUI app;
 # GitHub's macOS runners have a window server, so the host app can launch.
 name: tests
 
