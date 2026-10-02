@@ -245,3 +245,14 @@ importer is NOT in the store build; don't mention it):
   installed bundle's appex is what runs, not your Xcode build.
 - `qlmanage -t` hangs on all FITS — tooling artifact, not a bug. Verify
   thumbnails with Finder.
+
+## Family release feed
+
+After App Store Connect reports `READY_FOR_SALE` for the release (never before), record it:
+
+    SITE=~/vscode/Website python3 .claude/skills/ship-heliofits/scripts/release_status.py <version> <build> --record
+
+It appends one record to `heliosoftware/feed/heliofits.json` in the Website checkout (channel `mac-app-store`,
+no assets, the changelog's intro paragraph as the notes) and regenerates `feed.xml` and the What's new page.
+It prints `record: skipped, App Store state is ...` while the release is not live, and writes nothing then.
+The date is the day the record is written (UTC). Committing and pushing the Website is a separate yes from Gilly.

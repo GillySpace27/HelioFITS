@@ -157,6 +157,7 @@ jobs:
       - name: Self-tests
         run: |
           python3 .claude/skills/ship-heliofits/scripts/release_status.py --selftest
+          python3 .claude/skills/ship-heliofits/scripts/test_release_feed.py
           python3 scripts/watch.py --selftest
       - name: Spotlight importer (ad hoc signing path)
         run: |
