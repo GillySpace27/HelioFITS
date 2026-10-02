@@ -15,6 +15,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import HelioFITSCore
 
 private let fitsExtensions = ["fits", "fts", "fit", "fz"]
 
@@ -38,6 +39,7 @@ struct HomeView: View {
             .keyboardShortcut("o", modifiers: .command)
             Text("Or skip the app: select a FITS file in Finder and press Space.")
                 .font(.system(size: 13)).foregroundStyle(.secondary)
+            SampleButtons()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
@@ -68,6 +70,14 @@ struct WelcomeView: View {
     @AppStorage("hideWelcome") private var hideWelcome = false
     var close: () -> Void = {}
 
+    /// The legacy Spotlight importer is embedded only by ship.sh (embed-importer.sh,
+    /// Contents/Library/Spotlight). The Mac App Store build has none, so the Spotlight
+    /// promise is shown only where it is true.
+    static var spotlightImporterBundled: Bool {
+        FileManager.default.fileExists(atPath: Bundle.main.bundleURL
+            .appendingPathComponent("Contents/Library/Spotlight").path)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollView {
@@ -77,7 +87,9 @@ struct WelcomeView: View {
                         Label("Installed", systemImage: "checkmark.seal.fill")
                             .font(.system(size: 13, weight: .medium)).foregroundStyle(.green)
                     }
-                    Text("Finder now reads solar FITS files as images — the right colormap, real coordinates, and searchable metadata.")
+                    Text(Self.spotlightImporterBundled
+                         ? "Finder now reads solar FITS files as images: the right colormap, real coordinates, and searchable metadata."
+                         : "Finder now reads solar FITS files as images: the right colormap and real coordinates.")
                         .font(.system(size: 15)).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -86,9 +98,11 @@ struct WelcomeView: View {
                     capability("eye", "Quick Look preview",
                                "Select a file and press Space: hover for pixel values and coordinates, drag to measure, scroll (or ↑/↓) to blink layers, toggle limb / difference / RHEF.")
                     capability("photo", "Thumbnails",
-                               "Every .fits icon becomes the real solar image — in Finder’s icon, gallery, and list views.")
-                    capability("magnifyingglass", "Get Info & Spotlight",
-                               "Telescope, instrument, wavelength and date are read from the header, so you can search your archive by what’s in it.")
+                               "Every .fits icon becomes the real solar image, in Finder’s icon, gallery, and list views.")
+                    if Self.spotlightImporterBundled {
+                        capability("magnifyingglass", "Get Info & Spotlight",
+                                   "Telescope, instrument, wavelength and date are read from the header, so you can search your archive by what’s in it.")
+                    }
                     capability("curlybraces", "Bridge back to Python",
                                "The viewer shows the full FITS header, exports a PNG, and copies a ready-to-run sunpy snippet.")
                     capability("slider.horizontal.3", "Choose the layer",
@@ -107,6 +121,7 @@ struct WelcomeView: View {
                         }
                     }
                     .padding(.top, 2)
+                    SampleButtons()
                     Text("New thumbnails and previews can take a minute to appear in Finder.")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
 
@@ -184,7 +199,7 @@ struct SettingsView: View {
             } footer: {
                 Text("A FITS file can stack several images; this picks which one Finder shows.")
                     .foregroundStyle(.secondary)
-                    .help("Each image is a Header Data Unit (HDU) — an “extension” labelled by its EXTNAME: a raw frame, a processed layer, an uncertainty map.")
+                    .help("Each image is a Header Data Unit (HDU): an “extension” labelled by its EXTNAME: a raw frame, a processed layer, an uncertainty map.")
             }
 
             Section {
@@ -290,7 +305,7 @@ enum PreviewSettings {
             let p = (dir as NSString).appendingPathComponent(name)
             if (try? fm.setAttributes([.modificationDate: Date()], ofItemAtPath: p)) != nil { n += 1 }
         }
-        return n > 0 ? "Touched \(n) FITS file\(n == 1 ? "" : "s") — Finder will regenerate their icons."
+        return n > 0 ? "Touched \(n) FITS file\(n == 1 ? "" : "s"). Finder will regenerate their icons."
                      : "Couldn’t touch files in that folder (re-add it to grant access)."
     }
 
@@ -314,5 +329,56 @@ enum PreviewSettings {
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         setRule(popup.selectedTag(), for: dirs)
         for dir in dirs { refreshIcons(in: dir) }
+    }
+}
+
+// MARK: - Bundled samples (HelioFITS/Samples, cut by scripts/make_fixtures.py)
+
+/// Try a Sample and Put Samples in a Folder, shared by Home and Welcome. Hidden
+/// when the build carries no samples, which is the case until Gilly names the
+/// source files (HF-5 Task 2).
+struct SampleButtons: View {
+    var body: some View {
+        if !SampleFiles.bundled().isEmpty {
+            HStack(spacing: 12) {
+                Button(action: SampleActions.openSample) {
+                    Label("Try a Sample", systemImage: "sun.max")
+                }
+                Button(action: SampleActions.putSamplesInFolder) {
+                    Label("Put Samples in a Folder\u{2026}", systemImage: "folder.badge.plus")
+                }
+            }
+        }
+    }
+}
+
+enum SampleActions {
+    /// Open the first bundled sample in the viewer. Files inside the app bundle
+    /// need no sandbox grant.
+    static func openSample() {
+        guard let url = SampleFiles.bundled().first else { return }
+        HeaderWindowController.shared.present(fileURL: url)
+    }
+
+    /// Ask for a folder (the open panel confers the write grant), copy every sample
+    /// into it without replacing anything (an existing name gets " 2", " 3", ...),
+    /// then open the folder in Finder, where the icons become the images.
+    static func putSamplesInFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Copy Samples Here"
+        panel.message = "Choose a folder for the sample FITS files. Nothing already in it is replaced."
+        panel.begin { resp in
+            guard resp == .OK, let folder = panel.url else { return }
+            do {
+                _ = try SampleFiles.copy(to: folder)
+                NSWorkspace.shared.open(folder)
+            } catch {
+                NSAlert(error: error).runModal()
+            }
+        }
     }
 }

@@ -135,7 +135,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
         for p in 0..<c.model.count {
             let pg = c.model.pages[p]
-            var title = names[pg.hdu].map { "HDU \(pg.hdu) — \($0)" } ?? "HDU \(pg.hdu)"
+            var title = names[pg.hdu].map { "HDU \(pg.hdu): \($0)" } ?? "HDU \(pg.hdu)"
             if (pagesPerHDU[pg.hdu] ?? 1) > 1 {
                 title += "  (plane \(pg.plane + 1)/\(pagesPerHDU[pg.hdu]!))"
             }
@@ -283,7 +283,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.save.target = self
         c.save.action = #selector(savePNG(_:))
         c.save.isEnabled = false
-        c.save.toolTip = "Export the displayed HDU as a colour-mapped PNG — the image as you see it"
+        c.save.toolTip = "Export the displayed HDU as a colour-mapped PNG: the image as you see it"
 
         c.copy.title = "Copy Python"
         c.copy.bezelStyle = .rounded
