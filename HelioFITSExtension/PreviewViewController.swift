@@ -20,7 +20,7 @@
 //  Scroll is therefore the primary gesture (blink HDUs), and the controls hide
 //  themselves in the narrow column pane where they could never be clicked.
 //
-//  All the actual behaviour lives in FITSPreviewCore, shared with the in-app
+//  All the actual behaviour lives in HelioFITSMacUI/, shared with the in-app
 //  viewer window so the two surfaces cannot drift apart.
 //
 
@@ -172,18 +172,16 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     // MARK: actions
 
-    @objc private func toggleLimb() { model.limbOn.toggle(); refresh() }
-    @objc private func toggleDiff() { model.mode = (model.mode == .diff) ? .plain : .diff; refresh() }
-    @objc private func toggleTune() { model.mode = (model.mode == .stretch) ? .plain : .stretch; refresh() }
-    @objc private func filterChanged() { model.filter = tools.readFilter(); refresh() }
+    @objc private func toggleLimb() { if model.toggleLimb() { refresh() } }
+    @objc private func toggleDiff() { if model.toggleDiff() { refresh() } }
+    @objc private func toggleTune() { if model.toggleStretch() { refresh() } }
+    @objc private func filterChanged() { if model.setFilter(tools.readFilter()) { refresh() } }
     @objc private func stretchChanged() {
         model.stretch = tools.readStretch()
         if model.mode == .stretch { refresh() }
     }
     @objc private func resetStretch() {
-        tools.resetStretch(cmapKey: model.page?.res.cmapKey)
-        model.stretch = tools.readStretch()
-        if model.mode == .stretch { refresh() }
+        if tools.applyReset(to: model) { refresh() }
     }
 
     private func region(_ r: (u0: Double, v0: Double, u1: Double, v1: Double)?) {

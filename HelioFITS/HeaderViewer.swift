@@ -160,7 +160,7 @@ private extension String {
 /// the "View HDU header" Quick Action).
 ///
 /// It hosts the SAME interactive surface as the Quick Look preview
-/// (FITSPreviewCore): scroll to blink HDUs, hover for (x,y)=z + helioprojective
+/// (HelioFITSMacUI/): scroll to blink HDUs, hover for (x,y)=z + helioprojective
 /// coordinates, drag to measure a region, plus the limb / running-difference /
 /// stretch tools — and adds the full header underneath, an HDU picker, PNG
 /// export and a paste-ready sunpy snippet.
@@ -491,22 +491,22 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     @objc private func toggleLimb(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.limbOn.toggle(); refresh(c)
+        if c.model.toggleLimb() { refresh(c) }
     }
 
     @objc private func toggleDiff(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.mode = (c.model.mode == .diff) ? .plain : .diff; refresh(c)
+        if c.model.toggleDiff() { refresh(c) }
     }
 
     @objc private func toggleTune(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.mode = (c.model.mode == .stretch) ? .plain : .stretch; refresh(c)
+        if c.model.toggleStretch() { refresh(c) }
     }
 
     @objc private func filterChanged(_ s: NSPopUpButton) {
         guard let c = ctx(for: s) else { return }
-        c.model.filter = c.tools.readFilter(); refresh(c)
+        if c.model.setFilter(c.tools.readFilter()) { refresh(c) }
     }
 
     @objc private func stretchChanged(_ s: NSControl) {
@@ -517,9 +517,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
     @objc private func resetStretch(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
-        c.tools.resetStretch(cmapKey: c.model.page?.res.cmapKey)
-        c.model.stretch = c.tools.readStretch()
-        if c.model.mode == .stretch { refresh(c) }
+        if c.tools.applyReset(to: c.model) { refresh(c) }
     }
 
     private func refresh(_ c: Ctx) {

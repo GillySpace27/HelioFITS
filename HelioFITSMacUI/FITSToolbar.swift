@@ -182,6 +182,18 @@ final class FITSToolbar {
         cLog.state = s.log ? .on : .off
     }
 
+    /// The Reset button for both Mac hosts: reset the model, move the sliders to
+    /// the model's new stretch, then repaint the chips. Returns whether the host
+    /// must re-render. Leaving out `adoptStretch` here desyncs sliders and image
+    /// (the #14 class); ToolbarResetTests pins it.
+    @discardableResult
+    func applyReset(to model: FITSPreviewModel) -> Bool {
+        let rerender = model.resetStretch(cmapKey: model.page?.res.cmapKey)
+        adoptStretch(model.stretch)
+        sync(model: model)
+        return rerender
+    }
+
     /// Paint one chip: opaque dark when off, solid amber when on, dimmed when
     /// unavailable. Drawn explicitly because a borderless button has no bezel to
     /// tint, and these sit over a bright image.
