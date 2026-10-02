@@ -21,6 +21,14 @@ __.SYMDEF*
 
 __pycache__/
 
+# Kept build outputs: zipped by ship.sh and lsclean.sh, never pruned by a script
+# (scripts/attic-report.sh lists them)
+build-attic/
+# App Store screenshots, one folder per version (make-screenshots.sh)
+screenshots/
+# Git worktrees, e.g. .claude/worktrees/rollback-<tag> from scripts/rollback.sh
+.claude/worktrees/
+
 # HelioFITSCore package build output
 HelioFITSCore/.build/
 HelioFITSCore/.swiftpm/
