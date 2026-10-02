@@ -113,6 +113,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         // the toolbar. Below that the image matters more than the statistics.
         statsFits = view.bounds.width >= 645 && view.bounds.height >= 500
         if !statsFits { stats.isHidden = true }
+        // The toolbar row grew by the Rings chip; below ~560 pt it would run off the left edge.
+        tools.rings.isHidden = view.bounds.width < 560
         let isCompact = view.bounds.width < 380
         guard isCompact != compact else { return }
         compact = isCompact
