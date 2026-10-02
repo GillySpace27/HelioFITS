@@ -23,12 +23,13 @@ cd "$(dirname "$0")"
 SHIM="$PWD"
 
 # CFITSIO_SHA256 is the sha256 of cfitsio-$CFITSIO_VERSION.tar.gz as served by
-# HEASARC. The all-zero value is a placeholder: HF-6 could not download the tarball
-# in the session that wrote this, so Gilly must replace it (see the guard below).
+# HEASARC. First computed on a GitHub Actions runner (run 37040823717, 2026-10-02) because
+# the session that wrote this could not reach HEASARC; cross-check it once on a Mac:
+#   curl -fsSL https://heasarc.gsfc.nasa.gov/FTP/software/fitsio/c/cfitsio-4.6.4.tar.gz | shasum -a 256
 # Change the two lines together. Fuzz/build.sh and
 # scripts/check.sh read both with sed, so keep each value alone on its line.
 CFITSIO_VERSION="4.6.4"
-CFITSIO_SHA256="0000000000000000000000000000000000000000000000000000000000000000"
+CFITSIO_SHA256="227b637b91c9820ea96f39a65eb087f053de567d82f4338e2884f123f8183c55"
 MIN_MACOS="14.5"                # must match MACOSX_DEPLOYMENT_TARGET in the project
 MIN_IOS="17.0"                  # must match the iOS targets and HelioFITSCore/Package.swift
 CONFIGURE_OPTS="--disable-curl --enable-reentrant"   # curl-free: no libcurl dependency
