@@ -24,9 +24,9 @@ No password, credential, or GUI click is required for any of it.
 
 Creating the version record, attaching the build, writing What's New, and
 confirming screenshots are automatable once an App Store Connect API key
-exists (see [references/asc-api.md](references/asc-api.md) if that file is
-present; if not, no key has been set up yet and this whole tier is
-unavailable — hand off to the manual App Store Connect flow instead).
+exists (see [scripts/asc_api.py](scripts/asc_api.py) and "App Store Connect API
+key: scope and terms" below). With no key configured this whole tier is
+unavailable: hand off to the manual App Store Connect flow instead.
 
 **Hard gate, independent of what's automated: never call Add for Review,
 Submit to Review, or Release This Version without asking Gilly in chat first
@@ -98,7 +98,7 @@ what the tracker shows as ready).
    release tag. If yes:
 
        ./HelioFITSExtension/cfitsio/build-universal.sh
-       lipo -archs HelioFITSExtension/cfitsio/libcfitsio.a   # expect: x86_64 arm64
+       lipo -archs HelioFITSCore/CFITSIO.xcframework/macos-arm64_x86_64/libcfitsio.a   # expect: x86_64 arm64
 
    This is not optional. `fitsshim.c` is in no Xcode target — it is baked into
    the vendored library, and forgetting this step means editing the shim does
@@ -141,7 +141,8 @@ what the tracker shows as ready).
        git tag -a v<VER>-build.<N> -m "..."
        git push && git push origin v<VER>-build.<N>
 
-7. **Direct-download channel:** `./ship.sh`. The Apple timestamp service
+7. **Direct-download channel, only when there is a reason** (RELEASING.md "Which
+   channels to cut"; otherwise skip steps 7 and 8): `./ship.sh`. The Apple timestamp service
    flakes intermittently — if it fails on `A timestamp was expected but was
    not found`, that is Apple's TSA, not the build. Probe it cheaply before
    blind-retrying:
@@ -257,3 +258,11 @@ runbook is worth more than the commands it contains.
 - Assuming an Xcode archive is MAS-clean without checking for the Spotlight
   importer — `ship.sh`'s embed step runs on Channel B builds only, so a plain
   Xcode archive for the Store should never have it, but confirm each time.
+- **2026-09-29: the runbook pointed at files that had moved.** Step 1 told an
+  agent to `lipo` `HelioFITSExtension/cfitsio/libcfitsio.a`, which has not existed
+  since the library moved into `HelioFITSCore/CFITSIO.xcframework` (#31); the API
+  section linked a `references/asc-api.md` that was never written; and step 7
+  ran `ship.sh` on every release although RELEASING.md cuts the direct channel
+  only when there is a reason. Found by a plan verifier reading this file against
+  origin/main. Guard: the lines were corrected in place, and the repo-root
+  `CLAUDE.md` names the current paths.

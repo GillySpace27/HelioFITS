@@ -1,8 +1,12 @@
 # Releasing HelioFITS
 
-Two channels, one source tree. This is the runbook as actually executed —
-v1.0 (build 1) submitted 2026‑07‑14, **v1.2 (build 6) live on the Mac App Store
-2026‑07‑28**. All one‑time setup (certificates, ASC app record, agreements, app
+Two channels, one source tree. This is the runbook as actually executed. For the
+live state of a release (tagged, uploaded, in review, live), run
+`python3 .claude/skills/ship-heliofits/scripts/release_status.py <VER> <BUILD>`
+rather than trusting a version named in this file; it checks git, `gh` and the
+App Store Connect API, and says UNCHECKED when it cannot verify. History: v1.0
+(build 1) submitted 2026-07-14; v1.2 (build 6) went live on the Mac App Store
+2026-07-28. All one-time setup (certificates, ASC app record, agreements, app
 group, App IDs) is DONE; nothing below repeats it.
 
 - **App Store listing:** <https://apps.apple.com/app/id6790952544> (Apple ID `6790952544`)

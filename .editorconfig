@@ -1,0 +1,26 @@
+# HelioFITS editor settings, matched to the existing code on origin/main 2c12f45.
+# Format only files a change already touches; never reformat vendored CFITSIO.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{swift,c,h,py,sh}]
+indent_style = space
+indent_size = 4
+
+[*.{yml,yaml,json}]
+indent_style = space
+indent_size = 2
+
+[*.pbxproj]
+indent_style = tab
+
+[{HelioFITSExtension/cfitsio/**,HelioFITSCore/CFITSIO.xcframework/**}]
+charset = unset
+end_of_line = unset
+insert_final_newline = unset
+indent_style = unset
+indent_size = unset

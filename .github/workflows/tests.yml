@@ -1,8 +1,21 @@
-# CI: run the unit tests + an ad-hoc Release build on every push/PR.
+# CI: every push to main and every pull request.
 #
-# Runner must be arm64 (macos-14 or later): the vendored libcfitsio.a has no
-# x86_64 slice, so Intel runners cannot link. Tests are HOSTED in the GUI app;
-# GitHub's macOS runners have a window server, so the host app can launch.
+#   check          scripts/check.sh: fast static invariants. Every other job needs it.
+#   test           hosted unit tests, arm64. Tests run inside the GUI app; GitHub's
+#                  macOS runners have a window server, so the host app can launch.
+#   test-x86_64    the same tests on the Intel slice under Rosetta (the vendored
+#                  libcfitsio.a in HelioFITSCore/CFITSIO.xcframework is universal).
+#   release-build  Release configuration build, arm64, ad hoc signing.
+#   core           HelioFITSCore package: swift build (swift test once the core
+#                  test target lands).
+#   ios            HelioFITS-iOS for the Simulator, unsigned. Both projects have a
+#                  scheme named HelioFITS, so -project is always passed.
+#   tooling        bash -n and py_compile over every tracked script, the tracker and
+#                  watch self-tests, and the Spotlight importer on its ad hoc path.
+#   lint           swift format lint with .swift-format. Advisory: never blocks.
+#
+# Tests that need files only present on Gilly's Mac report as skipped, not passed.
+# CI never signs with a real identity, uploads, releases or posts.
 name: tests
 
 on:
@@ -10,12 +23,34 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
+  check:
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # check.sh diffs against origin/main
+      - name: Toolchain
+        run: xcodebuild -version
+      - name: Static invariants
+        run: bash scripts/check.sh
+
   test:
+    needs: check
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version
       - name: Run unit tests (ad-hoc signing)
         run: |
           xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS \
@@ -30,13 +65,48 @@ jobs:
           name: TestResults.xcresult
           path: TestResults.xcresult
 
+  test-x86_64:
+    needs: check
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version
+      - name: Rosetta (installed only when missing)
+        run: |
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            echo "Rosetta present"
+          else
+            sudo softwareupdate --install-rosetta --agree-to-license
+          fi
+      - name: Run unit tests on x86_64 (ad-hoc signing)
+        run: |
+          xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS \
+            -destination 'platform=macOS,arch=x86_64' \
+            -resultBundlePath TestResults-x86_64.xcresult \
+            DEVELOPMENT_TEAM=UB45PPC2JS CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES
+      - name: Test summary (skipped tests are counted, not hidden)
+        if: always()
+        run: xcrun xcresulttool get test-results summary --path TestResults-x86_64.xcresult || true
+      - name: Upload result bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults-x86_64.xcresult
+          path: TestResults-x86_64.xcresult
+
   release-build:
     # Mirrors what an archive compiles (Release config, arm64) so a
     # release-only build break can't hide until ship day.
+    needs: check
     runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version
       - name: Release build (ad-hoc signing)
         run: |
           xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS \
@@ -44,3 +114,62 @@ jobs:
             CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual \
             AD_HOC_CODE_SIGNING_ALLOWED=YES DEVELOPMENT_TEAM="" \
             build
+
+  core:
+    needs: check
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: Build the core package
+        run: swift build --package-path HelioFITSCore
+
+  ios:
+    needs: check
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version
+      - name: iOS Simulator build (unsigned)
+        run: |
+          xcodebuild -project HelioFITS-iOS/HelioFITS-iOS.xcodeproj -scheme HelioFITS \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build
+
+  tooling:
+    needs: check
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && python3 --version
+      - name: Shell syntax (bash -n on every tracked .sh)
+        run: git ls-files -z '*.sh' | xargs -0 -n1 bash -n
+      - name: Python syntax (py_compile on every tracked .py)
+        run: git ls-files -z '*.py' | xargs -0 python3 -m py_compile
+      - name: Self-tests
+        run: |
+          python3 .claude/skills/ship-heliofits/scripts/release_status.py --selftest
+          python3 scripts/watch.py --selftest
+      - name: Spotlight importer (ad hoc signing path)
+        run: |
+          bash FITSMetadataImporter/build.sh
+          codesign --verify --verbose FITSMetadataImporter/build/FITSMetadataImporter.mdimporter
+          lipo -archs FITSMetadataImporter/build/FITSMetadataImporter.mdimporter/Contents/MacOS/FITSMetadataImporter
+
+  lint:
+    needs: check
+    runs-on: macos-15
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: xcodebuild -version && swift --version
+      - name: swift format lint (advisory)
+        run: git ls-files -z '*.swift' | xargs -0 swift format lint --configuration .swift-format
