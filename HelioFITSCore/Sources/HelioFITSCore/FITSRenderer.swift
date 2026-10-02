@@ -268,8 +268,14 @@ public enum FITSRenderer {
 
 
     /// Parse one keyword's value out of a raw FITS card block (the shim's
-    /// fits_hdr2str output — 80-char cards, newline-joined; fall back to 80-char
+    /// fits_hdr2str output: 80-char cards, newline-joined; fall back to 80-char
     /// chunking if the separator is absent). Unquotes strings, drops comments.
+    ///
+    /// Input format: raw cards, `KEYWORD = value / comment` with "=" in column 9,
+    /// as returned by `cards(path:hdu:)` (fitsshim_header_cards) or by
+    /// `FITSHeader.dump(path:)`; on multi-HDU text the first match wins. Not for
+    /// `Result.header`, the shim's summary, which has no "=" column: use
+    /// `headerVal` there. HeaderParityTests pins the two against one file.
     public static func cardVal(_ cards: String, _ key: String) -> String? {
         let lines: [String] = cards.contains("\n")
             ? cards.split(separator: "\n").map(String.init)
@@ -782,6 +788,11 @@ public enum FITSRenderer {
 
     /// Value of a keyword in the shim's header summary ("KEY      value" lines,
     /// 8-char key + space). Strips FITS string quotes.
+    ///
+    /// Input format: `Result.header` from fitsshim_read_image, one `%-9s %s` line
+    /// per keyword the shim copies (TELESCOP through PROD_ID, fitsshim.c); it has
+    /// no NAXISn lines, so read `natW`/`natH` instead. Matches on line prefix with
+    /// no keyword boundary. Not for raw cards: use `cardVal` there.
     public static func headerVal(_ h: String, _ key: String) -> String? {
         for line in h.split(separator: "\n") where line.hasPrefix(key) {
             let v = String(line.dropFirst(9)).trimmingCharacters(in: .whitespaces)
