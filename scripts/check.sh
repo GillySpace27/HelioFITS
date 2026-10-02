@@ -10,24 +10,38 @@ CHECKS=()
 
 MAC_PBXPROJ="HelioFITS.xcodeproj/project.pbxproj"
 IOS_PBXPROJ="HelioFITS-iOS/HelioFITS-iOS.xcodeproj/project.pbxproj"
+MAC_XCCONFIG="Config/Version.xcconfig"
 
-# One MARKETING_VERSION and one CURRENT_PROJECT_VERSION per project. The mac project
-# repeats them in 10 build configurations, the iOS project in 6; the two projects are
-# versioned independently, so each is checked on its own.
-# Shown failing on a scratch copy (first mac CURRENT_PROJECT_VERSION set to 99999):
-#   FAIL check_versions: HelioFITS.xcodeproj/project.pbxproj has 2 distinct CURRENT_PROJECT_VERSION values: 10 99999
+# Versions. Mac: Config/Version.xcconfig is the one source (HF-10), so the mac
+# pbxproj may carry no MARKETING_VERSION or CURRENT_PROJECT_VERSION at all (a
+# target-level line would override the xcconfig and desynchronise an extension),
+# and the xcconfig holds exactly one numeric line of each. iOS: the project keeps
+# its own values until Gilly decides (map Q3); one distinct value of each, as before.
+# Shown failing on a scratch copy (CURRENT_PROJECT_VERSION = 99999; added to one mac target):
+#   FAIL check_versions: HelioFITS.xcodeproj/project.pbxproj sets CURRENT_PROJECT_VERSION at target level (1 line); Config/Version.xcconfig is the only source, edit it with scripts/bump-version.sh
 check_versions() {
-  local proj key vals n
-  for proj in "$MAC_PBXPROJ" "$IOS_PBXPROJ"; do
-    [ -f "$proj" ] || { echo "$proj missing"; return 1; }
-    for key in MARKETING_VERSION CURRENT_PROJECT_VERSION; do
-      vals="$(grep -oE "$key = [^;]+;" "$proj" | sed -E "s/^$key = (.*);\$/\\1/" | sort -u | tr '\n' ' ' || true)"
-      n="$(printf '%s' "$vals" | wc -w | tr -d ' ')"
-      if [ "$n" -ne 1 ]; then
-        echo "$proj has $n distinct $key values: ${vals% }"
-        return 1
-      fi
-    done
+  local key vals n lines
+  [ -f "$MAC_XCCONFIG" ] || { echo "$MAC_XCCONFIG missing"; return 1; }
+  [ -f "$MAC_PBXPROJ" ] || { echo "$MAC_PBXPROJ missing"; return 1; }
+  for key in MARKETING_VERSION CURRENT_PROJECT_VERSION; do
+    lines="$(grep -c "$key = " "$MAC_PBXPROJ" || true)"
+    if [ "$lines" -ne 0 ]; then
+      echo "$MAC_PBXPROJ sets $key at target level ($lines line$([ "$lines" -eq 1 ] || echo s)); $MAC_XCCONFIG is the only source, edit it with scripts/bump-version.sh"
+      return 1
+    fi
+  done
+  n="$(grep -cE '^MARKETING_VERSION = [0-9]+(\.[0-9]+){1,2}$' "$MAC_XCCONFIG" || true)"
+  [ "$n" -eq 1 ] || { echo "$MAC_XCCONFIG needs exactly one 'MARKETING_VERSION = <x.y[.z]>' line, has $n"; return 1; }
+  n="$(grep -cE '^CURRENT_PROJECT_VERSION = [0-9]+$' "$MAC_XCCONFIG" || true)"
+  [ "$n" -eq 1 ] || { echo "$MAC_XCCONFIG needs exactly one 'CURRENT_PROJECT_VERSION = <n>' line, has $n"; return 1; }
+  [ -f "$IOS_PBXPROJ" ] || { echo "$IOS_PBXPROJ missing"; return 1; }
+  for key in MARKETING_VERSION CURRENT_PROJECT_VERSION; do
+    vals="$(grep -oE "$key = [^;]+;" "$IOS_PBXPROJ" | sed -E "s/^$key = (.*);\$/\\1/" | sort -u | tr '\n' ' ' || true)"
+    n="$(printf '%s' "$vals" | wc -w | tr -d ' ')"
+    if [ "$n" -ne 1 ]; then
+      echo "$IOS_PBXPROJ has $n distinct $key values: ${vals% }"
+      return 1
+    fi
   done
 }
 CHECKS+=(check_versions)
