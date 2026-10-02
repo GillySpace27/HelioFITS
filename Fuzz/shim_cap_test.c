@@ -243,6 +243,39 @@ static void test_tile_size(void) {
     fitsshim_set_max_pixels(0);
 }
 
+// The low-memory strided read (fitsshim_read_image_max with max_side > 0, the iOS path)
+// must refuse exactly what the full read refuses: the cap is on the header's plane, not
+// on the decimated output, and wrapped input never reaches CFITSIO.
+static void test_strided_read_under_limit(void) {
+    long w, h, step; float *pix = NULL; char *hdr = NULL;
+    fitsshim_set_max_pixels(EXTENSION_CAP);
+    const char *giant = write_fits("giant-strided.fits", 30000, 30000, 0);
+    int rc = fitsshim_read_image_max(giant, -1, -1, 1024, &w, &h, &step, &pix, &hdr);
+    CHECK(rc == FITSSHIM_ERR_TOO_LARGE && pix == NULL && hdr == NULL,
+          "strided 30000x30000 under the cap: rc %d, want %d", rc, FITSSHIM_ERR_TOO_LARGE);
+    uint8_t gz[18] = {0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 3, 3, 0, 0, 0, 0, 0, 0xff, 0xff};
+    const char *wrapped = write_bytes("strided.gz", gz, sizeof(gz));
+    rc = fitsshim_read_image_max(wrapped, -1, -1, 1024, &w, &h, &step, &pix, &hdr);
+    CHECK(rc == FITSSHIM_ERR_COMPRESSED, "strided gzip under the cap: rc %d", rc);
+
+    // Within the cap, limited and unlimited strided reads agree.
+    const char *small = write_fits("small-strided.fits", 64, 32, 64 * 32 * 2);
+    long wu, hu, su; float *pu = NULL; char *hu_ = NULL;
+    fitsshim_set_max_pixels(0);
+    int rcu = fitsshim_read_image_max(small, -1, -1, 8, &wu, &hu, &su, &pu, &hu_);
+    fitsshim_set_max_pixels(EXTENSION_CAP);
+    rc = fitsshim_read_image_max(small, -1, -1, 8, &w, &h, &step, &pix, &hdr);
+    CHECK(rcu == 0 && rc == 0 && su == step && step > 1 && wu == w && hu == h,
+          "strided small read: rc %d/%d step %ld/%ld", rcu, rc, su, step);
+    if (rcu == 0 && rc == 0) {
+        size_t n = (size_t)(w / step) * (size_t)(h / step);
+        CHECK(memcmp(pu, pix, sizeof(float) * n) == 0, "strided pixels differ between limited and unlimited");
+    }
+    if (rcu == 0) { free(pu); free(hu_); }
+    if (rc == 0) { free(pix); free(hdr); }
+    fitsshim_set_max_pixels(0);
+}
+
 static void test_limit_accessors(void) {
     fitsshim_set_max_pixels(EXTENSION_CAP);
     CHECK(fitsshim_max_pixels() == EXTENSION_CAP, "accessor returns what was set");
@@ -263,6 +296,7 @@ int main(void) {
     test_tile_size();
     test_wrapped_input();
     test_missing_and_extended_names();
+    test_strided_read_under_limit();
     char cmd[4300]; snprintf(cmd, sizeof(cmd), "rm -rf '%s'", dir); if (system(cmd)) {}
     if (failures) { fprintf(stderr, "%d check(s) failed\n", failures); return 1; }
     puts("shim_cap_test: all checks passed");
