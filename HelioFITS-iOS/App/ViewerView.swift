@@ -135,18 +135,18 @@ struct ViewerView: View {
             }
             Spacer()
             Menu {
-                Picker("Filter", selection: Binding(get: { m.filter }, set: { m.filter = $0; viewer.refresh() })) {
+                Picker("Filter", selection: Binding(get: { m.filter }, set: { if m.setFilter($0) { viewer.refresh() } })) {
                     Text("No filter").tag(FITSPreviewModel.Filter.none)
                     Text("RHEF — reveal faint corona").tag(FITSPreviewModel.Filter.rhef)
                 }
             } label: {
                 Label(m.filter == .rhef ? "RHEF" : "Filter", systemImage: "camera.filters")
             }
-            Toggle(isOn: Binding(get: { m.limbOn }, set: { m.limbOn = $0; viewer.refresh() })) {
+            Toggle(isOn: Binding(get: { m.limbOn }, set: { if $0 != m.limbOn, m.toggleLimb() { viewer.refresh() } })) {
                 Label("Limb", systemImage: "circle.dashed")
             }
             .disabled(!m.hasLimb)
-            Toggle(isOn: Binding(get: { m.mode == .diff }, set: { m.mode = $0 ? .diff : .plain; viewer.refresh() })) {
+            Toggle(isOn: Binding(get: { m.mode == .diff }, set: { if $0 != (m.mode == .diff), m.toggleDiff() { viewer.refresh() } })) {
                 Label("Difference", systemImage: "minus.square")
             }
             .disabled(!m.canDiff)
@@ -227,11 +227,17 @@ struct StretchPanel: View {
         viewer.refresh()
     }
 
+    /// Reset the model first, then move the sliders to what it now holds, so the
+    /// panel and the image cannot disagree. The onChange handlers then re-apply
+    /// the same values (the slider mapping round-trips the defaults exactly).
     private func reset() {
-        low = StretchScale.lowPosition(FITSRenderer.pLow)
-        high = StretchScale.highPosition(FITSRenderer.pHigh)
-        gamma = Double(FITSRenderer.defaultGamma(viewer.model.page?.res.cmapKey))
-        log = false
+        let m = viewer.model
+        let rerender = m.resetStretch(cmapKey: m.page?.res.cmapKey)
+        low = StretchScale.lowPosition(m.stretch.lo)
+        high = StretchScale.highPosition(m.stretch.hi)
+        gamma = m.stretch.gamma
+        log = m.stretch.log
+        if rerender { viewer.refresh() }
     }
 }
 
