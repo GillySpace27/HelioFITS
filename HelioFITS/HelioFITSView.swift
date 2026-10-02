@@ -199,7 +199,7 @@ struct SettingsView: View {
             } footer: {
                 Text("A FITS file can stack several images; this picks which one Finder shows.")
                     .foregroundStyle(.secondary)
-                    .help("Each image is a Header Data Unit (HDU): an “extension” labelled by its EXTNAME: a raw frame, a processed layer, an uncertainty map.")
+                    .help("Each image is a Header Data Unit (HDU): an “extension” labelled by its EXTNAME, for example a raw frame, a processed layer or an uncertainty map.")
             }
 
             Section {
