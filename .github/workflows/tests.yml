@@ -173,3 +173,20 @@ jobs:
         run: xcodebuild -version && swift --version
       - name: swift format lint (advisory)
         run: git ls-files -z '*.swift' | xargs -0 swift format lint --configuration .swift-format
+
+  colormaps:
+    # FITSColormaps.swift is generated; this regenerates it from the pinned
+    # sunpy and the six CSVs in tools/colormaps/extra/ and fails on any byte of
+    # difference. Fix the generator, never the Swift file (HF-6).
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pinned generator inputs
+        run: python3 -m pip install -r tools/colormaps/requirements.txt
+      - name: Regenerate and diff (no output means identical)
+        run: python3 tools/colormaps/gen_colormaps.py | diff -u HelioFITSCore/Sources/HelioFITSCore/FITSColormaps.swift -
