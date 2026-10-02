@@ -63,14 +63,16 @@ jobs:
       - name: Fuzz for ${{ env.SECONDS_PER_HARNESS }} s
         working-directory: Fuzz/out
         run: |
-          # -malloc_limit_mb=4096: libFuzzer's default of 2048 MB reports a 24-byte gzip
+          # -malloc_limit_mb=4097: libFuzzer's default of 2048 MB reports a 24-byte gzip
           # file as out-of-memory, because CFITSIO's mem_compress_open (drvrmem.c) mallocs
           # the uncompressed size read from the last 4 bytes of the file, up to 4 GiB. That
           # is CFITSIO behaviour, not fitsshim code (first seen on the PR run for HF-11, input
-          # base64 H4voAOjo6Ojo6Ojo6Ojo6Ojo). 4096 still reports anything larger; -rss_limit_mb
-          # keeps its default, so memory actually used is still limited.
+          # base64 H4voAOjo6Ojo6Ojo6Ojo6Ojo). 4097 still reports anything larger; -rss_limit_mb
+          # keeps its default, so memory actually used is still limited. The limit was 4096 first,
+          # but libFuzzer reports a malloc of exactly 4096 MB (malloc(4294967296), a trailer of
+          # 0xFFFFFFFF plus one) as out-of-memory, so a later run on the PR failed the same way.
           ./${{ matrix.harness }} -max_total_time="$SECONDS_PER_HARNESS" -print_final_stats=1 \
-            -malloc_limit_mb=4096 corpus/${{ matrix.harness }}
+            -malloc_limit_mb=4097 corpus/${{ matrix.harness }}
       - name: Upload crash inputs
         if: failure()
         uses: actions/upload-artifact@v7
