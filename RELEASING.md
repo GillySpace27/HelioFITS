@@ -20,6 +20,15 @@ generates App Store profiles at export). `ship.sh` alone requests **Developer
 ID** via command-line overrides. Do not pin the project to either identity;
 that's what broke the store path the first time.
 
+**Release gates (SU-3):** `preflight.sh` and `ship.sh` run `./release-gates.sh`,
+which refuses an unpushed HEAD, a HEAD that is not an ancestor of `origin/main`,
+disagreeing versions, a U+2014 in `CHANGELOG.md`, or a Friday from 12:00 local.
+Each refusal names its override (`ALLOW_FRIDAY=yes-gilly` and so on); set one
+only on Gilly's yes for that release. Rolling back: "Rolling back" below, and
+`python3 ~/.claude/skills/runbook-drift/scripts/rollback_plan.py heliofits`
+prints the commands without running them (that script is SU-3 Task 9, on
+Gilly's machine, not in this repository).
+
 ## Every release, in order
 
 0. **Did you touch `fitsshim.c`? Rebuild the library.** `fitsshim.c` is in NO
@@ -245,3 +254,14 @@ importer is NOT in the store build; don't mention it):
   installed bundle's appex is what runs, not your Xcode build.
 - `qlmanage -t` hangs on all FITS — tooling artifact, not a bug. Verify
   thumbnails with Finder.
+
+## Family release feed
+
+After App Store Connect reports `READY_FOR_SALE` for the release (never before), record it:
+
+    SITE=~/vscode/Website python3 .claude/skills/ship-heliofits/scripts/release_status.py <version> <build> --record
+
+It appends one record to `heliosoftware/feed/heliofits.json` in the Website checkout (channel `mac-app-store`,
+no assets, the changelog's intro paragraph as the notes) and regenerates `feed.xml` and the What's new page.
+It prints `record: skipped, App Store state is ...` while the release is not live, and writes nothing then.
+The date is the day the record is written (UTC). Committing and pushing the Website is a separate yes from Gilly.

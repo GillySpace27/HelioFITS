@@ -8,11 +8,11 @@ cd "$(dirname "$0")"
 
 APP="${1:?usage: embed-importer.sh <app> [--timestamp]}"
 TS="${2:-}"   # pass --timestamp for notarization builds; omit for offline/local
-ID="Developer ID Application: CHRISTOPHER RAYMOND GILBERT (UB45PPC2JS)"
+ID="${SIGN_ID:-${HS_SIGN_ID:-Developer ID Application: CHRISTOPHER RAYMOND GILBERT (UB45PPC2JS)}}"
 IMP_SRC="FITSMetadataImporter/build/FITSMetadataImporter.mdimporter"
 
 echo "==> Building .mdimporter"
-bash FITSMetadataImporter/build.sh >/dev/null
+SIGN_ID="$ID" bash FITSMetadataImporter/build.sh >/dev/null
 
 echo "==> Embedding into $APP"
 mkdir -p "$APP/Contents/Library/Spotlight"

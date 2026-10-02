@@ -13,6 +13,12 @@ if [ -n "$(git status --porcelain)" ]; then
     exit 1
 fi
 
+echo "==> Release gates (release-gates.sh; each refusal names its override)"
+# Config/Version.xcconfig is the one mac version source (scripts/check.sh enforces it),
+# so there is no second mac value to compare here.
+./release-gates.sh --product heliofits \
+  --version "$(sed -n 's/^MARKETING_VERSION = //p' Config/Version.xcconfig)" --notes CHANGELOG.md
+
 echo "==> 2/4 Tests (quitting any running HelioFITS first — hosted tests hang otherwise)"
 echo "    core package first, headless (no app launch, nothing registered with LaunchServices)"
 swift test --package-path HelioFITSCore || { echo "CORE TESTS FAILED"; exit 1; }
