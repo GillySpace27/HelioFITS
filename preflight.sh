@@ -1,6 +1,6 @@
 #!/bin/bash
 # Release gate: run before EVERY release (see RELEASING.md).
-# Refuses a dirty tree, runs the full test suite, bumps the build number,
+# Refuses a dirty tree, runs the full test suite (it bumps, commits and tags nothing),
 # and tells you the exact next steps. Does NOT archive or upload — the MAS
 # path must go through Xcode's Organizer, and ship.sh owns the notarized path.
 set -euo pipefail
@@ -26,15 +26,15 @@ xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS \
 # recurring thumbnail bug. Clean it immediately.
 ./lsclean.sh
 
-echo "==> 3/4 Bump build number"
-xcrun agvtool next-version -all
-VER=$(xcrun agvtool what-marketing-version -terse1)
-BUILD=$(xcrun agvtool what-version -terse)
-git add -A
-git commit -m "Release v${VER} (build ${BUILD}): bump build number"
-git tag -a "v${VER}-build.${BUILD}" -m "v${VER} (build ${BUILD})"
+echo "==> 3/4 Version (read only: scripts/bump-version.sh sets it)"
+VER=$(sed -n 's/^MARKETING_VERSION = //p' Config/Version.xcconfig)
+BUILD=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' Config/Version.xcconfig)
+echo "    Config/Version.xcconfig: ${VER} (${BUILD})"
 
-echo "==> 4/4 Done. Version ${VER} (${BUILD}) is tagged. Next:"
-echo "    git push && git push --tags"
+echo "==> 4/4 Done. Nothing was bumped, committed or tagged. Next, in order (RELEASING.md steps 2 to 5):"
+echo "    scripts/bump-version.sh <VER> <BUILD>   # BUILD above the newest v*-build.N tag"
+echo "    git add Config/Version.xcconfig CHANGELOG.md && git commit -m \"chore: version <VER> (build <BUILD>)\""
+echo "    git tag -a v<VER>-build.<BUILD> -m \"v<VER> (build <BUILD>)\""
+echo "    git push origin HEAD v<VER>-build.<BUILD>   # only with Gilly's yes"
 echo "    MAS:    Xcode > Product > Archive > Organizer > Validate > Distribute"
-echo "    Direct: ./ship.sh   (then the gh release create line it prints)"
+echo "    Direct: ./ship.sh   (only when there is a reason; then the gh release create line it prints)"

@@ -10,24 +10,38 @@ CHECKS=()
 
 MAC_PBXPROJ="HelioFITS.xcodeproj/project.pbxproj"
 IOS_PBXPROJ="HelioFITS-iOS/HelioFITS-iOS.xcodeproj/project.pbxproj"
+MAC_XCCONFIG="Config/Version.xcconfig"
 
-# One MARKETING_VERSION and one CURRENT_PROJECT_VERSION per project. The mac project
-# repeats them in 10 build configurations, the iOS project in 6; the two projects are
-# versioned independently, so each is checked on its own.
-# Shown failing on a scratch copy (first mac CURRENT_PROJECT_VERSION set to 99999):
-#   FAIL check_versions: HelioFITS.xcodeproj/project.pbxproj has 2 distinct CURRENT_PROJECT_VERSION values: 10 99999
+# Versions. Mac: Config/Version.xcconfig is the one source (HF-10), so the mac
+# pbxproj may carry no MARKETING_VERSION or CURRENT_PROJECT_VERSION at all (a
+# target-level line would override the xcconfig and desynchronise an extension),
+# and the xcconfig holds exactly one numeric line of each. iOS: the project keeps
+# its own values until Gilly decides (map Q3); one distinct value of each, as before.
+# Shown failing on a scratch copy (CURRENT_PROJECT_VERSION = 99999; added to one mac target):
+#   FAIL check_versions: HelioFITS.xcodeproj/project.pbxproj sets CURRENT_PROJECT_VERSION at target level (1 line); Config/Version.xcconfig is the only source, edit it with scripts/bump-version.sh
 check_versions() {
-  local proj key vals n
-  for proj in "$MAC_PBXPROJ" "$IOS_PBXPROJ"; do
-    [ -f "$proj" ] || { echo "$proj missing"; return 1; }
-    for key in MARKETING_VERSION CURRENT_PROJECT_VERSION; do
-      vals="$(grep -oE "$key = [^;]+;" "$proj" | sed -E "s/^$key = (.*);\$/\\1/" | sort -u | tr '\n' ' ' || true)"
-      n="$(printf '%s' "$vals" | wc -w | tr -d ' ')"
-      if [ "$n" -ne 1 ]; then
-        echo "$proj has $n distinct $key values: ${vals% }"
-        return 1
-      fi
-    done
+  local key vals n lines
+  [ -f "$MAC_XCCONFIG" ] || { echo "$MAC_XCCONFIG missing"; return 1; }
+  [ -f "$MAC_PBXPROJ" ] || { echo "$MAC_PBXPROJ missing"; return 1; }
+  for key in MARKETING_VERSION CURRENT_PROJECT_VERSION; do
+    lines="$(grep -c "$key = " "$MAC_PBXPROJ" || true)"
+    if [ "$lines" -ne 0 ]; then
+      echo "$MAC_PBXPROJ sets $key at target level ($lines line$([ "$lines" -eq 1 ] || echo s)); $MAC_XCCONFIG is the only source, edit it with scripts/bump-version.sh"
+      return 1
+    fi
+  done
+  n="$(grep -cE '^MARKETING_VERSION = [0-9]+(\.[0-9]+){1,2}$' "$MAC_XCCONFIG" || true)"
+  [ "$n" -eq 1 ] || { echo "$MAC_XCCONFIG needs exactly one 'MARKETING_VERSION = <x.y[.z]>' line, has $n"; return 1; }
+  n="$(grep -cE '^CURRENT_PROJECT_VERSION = [0-9]+$' "$MAC_XCCONFIG" || true)"
+  [ "$n" -eq 1 ] || { echo "$MAC_XCCONFIG needs exactly one 'CURRENT_PROJECT_VERSION = <n>' line, has $n"; return 1; }
+  [ -f "$IOS_PBXPROJ" ] || { echo "$IOS_PBXPROJ missing"; return 1; }
+  for key in MARKETING_VERSION CURRENT_PROJECT_VERSION; do
+    vals="$(grep -oE "$key = [^;]+;" "$IOS_PBXPROJ" | sed -E "s/^$key = (.*);\$/\\1/" | sort -u | tr '\n' ' ' || true)"
+    n="$(printf '%s' "$vals" | wc -w | tr -d ' ')"
+    if [ "$n" -ne 1 ]; then
+      echo "$IOS_PBXPROJ has $n distinct $key values: ${vals% }"
+      return 1
+    fi
   done
 }
 CHECKS+=(check_versions)
@@ -85,6 +99,63 @@ check_no_em_dash_added() {
   [ -z "$hits" ] || { echo "$hits"; return 1; }
 }
 CHECKS+=(check_no_em_dash_added)
+
+# The headers inside each CFITSIO.xcframework slice are copies of the sources in
+# HelioFITSExtension/cfitsio/ made by build-universal.sh. A copy that differs means
+# the library and the headers Swift compiles against have drifted. Works without a stamp.
+# Shown failing on a scratch copy (a comment appended to the ios-arm64 fitsshim.h copy):
+#   FAIL check_shim_header_copies: HelioFITSCore/CFITSIO.xcframework/ios-arm64/Headers/fitsshim.h differs from HelioFITSExtension/cfitsio/fitsshim.h. Re-run HelioFITSExtension/cfitsio/build-universal.sh: editing fitsshim.c alone does nothing, the library is what the app links.
+check_shim_header_copies() {
+  local remedy="Re-run HelioFITSExtension/cfitsio/build-universal.sh: editing fitsshim.c alone does nothing, the library is what the app links."
+  local slice h copy bad=0
+  for slice in macos-arm64_x86_64 ios-arm64 ios-arm64-simulator; do
+    for h in fitsshim.h fitsio.h longnam.h; do
+      copy="HelioFITSCore/CFITSIO.xcframework/$slice/Headers/$h"
+      if [ ! -f "$copy" ]; then echo "$copy missing. $remedy"; bad=1
+      elif ! cmp -s "HelioFITSExtension/cfitsio/$h" "$copy"; then
+        echo "$copy differs from HelioFITSExtension/cfitsio/$h. $remedy"; bad=1
+      fi
+    done
+  done
+  return "$bad"
+}
+CHECKS+=(check_shim_header_copies)
+
+
+# The newest release tag (highest build number among v<VER>-build.<N>) must be
+# reachable from HEAD or from CHECK_BASE (a tag on a side commit is how a release
+# once shipped from a branch that never merged), and it must not be ahead of
+# Config/Version.xcconfig: N at most CURRENT_PROJECT_VERSION, and when N equals it,
+# the tag's VER equals MARKETING_VERSION. No tags at all passes (a clone without tags).
+# Shown failing on a scratch copy (tag v9.9.9-build.11 on a side commit):
+#   FAIL check_tag_ancestry: newest tag v9.9.9-build.11 is not an ancestor of HEAD or origin/main; tag the merged commit instead (the old tag stays)
+check_tag_ancestry() {
+  local t newest="" max=-1 ver="" xver xbuild
+  [ -f "$MAC_XCCONFIG" ] || { echo "$MAC_XCCONFIG missing"; return 1; }
+  while IFS= read -r t; do
+    if [[ "$t" =~ ^v([0-9][0-9.]*)-build\.([0-9]+)$ ]] && [ "${BASH_REMATCH[2]}" -gt "$max" ]; then
+      max="${BASH_REMATCH[2]}"; ver="${BASH_REMATCH[1]}"; newest="$t"
+    fi
+  done < <(git tag -l 'v*-build.*')
+  [ -n "$newest" ] || return 0
+  if ! git merge-base --is-ancestor "$newest" HEAD 2>/dev/null \
+     && ! git merge-base --is-ancestor "$newest" "$CHECK_BASE" 2>/dev/null; then
+    echo "newest tag $newest is not an ancestor of HEAD or $CHECK_BASE; tag the merged commit instead (the old tag stays)"
+    return 1
+  fi
+  xver="$(awk 'sub(/^MARKETING_VERSION = /, "") { print; exit }' "$MAC_XCCONFIG")"
+  xbuild="$(awk 'sub(/^CURRENT_PROJECT_VERSION = /, "") { print; exit }' "$MAC_XCCONFIG")"
+  [[ "$xbuild" =~ ^[0-9]+$ ]] || { echo "$MAC_XCCONFIG has no numeric CURRENT_PROJECT_VERSION"; return 1; }
+  if [ "$max" -gt "$xbuild" ]; then
+    echo "newest tag $newest is ahead of $MAC_XCCONFIG (build $xbuild); run scripts/bump-version.sh <VER> <BUILD above $max>"
+    return 1
+  fi
+  if [ "$max" -eq "$xbuild" ] && [ "$ver" != "$xver" ]; then
+    echo "newest tag $newest has build $max but $MAC_XCCONFIG says $xver ($xbuild); one build number, one version"
+    return 1
+  fi
+}
+CHECKS+=(check_tag_ancestry)
 
 # ---- run ----
 status=0

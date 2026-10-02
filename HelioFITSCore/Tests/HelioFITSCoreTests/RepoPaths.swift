@@ -9,4 +9,6 @@ enum RepoPaths {
         .deletingLastPathComponent()
         .deletingLastPathComponent()
     static func url(_ relative: String) -> URL { root.appendingPathComponent(relative) }
+    /// A committed fixture in HelioFITSTests/Fixtures (written by scripts/make_fixtures.py). Added by HF-5.
+    static func fixture(_ name: String) -> URL { url("HelioFITSTests/Fixtures/" + name) }
 }

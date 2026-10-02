@@ -2,8 +2,9 @@
 """Dump the full header cards of every HDU in a FITS file.
 
 Pure Python standard library only -- no astropy, numpy, or cfitsio. Runs under
-/usr/bin/python3. Bundled into HelioFITS.app/Contents/Resources and invoked
-by the "View HDU header" Quick Action.
+/usr/bin/python3. A developer reference, not shipped: HF-11 moved it out of
+the app bundle to tools/. The app's reader is FITSHeader in HelioFITSCore, and
+the "View HDU header" Quick Action opens the app rather than running this.
 
 FITS layout: a file is a sequence of HDUs. Each HDU is a header made of one or
 more 2880-byte blocks (36 cards x 80 chars) terminated by an 'END' card,

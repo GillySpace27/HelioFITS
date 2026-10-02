@@ -9,14 +9,21 @@ session's own actions and can't be re-derived from outside state, so they
 are passed in by the caller; everything from "tag pushed" onward is checked
 live.
 
-Usage: python3 release_status.py <VERSION> <BUILD> [--done preflight,version,tests,changelog]
-  python3 release_status.py 1.3.1 8 --done preflight,version,tests,changelog
+The "version" milestone is the exception: it is read from Config/Version.xcconfig
+(the one mac version source, HF-10), so --done version is ignored.
+
+Usage: python3 release_status.py <VERSION> <BUILD> [--done preflight,tests,changelog]
+  python3 release_status.py 1.3.1 8 --done preflight,tests,changelog
 """
-import sys, os, json, subprocess, argparse, datetime
+import sys, os, re, json, subprocess, argparse, datetime, tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 APP_ID = "6790952544"
 ASC_API = os.path.join(os.path.dirname(os.path.abspath(__file__)), "asc_api.py")
+# The repo root is four levels above this scripts/ folder. (REPO above stops at .claude/,
+# which git tolerates as a cwd; this path must not depend on it.)
+XCCONFIG = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                         "..", "..", "..", "..", "Config", "Version.xcconfig"))
 
 MILESTONES = [
     ("preflight",   "Pre-flight (clean tree, library rebuilt if shim changed)"),
@@ -42,8 +49,7 @@ MILESTONES = [
 # `api` steps are ASC writes the Orrery itself can perform.
 HOW = {
     "preflight":   ("shell", "./HelioFITSExtension/cfitsio/build-universal.sh   # only if fitsshim.c changed"),
-    "version":     ("shell", "sed -i '' 's/MARKETING_VERSION = [0-9.]*;/MARKETING_VERSION = {V};/g' HelioFITS.xcodeproj/project.pbxproj && "
-                             "sed -i '' 's/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = {B};/g' HelioFITS.xcodeproj/project.pbxproj   # then verify 10 of each"),
+    "version":     ("shell", "scripts/bump-version.sh {V} {B}   # edits Config/Version.xcconfig, then checks every mac target resolved it"),
     "tests":       ("shell", "pkill -x HelioFITS; xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS -destination 'platform=macOS,arch=arm64' DEVELOPMENT_TEAM=UB45PPC2JS CODE_SIGN_IDENTITY=\"-\" CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES"),
     "changelog":   ("edit",  "Write the [{V}] section in CHANGELOG.md — long form, grouped Added/Changed/Fixed, issues linked."),
     "tag":         ("shell", "git tag -a v{V}-build.{B} -m \"{V} (build {B})\""),
@@ -74,7 +80,31 @@ def shots_verdict(states):
     return len(done) == len(states), note
 
 
+def xcconfig_version(path=XCCONFIG):
+    """(MARKETING_VERSION, CURRENT_PROJECT_VERSION) from Config/Version.xcconfig, or
+    None when the file is missing or does not hold exactly one line of each."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return None
+    ver = re.findall(r"^MARKETING_VERSION = (\S+)$", text, re.M)
+    build = re.findall(r"^CURRENT_PROJECT_VERSION = (\S+)$", text, re.M)
+    if len(ver) != 1 or len(build) != 1:
+        return None
+    return ver[0], build[0]
+
+
 def _selftest():
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "Version.xcconfig")
+        assert xcconfig_version(p) is None
+        with open(p, "w") as f:
+            f.write("// comment\nMARKETING_VERSION = 1.4.1\nCURRENT_PROJECT_VERSION = 11\n")
+        assert xcconfig_version(p) == ("1.4.1", "11")
+        with open(p, "a") as f:
+            f.write("MARKETING_VERSION = 9.9\n")
+        assert xcconfig_version(p) is None
     assert shots_verdict([]) == (False, None)
     assert shots_verdict(["COMPLETE"] * 5) == (True, "5 delivered")
     assert shots_verdict(["COMPLETE", "AWAITING_UPLOAD"]) == (False, "1 delivered, 1 not yet")
@@ -109,6 +139,13 @@ def asc_get(path):
 def check_live(version, build):
     tag = f"v{version}-build.{build}"
     state = {}
+
+    got = xcconfig_version()
+    state["version"] = got == (version, build)
+    if got is None:
+        state["_notes"] = {**state.get("_notes", {}), "version": "Config/Version.xcconfig missing or malformed"}
+    elif not state["version"]:
+        state["_notes"] = {**state.get("_notes", {}), "version": "xcconfig says %s (%s)" % got}
 
     tags_local = sh(["git", "tag", "-l", tag])
     state["tag"] = tag in tags_local.splitlines()

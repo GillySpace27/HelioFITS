@@ -50,12 +50,17 @@ echo "newest tag:  v$NEWEST_VER-build.$MAX"
 echo "next build:  $NEXT"
 echo "next version (suggested): $NEXT_VER"
 echo
-echo "# 1. Branch and bump (RELEASING.md step 2; HF-10 replaces this block with scripts/bump-version.sh)"
+echo "# 1. Branch and bump (RELEASING.md step 2)"
 echo "cd $WT"
 echo "git switch -c rollback/$TAG-b$NEXT"
-echo "sed -i '' 's/MARKETING_VERSION = [0-9.]*;/MARKETING_VERSION = $NEXT_VER;/g' HelioFITS.xcodeproj/project.pbxproj"
-echo "sed -i '' 's/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEXT;/g' HelioFITS.xcodeproj/project.pbxproj"
-echo "grep -oE \"MARKETING_VERSION = [0-9.]+;|CURRENT_PROJECT_VERSION = [0-9]+;\" HelioFITS.xcodeproj/project.pbxproj | sort | uniq -c   # expect 10 of each"
+if git cat-file -e "$TAG:Config/Version.xcconfig" 2>/dev/null; then
+    echo "scripts/bump-version.sh $NEXT_VER $NEXT"
+else
+    echo "# $TAG predates Config/Version.xcconfig (HF-10): set the 10 copies in project.pbxproj"
+    echo "sed -i '' 's/MARKETING_VERSION = [0-9.]*;/MARKETING_VERSION = $NEXT_VER;/g' HelioFITS.xcodeproj/project.pbxproj"
+    echo "sed -i '' 's/CURRENT_PROJECT_VERSION = [0-9]*;/CURRENT_PROJECT_VERSION = $NEXT;/g' HelioFITS.xcodeproj/project.pbxproj"
+    echo "grep -oE \"MARKETING_VERSION = [0-9.]+;|CURRENT_PROJECT_VERSION = [0-9]+;\" HelioFITS.xcodeproj/project.pbxproj | sort | uniq -c   # expect 10 of each"
+fi
 echo
 echo "# 2. Test, changelog, tag locally (RELEASING.md steps 3 to 5; HF-21 replaces this block with scripts/release.py)"
 echo "# CHANGELOG.md: a [$NEXT_VER] section that says it restores $TAG"

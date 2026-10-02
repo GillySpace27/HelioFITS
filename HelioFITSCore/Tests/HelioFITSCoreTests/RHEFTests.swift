@@ -12,6 +12,7 @@
 //
 
 import Testing
+import Foundation
 @testable import HelioFITSCore
 
 @Suite("RHEF")
@@ -84,5 +85,42 @@ struct RHEFTests {
         let out = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 4, nbins: 2, upsilon: 0.35)
         #expect(out[1].isNaN, "a NaN input pixel must remain fill")
         #expect(out[0].isFinite && out[2].isFinite && out[3].isFinite)
+    }
+
+    /// The #34 tie rule on a committed file. synthetic_cube.fits (scripts/make_fixtures.py
+    /// --synthetic) has an exact-zero occulter and exact-zero corners, the way PUNCH L3 does
+    /// (a real PUNCH cutout waits for Gilly; see HelioFITSTests/Fixtures/README.md). Within one
+    /// annulus every zero must get the same output; ordinal ranking gave each zero its own
+    /// rank and drew stripes.
+    @Test("Synthetic cube fixture: every exact zero in an annulus gets one output value (#34 ties)")
+    func syntheticFixtureZeroFillTies() throws {
+        let path = RepoPaths.fixture("synthetic_cube.fits").path
+        try #require(FileManager.default.fileExists(atPath: path),
+                     "missing fixture \(path): run scripts/make_fixtures.py --synthetic")
+        let f = try #require(FITSRenderer.pixels(path: path, hdu: -1, plane: 0), "cannot read \(path)")
+        let cx = Double(f.w - 1) / 2, cy = Double(f.h - 1) / 2
+        var radii = [Double](repeating: 0, count: f.pix.count)
+        for y in 0..<f.h {
+            for x in 0..<f.w {
+                let dx = Double(x) - cx, dy = Double(y) - cy
+                radii[y * f.w + x] = (dx * dx + dy * dy).squareRoot()
+            }
+        }
+        let maxR = try #require(radii.max())
+        let nbins = 8
+        let out = FITSRenderer.rhefEqualize(values: f.pix, radii: radii, maxRadius: maxR,
+                                            nbins: nbins, upsilon: 0.35)
+        // Same binning as rhefEqualize: Int(r / binW), clamped to the last bin.
+        let binW = maxR / Double(nbins)
+        var zeros: [Int: [Float]] = [:]
+        for i in f.pix.indices where f.pix[i] == 0 {
+            zeros[min(nbins - 1, Int(radii[i] / binW)), default: []].append(out[i])
+        }
+        let tied = zeros.filter { $0.value.count >= 2 }
+        try #require(!tied.isEmpty, "no annulus holds two exact zeros: the fixture lost its zero fill")
+        for (bin, values) in tied.sorted(by: { $0.key < $1.key }) {
+            #expect(Set(values).count == 1,
+                    "annulus \(bin): \(values.count) zeros map to \(Set(values).count) different outputs; tied values must share one rank (#34)")
+        }
     }
 }
