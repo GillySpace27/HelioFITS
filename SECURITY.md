@@ -33,6 +33,12 @@ libFuzzer's default malloc limit and still reports any other large allocation.
   enough. This is CFITSIO behaviour, not shim code. The harness skips inputs that start
   with the gzip magic `1f 8b` or the PKZIP magic `PK`.
 
+One more item is recorded here but is not a vulnerability: a binary-table header with
+a huge `TFIELDS` makes CFITSIO's `ffbinit` call `calloc(tfield, sizeof(tcolumn))` with an
+overflowing product. In the shipped app `calloc` returns NULL and `ffbinit` returns
+`ARRAY_TOO_BIG`, so the file is rejected. Under AddressSanitizer the default is to abort,
+so the fuzz job sets `ASAN_OPTIONS=allocator_may_return_null=1` to behave like the app.
+
 Whether the shim should cap the pixel count, refuse oversized or compressed input,
 or accept both as they are is Gilly's decision. Nothing in the shipped app changed.
 When it is decided, remove the matching skip from `Fuzz/fitsshim_fuzz.c`.

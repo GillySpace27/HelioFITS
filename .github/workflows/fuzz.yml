@@ -68,6 +68,12 @@ jobs:
           # fitsshim harness now skips exactly those two input kinds (gzip or PKZIP magic, and a
           # header with NAXIS1 * NAXIS2 above 2^26) so a new large allocation is reported.
           # Both are open, see "Known findings (not fixed)" in SECURITY.md.
+          # ASAN_OPTIONS=allocator_may_return_null=1: a header-driven calloc whose
+          # count * size overflows (CFITSIO ffbinit, TFIELDS read from the header) aborts
+          # under ASan by default, but in the shipped app calloc returns NULL and ffbinit
+          # returns ARRAY_TOO_BIG. The fuzzer now sees what the app sees. The malloc limit
+          # above still reports allocations that succeed but are huge.
+          export ASAN_OPTIONS=allocator_may_return_null=1
           ./${{ matrix.harness }} -max_total_time="$SECONDS_PER_HARNESS" -print_final_stats=1 \
             corpus/${{ matrix.harness }}
       - name: Upload crash inputs
