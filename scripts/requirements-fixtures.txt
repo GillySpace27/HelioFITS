@@ -1,0 +1,4 @@
+# Pinned inputs for scripts/make_fixtures.py (CI job "fixtures"). These versions ran --selftest
+# and reproduced HelioFITSTests/Fixtures byte for byte when the set was generated (2026-10-02).
+numpy==2.4.6
+astropy==8.0.1
