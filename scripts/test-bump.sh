@@ -1,7 +1,8 @@
 #!/bin/bash
 # Self-test for scripts/bump-version.sh. Runs it in a scratch git repo with a stand-in
 # xcodebuild (it reads Config/Version.xcconfig, as the real target resolution would), so
-# it needs no Xcode and runs on Linux.
+# it needs no Xcode and runs on Linux. Also covers the pinned-hash guard of
+# HelioFITSExtension/cfitsio/build-universal.sh.
 #
 #   bash scripts/test-bump.sh        # exit 0 all cases pass, 1 a case failed
 set -uo pipefail
@@ -80,6 +81,25 @@ fresh_repo 1.2.0 6 v1.2-build.6
 expect "two-part tag: same version is fine"         0 changed "" -- 1.2.0 7
 fresh_repo 1.2.0 6 v1.2-build.6
 expect "two-part tag: lower version is refused"     1 unchanged "below" -- 1.1.9 7
+
+# build-universal.sh must refuse a pinned hash that is not 64 lowercase hex digits (a
+# 40-digit SHA-1 was accepted by shasum -c with a perl shasum). The guard runs before any
+# network or Xcode use, so a scratch copy with a changed pin tests it here.
+hash_case() {
+  local name="$1" pin="$2" want="$3" out rc
+  rm -rf "$work/bu"; mkdir -p "$work/bu/HelioFITSExtension/cfitsio" "$work/bu/fakebin"
+  sed "s/^CFITSIO_SHA256=.*/CFITSIO_SHA256=\"$pin\"/" "$REPO/HelioFITSExtension/cfitsio/build-universal.sh" \
+    > "$work/bu/HelioFITSExtension/cfitsio/build-universal.sh"
+  printf '#!/bin/sh\nexit 22\n' > "$work/bu/fakebin/curl"; chmod +x "$work/bu/fakebin/curl"   # never touch the network
+  out="$(cd "$work/bu/HelioFITSExtension/cfitsio" && PATH="$work/bu/fakebin:$PATH" bash build-universal.sh 2>&1)"; rc=$?
+  if [ "$want" = refuse ] && [ "$rc" -eq 1 ] && [[ "$out" == *"is not 64 lowercase hex digits"* ]]; then echo "ok   $name"
+  elif [ "$want" = pass ] && [[ "$out" != *"is not 64 lowercase hex digits"* ]]; then echo "ok   $name"
+  else echo "FAIL $name: exit $rc, output: ${out##*$'\n'}"; fails=$((fails + 1)); fi
+}
+hash_case "build-universal: refuses a 40-digit SHA-1"      "da39a3ee5e6b4b0d3255bfef95601890afd80709" refuse
+hash_case "build-universal: refuses uppercase hex"         "227B637B91C9820EA96F39A65EB087F053DE567D82F4338E2884F123F8183C55" refuse
+hash_case "build-universal: refuses a 63-digit value"      "227b637b91c9820ea96f39a65eb087f053de567d82f4338e2884f123f8183c5" refuse
+hash_case "build-universal: lets the real 64-digit pin by" "227b637b91c9820ea96f39a65eb087f053de567d82f4338e2884f123f8183c55" pass
 
 [ "$fails" -eq 0 ] && echo "all passed" || echo "$fails failed"
 [ "$fails" -eq 0 ]

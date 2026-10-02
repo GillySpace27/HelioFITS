@@ -41,6 +41,10 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 echo "==> working in $work"
 
+# A pin of any other shape (a 40-digit SHA-1, uppercase, a stray character) must not
+# reach `shasum -c`: a perl shasum accepts a 40-digit value and checks it as SHA-1.
+[[ "$CFITSIO_SHA256" =~ ^[0-9a-f]{64}$ ]] \
+  || { echo "REFUSING: CFITSIO_SHA256 is not 64 lowercase hex digits ('$CFITSIO_SHA256'); nothing was fetched or built"; exit 1; }
 echo "==> fetching CFITSIO $CFITSIO_VERSION"
 case "$CFITSIO_SHA256" in 0000000000000000000000000000000000000000000000000000000000000000)
   echo "REFUSING: CFITSIO_SHA256 is still the all-zero placeholder. Compute it once:"
