@@ -39,21 +39,22 @@ that's what broke the store path the first time.
    the remedy in the message — but only if you actually run the suite.
 
 1. **Clean tree.** Everything committed; tests green
-   (`./preflight.sh` does 1–4 and refuses a dirty tree).
-2. **Bump the build number** — ASC rejects a duplicate (version, build) pair at
-   upload, i.e. *after* you've made the archive:
+   (`./preflight.sh` checks the tree, runs the tests and lsclean; it does not
+   bump, commit or tag).
+2. **Bump the version and build number** with one command. Both live once, in
+   `Config/Version.xcconfig`, which every mac target inherits (the iOS project
+   keeps its own pair until Gilly decides). ASC rejects a duplicate (version,
+   build) pair at upload, after the archive is made, so the script refuses a
+   build number that is not above the newest `v*-build.N` tag:
 
-       # agvtool's -all flag ERRORS on this project (it tries to read "YES" as a
-       # path) and new-marketing-version only touches an Info.plist, not the 10
-       # per-target build settings. Set both in project.pbxproj and verify:
-       sed -i '' 's/MARKETING_VERSION = 1\.2;/MARKETING_VERSION = 1.2.1;/g' HelioFITS.xcodeproj/project.pbxproj
-       sed -i '' 's/CURRENT_PROJECT_VERSION = 6;/CURRENT_PROJECT_VERSION = 7;/g' HelioFITS.xcodeproj/project.pbxproj
-       grep -oE "MARKETING_VERSION = [0-9.]+;|CURRENT_PROJECT_VERSION = [0-9]+;" \
-         HelioFITS.xcodeproj/project.pbxproj | sort | uniq -c   # expect 10 of each
+       scripts/bump-version.sh 1.4.1 11
+       # prints "ok   <target> <config>: 1.4.1 11" for the five mac targets in
+       # Debug and Release. Exit 3 means a target-level setting in
+       # project.pbxproj overrides the xcconfig: remove it there, then rerun.
 
-   (Both fields live in `project.pbxproj`, repeated across all 10 targets. They
-   must move together: desynchronising the extensions from the app fails the
-   upload, which is why the verification grep above is not optional.)
+   `agvtool` is not used (its `-all` flag errors on this project), and nothing
+   edits version numbers in `project.pbxproj` any more: `scripts/check.sh`
+   fails if one appears there.
 
 3. **Run the tests.** First the core package, headless, in seconds (no app
    launch, nothing registered with LaunchServices):

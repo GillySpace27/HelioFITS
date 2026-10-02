@@ -56,8 +56,9 @@ The owner is Gilly; call him Gilly.
   another session's branch (`claude/ios-memory`). No rename, prune or checkout there.
 - `ship.sh` (`rm -rf build`) and `lsclean.sh` (removes `build/HelioFITS.xcarchive`) delete
   build output by design; copy what you need out of `build/` first.
-- Do not run `./preflight.sh` from an agent session: it commits and tags (L31-L33), and its
-  `xcrun agvtool next-version -all` (L28) errors on this project (RELEASING.md step 2).
+- `./preflight.sh` checks the tree, runs the hosted tests (it runs `pkill -x HelioFITS` first,
+  so never while another test run is in flight) and `./lsclean.sh`; it bumps, commits and
+  tags nothing.
 - Hand out `https://github.com/GillySpace27/HelioFITS/releases`, never `/releases/latest`.
 - Data contracts, append-only: bundle id `com.gillyspace27.HelioFITS`, the app group above,
   defaults keys `dirHDU` and `defaultHDU`, tags `v<VER>-build.<N>`, release zip names.
@@ -90,10 +91,12 @@ Update this list when a branch merges or parks.
   checks git, `gh` and the App Store Connect API and says UNCHECKED when it cannot verify.
   Never quote a version from a doc as live.
 - The Mac App Store is the one official channel; the notarized GitHub zip is a fallback.
-- `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` sit in
-  `HelioFITS.xcodeproj/project.pbxproj` 10 times each and move together (RELEASING.md
-  step 2); the iOS project keeps its own pair, 6 times each. `scripts/check.sh` fails when
-  copies within one project disagree.
+- The mac version lives once, in `Config/Version.xcconfig`; change it only with
+  `scripts/bump-version.sh <VER> <BUILD>` (refuses a build not above the newest
+  `v*-build.N` tag; exit 3 if a target resolves other values). The iOS project keeps its
+  own pair, 6 times each, until Gilly decides. `scripts/check.sh` fails on a version line
+  in the mac `project.pbxproj` and on a newest tag that is off the branch or ahead of the
+  xcconfig.
 - The incident log at the end of SKILL.md is append-only ("Append, never delete").
 
 ## Style
