@@ -56,9 +56,10 @@ The owner is Gilly; call him Gilly.
   another session's branch (`claude/ios-memory`). No rename, prune or checkout there.
 - `ship.sh` (`rm -rf build`) and `lsclean.sh` (removes `build/HelioFITS.xcarchive`) delete
   build output by design; copy what you need out of `build/` first.
-- `./preflight.sh` checks the tree, runs the hosted tests (it runs `pkill -x HelioFITS` first,
-  so never while another test run is in flight) and `./lsclean.sh`; it bumps, commits and
-  tags nothing.
+- Do not run `./preflight.sh` from an agent session. It runs `pkill -x HelioFITS` (it kills
+  any running copy of the app, and any other test run in flight) and the hosted
+  `xcodebuild` tests, which register a Debug copy of the app with LaunchServices on that
+  Mac; it also runs `./lsclean.sh`. It bumps, commits and tags nothing. Gilly runs it.
 - Hand out `https://github.com/GillySpace27/HelioFITS/releases`, never `/releases/latest`.
 - Data contracts, append-only: bundle id `com.gillyspace27.HelioFITS`, the app group above,
   defaults keys `dirHDU` and `defaultHDU`, tags `v<VER>-build.<N>`, release zip names.
