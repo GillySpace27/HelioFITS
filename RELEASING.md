@@ -140,6 +140,32 @@ Default to **App Store only**. Run `ship.sh` when there's a reason:
 If you cut both for one release, keep the version **and** build numbers
 identical across channels so a bug report identifies the binary unambiguously.
 
+## Rolling back
+
+The App Store cannot re-serve an old binary, so rolling back means shipping the
+last good source again as a new build. Nothing is deleted on the way: no tag,
+no release, no GitHub zip, no App Store version.
+
+1. **Pause a phased release** if one is running (App Store Connect, on the
+   version's page). Outward: only with Gilly's yes for this release.
+2. **Prepare the rebuild:** `scripts/rollback.sh <good-tag>`, for example
+   `scripts/rollback.sh v1.4.0-build.10`. It adds a worktree at
+   `.claude/worktrees/rollback-<good-tag>` (git-ignored), prints the next free
+   build number, a suggested marketing version one patch above the newest tag
+   (the store expects a version above the last approved one; confirm on the
+   first real rollback), and the bump and release commands. It pushes,
+   uploads, tags and submits nothing.
+3. **Ship it like any release** from the worktree: "Every release, in order"
+   steps 2 to 5 (the CHANGELOG entry names the tag it restores), then
+   Channel A. Upload, submit and release stay gated on Gilly, one yes per
+   action.
+4. **Expedited review** only for a critical regression; it loses its power if
+   overused (see "How much review to expect").
+5. **Direct channel:** the previous zip stays on its GitHub release, which is
+   never deleted. Point people at the `/releases` index, never
+   `/releases/latest`.
+6. Leave the worktree in place afterwards; `git worktree list` shows it.
+
 ## Rejections seen so far
 
 **5.2.5 Legal — Intellectual Property (v1.2 build 6, 2026‑07‑27).** The subtitle
@@ -188,7 +214,7 @@ importer is NOT in the store build; don't mention it):
   already have (`--compose`), and puts a **caption** on each — a bare window
   screenshot sells nothing. The set that shipped with 1.2:
 
-      rm -rf build/screenshots
+      # start a new version folder: shots land in screenshots/<VER>/, kept per version and never wiped; to redo a set, VER=<VER>-retake
       CAPTIONS="Finder learns to read solar FITS files" ./make-screenshots.sh   # app window, "How it works" expanded
       CAPTIONS="Image, full header, and a ready-to-run sunpy snippet" ./make-screenshots.sh sun.fits
       ./make-screenshots.sh --compose docs/before-after.png       "From grey icons to the Sun"

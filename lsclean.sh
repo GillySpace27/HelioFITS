@@ -37,8 +37,25 @@ done < <(
     find "$HOME/.Trash" -maxdepth 2 -type d -name "HelioFITS*.app" 2>/dev/null
 )
 
-# 2. The archive is an intermediate; delete it so nothing can re-latch it.
-rm -rf build/HelioFITS.xcarchive
+# 2. The archive is an intermediate. Keep it as a zip in the ignored build-attic/
+#    (a zip cannot be registered, so it cannot re-latch the ThumbnailsAgent), then
+#    remove the directory so nothing can re-latch it. Order matters: unregister
+#    (step 1), zip, remove. If the zip fails, the archive is left in place.
+ARCHIVE=build/HelioFITS.xcarchive
+if [ -d "$ARCHIVE" ]; then
+    AVER=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleShortVersionString" "$ARCHIVE/Info.plist" 2>/dev/null || echo unknown)
+    ABUILD=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleVersion" "$ARCHIVE/Info.plist" 2>/dev/null || echo unknown)
+    mkdir -p build-attic
+    KEEP="build-attic/HelioFITS-${AVER}-b${ABUILD}.xcarchive.zip"
+    # The same version archived twice (a ship.sh rerun) never overwrites the first zip.
+    [ -e "$KEEP" ] && KEEP="build-attic/HelioFITS-${AVER}-b${ABUILD}-$(date -u +%Y%m%dT%H%M%SZ).xcarchive.zip"
+    if ditto -c -k --keepParent "$ARCHIVE" "$KEEP" && [ -s "$KEEP" ]; then
+        rm -rf "$ARCHIVE"
+        echo "==> archive kept as $KEEP"
+    else
+        echo "==> WARNING: could not write $KEEP; $ARCHIVE left in place"
+    fi
+fi
 
 # 3. Drop the phantoms, then re-assert the installed copy. The -R is REQUIRED:
 #    a plain -f after a -u leaves the nested appexes unregistered.

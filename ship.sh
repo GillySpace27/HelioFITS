@@ -13,6 +13,17 @@ ARCH="build/HelioFITS.xcarchive"
 APP="build/HelioFITS.app"
 # ZIP is derived from the built app's version, after the archive.
 
+# Keep the previous run instead of destroying it: zip build/ into the ignored
+# build-attic/ first (a zip cannot be registered with LaunchServices, so a kept
+# copy never hijacks thumbnails), then clear build/. No script prunes the attic;
+# see scripts/attic-report.sh.
+if [ -d build ]; then
+    mkdir -p build-attic
+    KEEP="build-attic/build-$(date -u +%Y%m%dT%H%M%SZ).zip"
+    ditto -c -k --keepParent build "$KEEP"
+    [ -s "$KEEP" ] || { echo "REFUSING: $KEEP was not written; build/ left in place"; exit 1; }
+    echo "==> previous build/ kept as $KEEP"
+fi
 rm -rf build && mkdir build
 
 echo "==> Archiving (Developer ID, hardened runtime, secure timestamp)"
