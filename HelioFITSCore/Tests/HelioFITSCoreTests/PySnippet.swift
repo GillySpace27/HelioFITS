@@ -1,6 +1,5 @@
 import Testing
 import Foundation
-@testable import HelioFITS
 @testable import HelioFITSCore
 @Suite("python snippet")
 @MainActor struct PySnippet {

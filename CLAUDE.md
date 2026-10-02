@@ -16,7 +16,12 @@ The owner is Gilly; call him Gilly.
 - App build (README "Building from source"):
   `xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS -configuration Release -destination 'platform=macOS,arch=arm64' build`.
   Always pass `-project`: the iOS project also has a scheme named HelioFITS.
-- Core package alone: `swift build --package-path HelioFITSCore`.
+- Core tests, headless (no app launch, nothing registered with LaunchServices):
+  `swift test --package-path HelioFITSCore`. Tests of `HelioFITSCore` code go in
+  `HelioFITSCore/Tests/HelioFITSCoreTests/` and find repository files through `RepoPaths`;
+  `HelioFITSTests/` keeps only tests that need the app module.
+- Callbacks: a new `var on<Name>` on `FITSImageCanvas` or `CanvasScrollView` is assigned in
+  every host, or gets an entry with a reason in `CallbackSubscriberTests.allowlist`.
 - Hosted tests (RELEASING.md step 3), then the LaunchServices clean:
   `pkill -x HelioFITS; xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS -destination 'platform=macOS,arch=arm64' DEVELOPMENT_TEAM=UB45PPC2JS CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual AD_HOC_CODE_SIGNING_ALLOWED=YES`
   then `./lsclean.sh`. When `libcfitsio.a` changed, also run with

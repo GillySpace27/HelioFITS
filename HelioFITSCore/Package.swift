@@ -15,5 +15,9 @@ let package = Package(
         .binaryTarget(name: "CFITSIO", path: "CFITSIO.xcframework"),
         .target(name: "HelioFITSCore", dependencies: ["CFITSIO"],
                 linkerSettings: [.linkedLibrary("z")]),
+        // Headless tests: `swift test --package-path HelioFITSCore`. No app launch,
+        // nothing registered with LaunchServices. Tests that need the app module
+        // (canvas, toolbar, FITSHeader) stay hosted in HelioFITSTests/.
+        .testTarget(name: "HelioFITSCoreTests", dependencies: ["HelioFITSCore", "CFITSIO"]),
     ]
 )
