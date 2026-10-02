@@ -1,7 +1,7 @@
 //
 //  FITSPreviewModel.swift — pages, current HDU, display mode, stretch, and every
 //  derived image, caption, readout and statistic. Platform-neutral: images are
-//  CGImage; the AppKit views in HelioFITSExtension/FITSPreviewCore.swift wrap them.
+//  CGImage; the AppKit views in HelioFITSMacUI/ wrap them.
 //
 
 import Foundation
@@ -207,6 +207,51 @@ public final class FITSPreviewModel {
         guard n != cur else { return false }
         cur = n
         return true
+    }
+
+    // MARK: viewer commands
+    //
+    // The toolbar actions, written once for the Quick Look preview, the Mac
+    // viewer and the iOS viewer. Each returns whether the host must re-render.
+
+    /// Limb overlay on or off.
+    @discardableResult
+    public func toggleLimb() -> Bool {
+        limbOn.toggle()
+        return true
+    }
+
+    /// Running difference on, or back to plain when it is already on.
+    @discardableResult
+    public func toggleDiff() -> Bool {
+        mode = (mode == .diff) ? .plain : .diff
+        return true
+    }
+
+    /// The Stretch button (the hosts' `toggleTune` selector): stretch mode on, or
+    /// back to plain when it is already on.
+    @discardableResult
+    public func toggleStretch() -> Bool {
+        mode = (mode == .stretch) ? .plain : .stretch
+        return true
+    }
+
+    /// Select an enhancement filter. False when it was already selected.
+    @discardableResult
+    public func setFilter(_ f: Filter) -> Bool {
+        guard f != filter else { return false }
+        filter = f
+        return true
+    }
+
+    /// Back to the default stretch for a colormap: the 0.5 / 99.5 percentile clip,
+    /// that colormap's default gamma (1.0 for hmimag, 0.5 otherwise), log off.
+    /// True only in stretch mode, the one mode that draws `stretch`.
+    @discardableResult
+    public func resetStretch(cmapKey: String?) -> Bool {
+        stretch = (lo: FITSRenderer.pLow, hi: FITSRenderer.pHigh,
+                   gamma: Double(FITSRenderer.defaultGamma(cmapKey)), log: false)
+        return mode == .stretch
     }
 
     // MARK: derived
