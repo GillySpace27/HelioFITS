@@ -35,7 +35,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # check.sh diffs against origin/main
       - name: Toolchain
@@ -48,7 +48,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: xcodebuild -version
       - name: Run unit tests (ad-hoc signing)
@@ -70,7 +70,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: xcodebuild -version
       - name: Rosetta (installed only when missing)
@@ -104,7 +104,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: xcodebuild -version
       - name: Release build (ad-hoc signing)
@@ -120,7 +120,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: xcodebuild -version && swift --version
       - name: Build the core package
@@ -131,7 +131,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: xcodebuild -version
       - name: iOS Simulator build (unsigned)
@@ -145,7 +145,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: xcodebuild -version && python3 --version
       - name: Shell syntax (bash -n on every tracked .sh)
@@ -168,7 +168,7 @@ jobs:
     timeout-minutes: 10
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Toolchain
         run: xcodebuild -version && swift --version
       - name: swift format lint (advisory)
