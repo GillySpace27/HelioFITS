@@ -1,0 +1,5 @@
+# Pinned inputs for tools/colormaps/gen_colormaps.py (Python 3.11 or newer: sunpy 7.0.1 requires it).
+# These versions reproduced FITSColormaps.swift byte for byte (computed 2026-10-01).
+sunpy[visualization]==7.0.1
+matplotlib==3.11.2
+numpy==2.4.6
