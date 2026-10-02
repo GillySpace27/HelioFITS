@@ -1,0 +1,8 @@
+# <tag> <asset-name>: zips on GitHub releases that must stay listed (scripts/watch.py assets).
+# Append a line in the same commit that records a newly cut zip. Never remove a line.
+v1.1-build.2 HelioFITS-1.1-b2.zip
+v1.1.1-build.3 HelioFITS-1.1.1-b3.zip
+v1.3.0-build.7 HelioFITS-1.3.0-b7.zip
+v1.3.1-build.8 HelioFITS-1.3.1-b8.zip
+v1.3.2-build.9 HelioFITS-1.3.2-b9.zip
+v1.4.0-build.10 HelioFITS-1.4.0-b10.zip
