@@ -1,0 +1,30 @@
+# Weekly public-facts watch, read-only: the live store version against the newest
+# tag, the landing page (following redirects to the destination), the release
+# assets listed in scripts/watch-expected-assets.txt, and (advisory) a newer CFITSIO
+# upstream. A failure is reported by GitHub's own failed-workflow notification.
+# No stored secret: only the automatic read-only token, to read release assets.
+# It opens no issues and posts nothing. GitHub may suspend scheduled workflows
+# in a repository without recent activity (not verified here); workflow_dispatch
+# always works.
+name: watch
+
+on:
+  schedule:
+    - cron: "17 14 * * 1"   # Mondays 14:17 UTC (08:17 MDT, 07:17 MST)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0   # tags, for the store check
+      - name: Public facts
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/watch.py

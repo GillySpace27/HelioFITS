@@ -18,7 +18,6 @@
 
 import Testing
 import Foundation
-@testable import HelioFITS
 @testable import HelioFITSCore
 import CFITSIO
 
@@ -99,7 +98,7 @@ struct CubeTests {
     }
 
     @Test("Full-resolution buffers for two planes of the same HDU never collide")
-    func buffersDoNotCollideAcrossPlanes() throws {
+    @MainActor func buffersDoNotCollideAcrossPlanes() async throws {
         // Not a uniform cube this time — a per-pixel ramp offset by plane, so a
         // cache-key collision (both planes reading/writing the same slot) would
         // show up as wrong VALUES, not just a wrong appearance.
@@ -130,10 +129,15 @@ struct CubeTests {
 
         for plane in 0..<2 {
             m.cur = plane
-            let landed = DispatchSemaphore(value: 0)
-            m.onFullRes = { landed.signal() }
             m.prefetchFullRes()
-            if !m.fullResReady { _ = landed.wait(timeout: .now() + 10) }
+            // Yield to the main queue between polls: prefetchFullRes() delivers its
+            // result with DispatchQueue.main.async, which a blocking wait would starve.
+            var polls = 0
+            while !m.fullResReady && polls < 1000 {
+                try await Task.sleep(nanoseconds: 10_000_000)
+                polls += 1
+            }
+            #expect(m.fullResReady, "plane \(plane): the full-res buffer never landed within 10 s")
             let f = try #require(FITSRenderer.pixels(path: url.path, hdu: 0, plane: plane))
             let expectedBase: Float = plane == 0 ? 0 : 1000
             #expect(f.pix.min()! >= expectedBase && f.pix.min()! < expectedBase + 36,

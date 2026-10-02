@@ -190,10 +190,30 @@ xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS -configuration Release
   -destination 'platform=macOS,arch=arm64' build
 ```
 
-Apple Silicon Mac required — the vendored CFITSIO static library is arm64‑only.
-Tests live under `HelioFITSTests/` (the WCS math is pinned against astropy ground
-truth); run them with the scheme's Test action. `ship.sh` documents the notarized
-release flow and `RELEASING.md` the full two‑channel process.
+The app is universal (Apple Silicon and Intel): the vendored CFITSIO library in
+`HelioFITSCore/CFITSIO.xcframework` carries both Mac slices, and
+`lipo -archs HelioFITSCore/CFITSIO.xcframework/macos-arm64_x86_64/libcfitsio.a`
+prints `x86_64 arm64`. The core tests (the WCS math pinned against astropy ground
+truth, colormaps, cubes, RHEF, the readout) live under
+`HelioFITSCore/Tests/HelioFITSCoreTests/` and run headless with
+`swift test --package-path HelioFITSCore`, without launching the app. Tests that need
+the app (canvas, toolbar, stretch panel, header reader) live under `HelioFITSTests/`;
+run them with the scheme's Test action, then
+`./lsclean.sh`. `ship.sh` documents the notarized release flow and `RELEASING.md`
+the full two-channel process. Contributors and coding agents start at `CLAUDE.md`;
+`bash scripts/check.sh` runs the fast static checks.
+
+### iPhone and iPad (in development)
+
+`HelioFITS-iOS/` holds an iPhone and iPad app that shares `HelioFITSCore` with the
+Mac: thumbnails and Quick Look previews in the Files app, and an interactive
+viewer. It is not on the App Store yet, keeps its own version number, and has
+been tested in the Simulator only. Build it with:
+
+```sh
+xcodebuild -project HelioFITS-iOS/HelioFITS-iOS.xcodeproj -scheme HelioFITS \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+```
 
 ## Privacy
 

@@ -20,7 +20,7 @@
 //  Scroll is therefore the primary gesture (blink HDUs), and the controls hide
 //  themselves in the narrow column pane where they could never be clicked.
 //
-//  All the actual behaviour lives in FITSPreviewCore, shared with the in-app
+//  All the actual behaviour lives in HelioFITSMacUI/, shared with the in-app
 //  viewer window so the two surfaces cannot drift apart.
 //
 
@@ -74,7 +74,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
         tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb), diffSel: #selector(toggleDiff),
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
-                            resetSel: #selector(resetStretch), filterSel: #selector(filterChanged))
+                            resetSel: #selector(resetStretch), filterSel: #selector(filterChanged),
+                            limitsSel: #selector(limitsChanged(_:)), ringsSel: #selector(toggleRings))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -107,10 +108,13 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         // in the COLUMN pane — only scroll. Hide controls that could never be
         // used there and lean on scroll-to-blink.
         // The card needs ~645 pt of width before it stops covering the readout,
-        // and ~400 pt of height before it stops covering the stretch panel and
+        // and ~500 pt of height before it stops covering the stretch panel (taller
+        // since HF-12 added the vmin/vmax fields and the histogram) and
         // the toolbar. Below that the image matters more than the statistics.
-        statsFits = view.bounds.width >= 645 && view.bounds.height >= 400
+        statsFits = view.bounds.width >= 645 && view.bounds.height >= 500
         if !statsFits { stats.isHidden = true }
+        // The toolbar row grew by the Rings chip; below ~560 pt it would run off the left edge.
+        tools.rings.isHidden = view.bounds.width < 560
         let isCompact = view.bounds.width < 380
         guard isCompact != compact else { return }
         compact = isCompact
@@ -172,18 +176,21 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     // MARK: actions
 
-    @objc private func toggleLimb() { model.limbOn.toggle(); refresh() }
-    @objc private func toggleDiff() { model.mode = (model.mode == .diff) ? .plain : .diff; refresh() }
-    @objc private func toggleTune() { model.mode = (model.mode == .stretch) ? .plain : .stretch; refresh() }
-    @objc private func filterChanged() { model.filter = tools.readFilter(); refresh() }
+    @objc private func toggleLimb() { if model.toggleLimb() { refresh() } }
+    @objc private func toggleDiff() { if model.toggleDiff() { refresh() } }
+    @objc private func toggleRings() { if model.toggleRings() { refresh() } }
+    @objc private func toggleTune() { if model.toggleStretch() { refresh() } }
+    @objc private func filterChanged() { if model.setFilter(tools.readFilter()) { refresh() } }
     @objc private func stretchChanged() {
         model.stretch = tools.readStretch()
         if model.mode == .stretch { refresh() }
     }
     @objc private func resetStretch() {
-        tools.resetStretch(cmapKey: model.page?.res.cmapKey)
-        model.stretch = tools.readStretch()
-        if model.mode == .stretch { refresh() }
+        if tools.applyReset(to: model) { refresh() }
+    }
+    /// Typed vmin/vmax or a histogram handle: apply the fields, then repaint.
+    @objc private func limitsChanged(_ sender: Any?) {
+        if tools.applyLimits(to: model) { refresh() }
     }
 
     private func region(_ r: (u0: Double, v0: Double, u1: Double, v1: Double)?) {
@@ -203,6 +210,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         canvas.image = model.image().map(NSImage.init)
         canvas.caption = model.caption()
         canvas.limb = compact ? nil : model.limbCircle()
+        canvas.colorbar = compact ? nil : model.colorbar()
+        canvas.rings = (model.ringsOn && !compact) ? model.rings() : nil
         if let p = model.page {
             canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }

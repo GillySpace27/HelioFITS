@@ -14,7 +14,6 @@
 
 import Testing
 import Foundation
-@testable import HelioFITS
 @testable import HelioFITSCore
 import CFITSIO
 

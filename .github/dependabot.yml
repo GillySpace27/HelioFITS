@@ -1,0 +1,8 @@
+# Weekly version bumps for the actions the workflows use (checkout, upload-artifact).
+# Dependabot opens PRs only; nothing merges without review.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

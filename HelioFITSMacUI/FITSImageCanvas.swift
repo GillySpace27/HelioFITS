@@ -1,5 +1,5 @@
 //
-//  FITSPreviewCore.swift — the interactive FITS image surface, shared by BOTH
+//  FITSImageCanvas.swift: the interactive FITS image surface, shared by BOTH
 //  the Quick Look preview extension and the in-app viewer window.
 //
 //  It lives in one place on purpose. The coordinate maths used to be mirrored in
@@ -15,7 +15,7 @@
 //      fit (1x)     measure a region     measure       ✛ crosshair
 //      zoomed in    pan                  measure       ✋ / ✊ open-closed hand
 //
-//  Pan is meaningless at fit — there is nothing to pan to — so a plain drag
+//  Pan is meaningless at fit - there is nothing to pan to - so a plain drag
 //  measures there; once you zoom in, a plain drag pans, as in every image
 //  viewer. The on-screen hint re-states the current gestures, and reappears
 //  while ⌘ is held.
@@ -32,113 +32,6 @@ import AppKit
 import os.log
 import HelioFITSCore
 
-extension NSImage {
-    /// Wrap a model image at its pixel size, which is what the canvas and PNG
-    /// export always used (the model renders CGImage so it can run on iOS too).
-    convenience init(_ cg: CGImage) { self.init(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)) }
-}
-
-// MARK: - Statistics card
-
-final class FITSStatsCard: NSView {
-    var text = "" { didSet { setAccessibilityValue(accessibilityValue() as? String ?? text) } }
-    /// Set together with `text`; nil until a region has been measured.
-    var stats: FITSPreviewModel.RegionStats?
-    override var isFlipped: Bool { true }
-
-    // The whole card is custom-drawn, so without this VoiceOver sees an empty
-    // box where the mean/median/σ/sum live. The histogram is decorative to a
-    // screen reader, but the clip limits are not, so they are spoken too.
-    override func accessibilityLabel() -> String? { "Region statistics" }
-    override func isAccessibilityElement() -> Bool { true }
-    override func accessibilityRole() -> NSAccessibility.Role? { .staticText }
-    override func accessibilityValue() -> Any? {
-        guard let s = stats, let lo = s.clipLo, let hi = s.clipHi else { return text }
-        let u = s.unit.isEmpty ? "" : " " + s.unit
-        return text + "\ndisplay clipped to \(FITSRenderer.fmtValue(lo))\(u) – \(FITSRenderer.fmtValue(hi))\(u)"
-    }
-
-    private let pad: CGFloat = 9
-    private let axisH: CGFloat = 13
-    private let histH: CGFloat = 46
-
-    /// Click-through. The card is a 292×168 sibling sitting ON the image, and
-    /// without this it swallows every gesture underneath it: no measure-drag, no
-    /// scroll-to-blink (the only gesture Finder delivers to the column pane), no
-    /// hover readout, and no way to dismiss it since clicking it does nothing.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    override func draw(_ dirty: NSRect) {
-        NSColor(calibratedWhite: 0.07, alpha: 0.96).setFill()
-        let bg = NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8)
-        bg.fill()
-        NSColor(calibratedWhite: 0.25, alpha: 1).setStroke()
-        bg.stroke()
-
-        let block = histH + axisH + pad
-        NSAttributedString(string: text, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
-            .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.97, blue: 0.93, alpha: 1),
-        ]).draw(in: NSRect(x: pad, y: 6, width: bounds.width - 2 * pad,
-                           height: bounds.height - block - 6))
-
-        guard let s = stats, !s.region.isEmpty else { return }
-        let hr = NSRect(x: pad, y: bounds.height - block, width: bounds.width - 2 * pad, height: histH)
-        NSColor(calibratedWhite: 0.04, alpha: 1).setFill()
-        NSBezierPath(roundedRect: hr, xRadius: 3, yRadius: 3).fill()
-
-        // One vertical scale for both, so the region reads as a fraction of the
-        // image rather than being silently renormalised to its own peak.
-        func logs(_ a: [Int]) -> [Double] { a.map { Foundation.log(1 + Double($0)) } }
-        let rl = logs(s.region), wl = logs(s.whole)
-        let peak = max(1.0, (wl + rl).max() ?? 1)
-        let bw = hr.width / CGFloat(max(s.region.count, 1))
-
-        // whole image behind, dim; the selected region in front
-        func bars(_ v: [Double], _ colour: NSColor) {
-            colour.setFill()
-            for (i, c) in v.enumerated() where c > 0 {
-                let h = CGFloat(c / peak) * (hr.height - 2)
-                NSRect(x: hr.minX + CGFloat(i) * bw + 0.5, y: hr.maxY - h,
-                       width: max(1, bw - 1), height: h).fill()
-            }
-        }
-        bars(wl, NSColor(calibratedWhite: 0.42, alpha: 1))
-        bars(rl, NSColor(calibratedRed: 0.5, green: 0.72, blue: 0.54, alpha: 0.95))
-
-        // Where the display is currently clipped, drawn ON the distribution:
-        // the useful question when choosing a stretch is how much of the data
-        // the clip is throwing away, which a pair of numbers cannot show.
-        let span = Double(max(s.axisMax - s.axisMin, 1e-12))
-        func xFor(_ v: Float) -> CGFloat? {
-            let t = (Double(v) - Double(s.axisMin)) / span
-            guard t >= -0.02, t <= 1.02 else { return nil }
-            return hr.minX + CGFloat(min(max(t, 0), 1)) * hr.width
-        }
-        NSColor(calibratedRed: 1, green: 0.78, blue: 0.35, alpha: 0.9).setStroke()
-        for v in [s.clipLo, s.clipHi].compactMap({ $0 }) {
-            guard let x = xFor(v) else { continue }
-            let p = NSBezierPath()
-            p.move(to: NSPoint(x: x, y: hr.minY)); p.line(to: NSPoint(x: x, y: hr.maxY))
-            p.lineWidth = 1
-            p.setLineDash([3, 2], count: 2, phase: 0)
-            p.stroke()
-        }
-
-        // Abscissa: the axis was unlabelled, which is what made this a vibe.
-        let f = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
-        let grey = NSColor(calibratedWhite: 0.62, alpha: 1)
-        func label(_ t: String, rightAlignedAt x: CGFloat) {
-            let a = NSAttributedString(string: t, attributes: [.font: f, .foregroundColor: grey])
-            a.draw(at: NSPoint(x: x - a.size().width, y: hr.maxY + 1))
-        }
-        NSAttributedString(string: FITSRenderer.fmtValue(s.axisMin),
-                           attributes: [.font: f, .foregroundColor: grey])
-            .draw(at: NSPoint(x: hr.minX, y: hr.maxY + 1))
-        label(FITSRenderer.fmtValue(s.axisMax), rightAlignedAt: hr.maxX)
-    }
-}
-
 // MARK: - Canvas
 
 /// Draws the image + overlays and owns every gesture. Zoom/pan live here so the
@@ -152,8 +45,30 @@ final class FITSImageCanvas: NSView {
     var pageCount = 1                              // drives the gesture hint
     var limb: (cx: Double, cy: Double, r: Double)?
     var natSize: CGSize = .zero
+    /// The colorbar to draw in a strip on the left (HF-12); nil draws none and
+    /// reserves no space. Hosts set it from `FITSPreviewModel.colorbar()` on every
+    /// refresh, before asking for `idealSize()`.
+    var colorbar: Colorbar? { didSet { needsDisplay = true } }
+
+    // MARK: compare and rings (HF-15)
+    /// Rings and spokes to draw over the image; nil draws none.
+    var rings: SolarRings? { didSet { needsDisplay = true } }
+    /// The second file, already registered onto this image's grid by helioprojective
+    /// coordinates (`FITSPreviewModel.registeredCompareImage`), and how it is shown.
+    var compareImage: NSImage? { didSet { updateBlinkTimer(); needsDisplay = true } }
+    var compareMode: FITSPreviewModel.CompareMode? { didSet { updateBlinkTimer(); needsDisplay = true } }
+    /// Where the swipe divider sits, as a fraction of the image area's width.
+    var swipeFraction: CGFloat = 0.5 { didSet { needsDisplay = true } }
+    /// Blink: which image is up, and whether the timer is running. Blink has an off
+    /// switch (`blinkPaused`), and does not start by itself when the system asks for
+    /// reduced motion; an option-click on the image flips it by hand in either case.
+    private(set) var blinkShowsSecond = false
+    var blinkPaused = false { didSet { updateBlinkTimer() } }
+    private var blinkTimer: Timer?
+    private var swipeDragging = false
+    private let compareGap: CGFloat = 6
     /// Column/compact pane hides the toolbar (Finder won't deliver clicks there).
-    /// When set, the gesture hint stays up and names the way out — otherwise the
+    /// When set, the gesture hint stays up and names the way out - otherwise the
     /// pane reads as a dead, non-interactive image (panel feedback).
     var compactMode = false { didSet { needsDisplay = true } }
     /// Selection in normalized image coords (0…1, top-left origin) so it stays
@@ -165,13 +80,16 @@ final class FITSImageCanvas: NSView {
     var onHover: ((Double, Double)?) -> Void = { _ in }     // normalized, or nil
     var onRegion: (((u0: Double, v0: Double, u1: Double, v1: Double)?) -> Void)?
     var onZoomChanged: (() -> Void)?
+    /// Fired when the compare view changes without a mouse event over the image:
+    /// the blink flips, or the swipe divider is dragged. Hosts re-sample the readout.
+    var onCompareChanged: (() -> Void)?
 
     // MARK: accessibility
     //
     // Everything here is drawn, not built from controls, so VoiceOver sees one
     // roleless view unless we say otherwise. The caption already names the HDU,
     // instrument, wavelength and dimensions, and the readout already carries the
-    // pixel value and helioprojective coordinate — expose those rather than
+    // pixel value and helioprojective coordinate - expose those rather than
     // inventing a second description that could drift from what is on screen.
     override func isAccessibilityElement() -> Bool { true }
     override func accessibilityRole() -> NSAccessibility.Role? { .image }
@@ -203,7 +121,7 @@ final class FITSImageCanvas: NSView {
 
     /// What a plain drag does *right now*.
     ///
-    /// Pan is meaningless at fit — there is nothing to pan to — so a plain drag
+    /// Pan is meaningless at fit - there is nothing to pan to - so a plain drag
     /// measures. Once you zoom in, a plain drag pans, which is what every image
     /// viewer does; hold ⌘ then to measure instead. The cursor always says which.
     enum DragMode { case measure, pan }
@@ -236,7 +154,7 @@ final class FITSImageCanvas: NSView {
         // hover and no modifier keys there, so advertising drag-to-measure or
         // ⌥-scroll is false; and the full string measured 728 pt in a pane that
         // is by definition under 380, so it was drawn clipped off the left edge
-        // with "press Space" — the only actionable part — entirely off-screen.
+        // with "press Space" - the only actionable part - entirely off-screen.
         if compactMode {
             return pageCount > 1 ? "press Space  ·  scroll to blink layers" : "press Space"
         }
@@ -269,7 +187,7 @@ final class FITSImageCanvas: NSView {
         super.viewDidMoveToWindow()
         guard window != nil, flagsMonitor == nil else { return }
         // ⌘ can be pressed with the mouse perfectly still, which produces no
-        // mouse event at all — watch the modifier itself so the cursor and the
+        // mouse event at all - watch the modifier itself so the cursor and the
         // hint update the instant the key goes down, not on the next wiggle.
         flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] e in
             guard let self else { return e }
@@ -282,7 +200,43 @@ final class FITSImageCanvas: NSView {
         }
     }
 
-    deinit { if let m = flagsMonitor { NSEvent.removeMonitor(m) } }
+    deinit {
+        if let m = flagsMonitor { NSEvent.removeMonitor(m) }
+        blinkTimer?.invalidate()
+    }
+
+    private func updateBlinkTimer() {
+        blinkTimer?.invalidate()
+        blinkTimer = nil
+        guard compareMode == .blink, compareImage != nil, !blinkPaused,
+              !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        blinkTimer = Timer.scheduledTimer(withTimeInterval: 0.9, repeats: true) { [weak self] _ in
+            self?.flipBlink()
+        }
+    }
+
+    private func flipBlink() {
+        blinkShowsSecond.toggle()
+        needsDisplay = true
+        onCompareChanged?()
+    }
+
+    /// X of the swipe divider in view coordinates.
+    private func swipeDividerX() -> CGFloat {
+        let c = contentBox()
+        return c.minX + swipeFraction * c.width
+    }
+
+    /// How far the second panel sits to the right of the first in a side-by-side compare.
+    private var comparePanelShift: CGFloat { contentBox().width + compareGap }
+
+    /// A pointer position in the second side-by-side panel, expressed in the first
+    /// panel's coordinates, so every gesture works on either side.
+    private func canvasPoint(_ p: NSPoint) -> NSPoint {
+        guard compareMode == .sideBySide, compareImage != nil,
+              p.x >= contentBox().maxX + compareGap / 2 else { return p }
+        return NSPoint(x: p.x - comparePanelShift, y: p.y)
+    }
 
     override init(frame f: NSRect) {
         super.init(frame: f)
@@ -293,7 +247,7 @@ final class FITSImageCanvas: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let t = tracking { removeTrackingArea(t) }
-        // .activeAlways — a hosted preview never becomes the key window.
+        // .activeAlways - a hosted preview never becomes the key window.
         let t = NSTrackingArea(rect: bounds,
                                options: [.mouseMoved, .mouseEnteredAndExited, .cursorUpdate, .activeAlways, .inVisibleRect],
                                owner: self, userInfo: nil)
@@ -303,7 +257,7 @@ final class FITSImageCanvas: NSView {
 
     // MARK: geometry
 
-    /// Caption text style — centred and word-wrapping so a long HDU/EXTNAME name
+    /// Caption text style - centred and word-wrapping so a long HDU/EXTNAME name
     /// stays fully readable even in a narrow Get Info / column-pane preview.
     private var captionAttrs: [NSAttributedString.Key: Any] {
         let para = NSMutableParagraphStyle()
@@ -321,26 +275,34 @@ final class FITSImageCanvas: NSView {
             .boundingRect(with: NSSize(width: bounds.width - 12, height: 1000),
                           options: [.usesLineFragmentOrigin, .usesFontLeading])
         // boundingRect under-measures the last fragment vs the leading draw(in:)
-        // actually uses, clipping the final line — pad by a line's worth.
+        // actually uses, clipping the final line - pad by a line's worth.
         return ceil(r.height) + 4
     }
 
-    /// Chrome around the drawn image: just the caption strip, sized to the
-    /// (possibly wrapped) caption. No side margins — they would show as dead bars
-    /// once the host sizes itself to our content.
+    /// Width of the colorbar strip on the left: room for a 14 pt bar and labels
+    /// like "1.23e+04". Zero when there is no bar or in the column pane, which is
+    /// too narrow for one. The strip sits left because the statistics card owns the
+    /// top right, the readout chip the top left of the IMAGE, and the toolbar the bottom.
+    private var colorbarStripWidth: CGFloat { colorbar != nil && !compactMode ? 84 : 0 }
+
+    /// Chrome around the drawn image: the caption strip, sized to the (possibly
+    /// wrapped) caption, and the colorbar strip when there is a bar. No other side
+    /// margins - they would show as dead bars once the host sizes itself to our content.
     var chromeInsets: NSEdgeInsets {
-        NSEdgeInsets(top: showsCaption ? captionHeight() + 8 : 0, left: 0, bottom: 0, right: 0)
+        NSEdgeInsets(top: showsCaption ? captionHeight() + 8 : 0, left: colorbarStripWidth, bottom: 0, right: 0)
     }
 
     /// Area available to the image.
     private func contentBox() -> NSRect {
         let i = chromeInsets
+        var w = max(1, bounds.width - i.left - i.right)
+        if compareMode == .sideBySide, compareImage != nil { w = max(1, (w - compareGap) / 2) }
         return NSRect(x: i.left, y: i.top,
-                      width: max(1, bounds.width - i.left - i.right),
+                      width: w,
                       height: max(1, bounds.height - i.top - i.bottom))
     }
 
-    /// The canvas size at which the image fills exactly — no letterboxing.
+    /// The canvas size at which the image fills exactly - no letterboxing.
     /// Hosts hand this to Quick Look via `preferredContentSize` (Quick Look
     /// sizes the preview panel to the content; without it the panel keeps a
     /// default shape and a square Sun sits inside dark pillars).
@@ -385,7 +347,7 @@ final class FITSImageCanvas: NSView {
 
     // MARK: keyboard
     //
-    // The preview was mouse-only — no way to blink layers, zoom, or read the
+    // The preview was mouse-only - no way to blink layers, zoom, or read the
     // pixel value without a pointing device (panel: the #1 gap for both the
     // keyboard-first and the VoiceOver tester). Arrows blink layers, ⌘ +/−/0
     // zoom, ⌘C copies the current readout, "?" re-shows the gesture hint. The
@@ -448,7 +410,7 @@ final class FITSImageCanvas: NSView {
     }
 
     @objc private func pinch(_ g: NSMagnificationGestureRecognizer) {
-        let p = g.location(in: self)
+        let p = canvasPoint(g.location(in: self))
         setZoom(zoom * (1 + g.magnification), about: p)
         g.magnification = 0
     }
@@ -456,7 +418,7 @@ final class FITSImageCanvas: NSView {
     // MARK: events
 
     override func scrollWheel(with e: NSEvent) {
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
         let now = Date()
 
         // Scrolling DOWN advances to the next HDU (like paging down a document),
@@ -503,14 +465,15 @@ final class FITSImageCanvas: NSView {
     }
 
     override func magnify(with e: NSEvent) {
-        setZoom(zoom * (1 + e.magnification), about: convert(e.locationInWindow, from: nil))
+        setZoom(zoom * (1 + e.magnification), about: canvasPoint(convert(e.locationInWindow, from: nil)))
     }
 
     override func mouseMoved(with e: NSEvent) {
         mouseInside = true
         cmdDown = e.modifierFlags.contains(.command)
         cursorForMode.set()
-        lastPointer = convert(e.locationInWindow, from: nil)
+        lastPointer = canvasPoint(convert(e.locationInWindow, from: nil))
+        if compareMode != nil { needsDisplay = true }          // the linked crosshair follows the pointer
         guard dragStart == nil, panStart == nil else { return }
         onHover(normalized(lastPointer!))
     }
@@ -536,7 +499,17 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseDown(with e: NSEvent) {
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
+        if compareMode == .swipe, compareImage != nil, abs(p.x - swipeDividerX()) < 8,
+           contentBox().contains(p) {
+            swipeDragging = true                          // the divider, not a measurement
+            return
+        }
+        if compareMode == .blink, compareImage != nil, e.clickCount == 1,
+           imageRect()?.contains(p) == true, dragMode == .measure, e.modifierFlags.contains(.option) {
+            flipBlink()                                   // option-click flips by hand
+            return
+        }
         if e.clickCount == 2 { resetZoom(); return }
         cmdDown = e.modifierFlags.contains(.command)
         guard imageRect()?.contains(p) == true else { return }
@@ -548,7 +521,13 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseDragged(with e: NSEvent) {
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
+        if swipeDragging {
+            let c = contentBox()
+            swipeFraction = min(max((p.x - c.minX) / c.width, 0), 1)
+            onCompareChanged?()
+            return
+        }
         lastPointer = p
         if let s = panStart {
             pan = CGPoint(x: s.pan.x + (p.x - s.mouse.x), y: s.pan.y + (p.y - s.mouse.y))
@@ -564,10 +543,11 @@ final class FITSImageCanvas: NSView {
     }
 
     override func mouseUp(with e: NSEvent) {
+        if swipeDragging { swipeDragging = false; return }
         let wasPanning = panStart != nil
         defer { dragStart = nil; panStart = nil; stateChanged() }
         guard !wasPanning, let s = dragStart else { return }
-        let p = convert(e.locationInWindow, from: nil)
+        let p = canvasPoint(convert(e.locationInWindow, from: nil))
         if abs(p.x - s.x) + abs(p.y - s.y) < 8 {          // a click clears
             selection = nil
             onRegion?(nil)
@@ -587,8 +567,79 @@ final class FITSImageCanvas: NSView {
                 .draw(in: NSRect(x: 6, y: 4, width: bounds.width - 12, height: captionHeight()))
         }
 
+        if let cb = colorbar, colorbarStripWidth > 0 { drawColorbar(cb) }
+
         guard let img = image, let box = imageRect() else { return }
+        // Compare: the second image is registered onto the first's grid by
+        // helioprojective coordinates, so every mode draws it with the SAME geometry.
+        let second = compareMode == nil ? nil : compareImage
+        switch compareMode {
+        case .some(.blink) where second != nil:
+            drawPanel(blinkShowsSecond ? second! : img, box: box, shift: 0, swipeOver: nil)
+        case .some(.swipe) where second != nil:
+            drawPanel(img, box: box, shift: 0, swipeOver: second)
+        case .some(.sideBySide) where second != nil:
+            drawPanel(img, box: box, shift: 0, swipeOver: nil)
+            drawPanel(second!, box: box, shift: comparePanelShift, swipeOver: nil)
+        default:
+            drawPanel(img, box: box, shift: 0, swipeOver: nil)
+        }
+        if second != nil { drawCompareBadges() }
+
+        if isZoomed {
+            // Bottom-LEFT: top-right now belongs to the statistics card, and the
+            // top strip already holds the caption.
+            chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
+                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+        }
+        if let t = readout {
+            // The readout IS the product for a scientist - it was the smallest type
+            // on screen. Bumped to 13pt (panel feedback: unreadable at 11).
+            // Pinned to the top-left of the image area: the readout is two lines
+            // and grows with the value, so at the bottom it collided with the
+            // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
+            // below the caption strip, so this clears that too.
+            chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
+                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+                 anchorTop: true)
+        }
+        // The hint describes the gestures available RIGHT NOW. It also reappears
+        // while ⌘ is held - that is the moment you are asking "what does this do?"
+        // The readout is top-left and the hint is bottom-centre, so they cannot
+        // collide; suppressing the hint whenever a readout was live meant the
+        // flash on zoom never appeared at all, because zooming requires the
+        // pointer to be over the image.
+        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
+            let s = NSAttributedString(string: h, attributes: [
+                .font: NSFont.systemFont(ofSize: 11),
+                .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
+            var sz = s.size()
+            sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
+            // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
+            // is pinned to the bottom of the host. The hint used to be drawn
+            // straight over those controls. The column pane hides the toolbar,
+            // so there it can sit low.
+            let toolbarClearance: CGFloat = compactMode ? 14 : 56
+            let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
+                           y: bounds.height - sz.height - toolbarClearance,
+                           width: sz.width + 20, height: sz.height + 7)
+            NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
+            NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
+            s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
+                              width: sz.width, height: sz.height + 2))
+        }
+    }
+
+    /// One image panel: the image, then every overlay in the SAME geometry. `shift`
+    /// moves the whole panel right (the second panel of a side-by-side compare);
+    /// `swipeOver` is drawn on top to the right of the swipe divider.
+    private func drawPanel(_ img: NSImage, box: NSRect, shift: CGFloat, swipeOver: NSImage?) {
         NSGraphicsContext.current?.saveGraphicsState()
+        if shift != 0 {
+            let t = NSAffineTransform()
+            t.translateX(by: shift, yBy: 0)
+            t.concat()
+        }
         NSBezierPath(rect: contentBox()).setClip()        // zoomed image must not spill
         NSGraphicsContext.current?.imageInterpolation = zoom > 4 ? .none : .default
         // respectFlipped is REQUIRED: this view is flipped (row 0 at top, which the
@@ -596,8 +647,32 @@ final class FITSImageCanvas: NSView {
         // that and renders the image upside down. Reported by the EUI PI on a file
         // with a polar coronal hole, where the flip is finally visible by eye (#11);
         // a full-disk AIA or PUNCH frame is symmetric enough to hide it.
-        img.draw(in: box, from: .zero, operation: .copy, fraction: 1,
+        // A registered compare image is transparent outside its footprint, so lay the
+        // background down first and composite over it (opaque images look the same).
+        NSColor(calibratedWhite: 0.07, alpha: 1).setFill()
+        contentBox().fill()
+        img.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
                  respectFlipped: true, hints: nil)
+
+        if let over = swipeOver {
+            NSGraphicsContext.current?.saveGraphicsState()
+            let x = swipeDividerX()
+            let c = contentBox()
+            NSBezierPath(rect: NSRect(x: x, y: c.minY, width: max(0, c.maxX - x), height: c.height)).setClip()
+            over.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
+                      respectFlipped: true, hints: nil)
+            NSGraphicsContext.current?.restoreGraphicsState()
+            NSColor(calibratedWhite: 1, alpha: 0.9).setFill()
+            NSRect(x: x - 0.5, y: c.minY, width: 1, height: c.height).fill()
+            let grip = NSBezierPath(roundedRect: NSRect(x: x - 5, y: c.midY - 14, width: 10, height: 28),
+                                    xRadius: 4, yRadius: 4)
+            NSColor(calibratedWhite: 0.1, alpha: 0.85).setFill()
+            grip.fill()
+            NSColor(calibratedWhite: 1, alpha: 0.9).setStroke()
+            grip.lineWidth = 1
+            grip.stroke()
+        }
+
 
         if let l = limb, natSize.width > 0, l.r > 0 {
             let sx = box.width / natSize.width
@@ -632,49 +707,146 @@ final class FITSImageCanvas: NSView {
             NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 1).setStroke()
             p.stroke()
         }
-        NSGraphicsContext.current?.restoreGraphicsState()
 
-        if isZoomed {
-            // Bottom-LEFT: top-right now belongs to the statistics card, and the
-            // top strip already holds the caption.
-            chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
-                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+        if let r = rings { drawRings(r) }
+        drawCrosshair()
+        NSGraphicsContext.current?.restoreGraphicsState()
+    }
+
+    /// Rings and spokes from the solar WCS. Dark underline, then colour on top, like
+    /// the limb, so the lines read over corona and over black sky.
+    private func drawRings(_ r: SolarRings) {
+        func path(_ segments: [[CGPoint]]) -> NSBezierPath {
+            let p = NSBezierPath()
+            for seg in segments {
+                guard let first = seg.first, let a = viewPoint(u: Double(first.x), v: Double(first.y)) else { continue }
+                p.move(to: a)
+                for q in seg.dropFirst() {
+                    if let b = viewPoint(u: Double(q.x), v: Double(q.y)) { p.line(to: b) }
+                }
+            }
+            return p
         }
-        if let t = readout {
-            // The readout IS the product for a scientist — it was the smallest type
-            // on screen. Bumped to 13pt (panel feedback: unreadable at 11).
-            // Pinned to the top-left of the image area: the readout is two lines
-            // and grows with the value, so at the bottom it collided with the
-            // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
-            // below the caption strip, so this clears that too.
-            chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
-                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
-                 anchorTop: true)
+        let ink = NSColor(calibratedRed: 0.55, green: 0.85, blue: 1, alpha: 0.95)
+        for sp in r.spokes {
+            let p = path(sp.segments)
+            p.lineWidth = 2.5
+            NSColor(calibratedWhite: 0, alpha: 0.5).setStroke()
+            p.stroke()
+            let q = path(sp.segments)
+            q.lineWidth = 0.8
+            q.setLineDash([3, 4], count: 2, phase: 0)
+            ink.withAlphaComponent(0.8).setStroke()
+            q.stroke()
         }
-        // The hint describes the gestures available RIGHT NOW. It also reappears
-        // while ⌘ is held — that is the moment you are asking "what does this do?"
-        // The readout is top-left and the hint is bottom-centre, so they cannot
-        // collide; suppressing the hint whenever a readout was live meant the
-        // flash on zoom never appeared at all, because zooming requires the
-        // pointer to be over the image.
-        if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
-            let s = NSAttributedString(string: h, attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
-            var sz = s.size()
-            sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
-            // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
-            // is pinned to the bottom of the host. The hint used to be drawn
-            // straight over those controls. The column pane hides the toolbar,
-            // so there it can sit low.
-            let toolbarClearance: CGFloat = compactMode ? 14 : 56
-            let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
-                           y: bounds.height - sz.height - toolbarClearance,
-                           width: sz.width + 20, height: sz.height + 7)
-            NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
-            NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
-            s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
-                              width: sz.width, height: sz.height + 2))
+        for ring in r.rings {
+            let p = path(ring.segments)
+            p.lineWidth = 3.5
+            NSColor(calibratedWhite: 0, alpha: 0.6).setStroke()
+            p.stroke()
+            let q = path(ring.segments)
+            q.lineWidth = 1.2
+            ink.setStroke()
+            q.stroke()
+            if let at = ring.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
+                chip(ring.label, at: v, font: .monospacedSystemFont(ofSize: 10, weight: .regular))
+            }
+        }
+        for sp in r.spokes {
+            if let at = sp.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
+                chip(String(format: "%.0f\u{00B0}", sp.positionAngleDegrees), at: v,
+                     font: .monospacedSystemFont(ofSize: 9, weight: .regular))
+            }
+        }
+    }
+
+    /// Linked crosshair at the pointer, drawn in every compare panel (the registered
+    /// images share one geometry, so one position is the same Sun feature in all).
+    private func drawCrosshair() {
+        guard compareMode != nil, compareImage != nil, mouseInside, let lp = lastPointer,
+              let n = normalized(lp), let c = viewPoint(u: n.u, v: n.v), let box = imageRect() else { return }
+        let p = NSBezierPath()
+        p.move(to: NSPoint(x: box.minX, y: c.y)); p.line(to: NSPoint(x: box.maxX, y: c.y))
+        p.move(to: NSPoint(x: c.x, y: box.minY)); p.line(to: NSPoint(x: c.x, y: box.maxY))
+        p.lineWidth = 0.8
+        NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 0.7).setStroke()
+        p.stroke()
+    }
+
+    /// "A" and "B" tags so it is always clear which file is being looked at.
+    private func drawCompareBadges() {
+        let c = contentBox()
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+        switch compareMode {
+        case .some(.blink):
+            chip(blinkShowsSecond ? "B" : "A", at: NSPoint(x: c.maxX - 8, y: c.minY + 8), font: font,
+                 rightAligned: true, anchorTop: true)
+        case .some(.swipe):
+            let x = swipeDividerX()
+            chip("A", at: NSPoint(x: x - 12, y: c.minY + 8), font: font, rightAligned: true, anchorTop: true)
+            chip("B", at: NSPoint(x: x + 12, y: c.minY + 8), font: font, anchorTop: true)
+        case .some(.sideBySide):
+            chip("A", at: NSPoint(x: c.maxX - 8, y: c.minY + 8), font: font, rightAligned: true, anchorTop: true)
+            chip("B", at: NSPoint(x: c.maxX + comparePanelShift - 8, y: c.minY + 8),
+                 font: font, rightAligned: true, anchorTop: true)
+        case .none:
+            break
+        }
+    }
+
+    /// The colorbar strip: heading (unit and approx./exact, or the filter's rank
+    /// wording), the colormap as a vertical bar with the brightest colour on top,
+    /// and tick labels at the positions the stretch puts those data values.
+    private func drawColorbar(_ cb: Colorbar) {
+        let ink = NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)
+        let top = contentBox().minY + 8
+        let textWidth = colorbarStripWidth - 14
+
+        let para = NSMutableParagraphStyle()
+        para.lineBreakMode = .byWordWrapping
+        let headText = cb.note.isEmpty ? cb.heading : cb.heading + "\n" + cb.note
+        let head = NSAttributedString(string: headText, attributes: [
+            .font: NSFont.systemFont(ofSize: 10), .foregroundColor: ink, .paragraphStyle: para])
+        let headOpts: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+        let headH = ceil(head.boundingRect(with: NSSize(width: textWidth, height: 200), options: headOpts).height) + 4
+        head.draw(with: NSRect(x: 7, y: top, width: textWidth, height: headH), options: headOpts)
+
+        // Clear of the toolbar row and the zoom chip at the bottom.
+        let barTop = top + headH + 8
+        let barBottom = bounds.height - 64
+        let barH = barBottom - barTop
+        guard barH >= 60 else { return }
+        let barX: CGFloat = 8, barW: CGFloat = 14
+
+        let n = max(2, min(256, Int(barH)))
+        for i in 0..<n {
+            let v = max(0, min(255, Int((1 - (Double(i) + 0.5) / Double(n)) * 255)))
+            if let lut = cb.lut {
+                NSColor(calibratedRed: CGFloat(lut[v * 3]) / 255, green: CGFloat(lut[v * 3 + 1]) / 255,
+                        blue: CGFloat(lut[v * 3 + 2]) / 255, alpha: 1).setFill()
+            } else {
+                NSColor(calibratedWhite: CGFloat(v) / 255, alpha: 1).setFill()
+            }
+            let y0 = barTop + barH * CGFloat(i) / CGFloat(n)
+            NSRect(x: barX, y: y0, width: barW, height: barH / CGFloat(n) + 0.5).fill()
+        }
+        NSColor(calibratedWhite: 1, alpha: 0.45).setStroke()
+        NSBezierPath(rect: NSRect(x: barX, y: barTop, width: barW, height: barH)).stroke()
+
+        // Ticks from the bottom up; a label that would sit on the previous one is skipped.
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        var lastLabelY = CGFloat.infinity
+        for tick in cb.ticks {
+            let y = barBottom - CGFloat(tick.t) * barH
+            let line = NSBezierPath()
+            line.move(to: NSPoint(x: barX + barW, y: y))
+            line.line(to: NSPoint(x: barX + barW + 4, y: y))
+            line.lineWidth = 1
+            line.stroke()
+            guard lastLabelY - y >= 12 else { continue }
+            lastLabelY = y
+            NSAttributedString(string: tick.label, attributes: [.font: font, .foregroundColor: ink])
+                .draw(at: NSPoint(x: barX + barW + 7, y: y - 6))
         }
     }
 
@@ -694,226 +866,5 @@ final class FITSImageCanvas: NSView {
         NSColor(calibratedWhite: 0, alpha: 0.58).setFill()
         NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
         s.draw(at: NSPoint(x: r.minX + 6, y: r.minY + 3))
-    }
-}
-
-// MARK: - Shared toolbar
-
-/// The ◯ Δ ◐ tool cluster + stretch panel, wired to a model. Both surfaces build
-/// theirs from here so the controls, tooltips and behaviour can't diverge.
-final class FITSToolbar {
-    let limb = NSButton(), diff = NSButton(), tune = NSButton()
-    let filterMenu = NSPopUpButton(frame: .zero, pullsDown: false)
-    let panel = NSView()
-    let sLo = NSSlider(), sHi = NSSlider(), sG = NSSlider()
-    let cLog = NSButton(checkboxWithTitle: "log", target: nil, action: nil)
-    let reset = NSButton(title: "Reset", target: nil, action: nil)
-    /// Shows the percentile sliders' effect in real data units (#12).
-    let limitsLabel = NSTextField(labelWithString: "")
-
-    /// - Parameter target: receives the actions; must implement the selectors.
-    init(target: AnyObject, limbSel: Selector, diffSel: Selector,
-         tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector) {
-        // These float over the image. A standard translucent bezel disappears
-        // against a bright solar disk, so draw them as solid, near-opaque chips.
-        func mk(_ b: NSButton, _ title: String, _ tip: String, _ sel: Selector) {
-            b.title = title
-            b.isBordered = false
-            b.setButtonType(.momentaryChange)
-            b.wantsLayer = true
-            b.layer?.cornerRadius = 6
-            b.layer?.borderWidth = 1
-            b.toolTip = tip
-            b.target = target
-            b.action = sel
-            b.translatesAutoresizingMaskIntoConstraints = false
-            b.widthAnchor.constraint(equalToConstant: 58).isActive = true
-            b.heightAnchor.constraint(equalToConstant: 26).isActive = true
-        }
-        // Text labels, not glyphs: Quick Look does not fire tooltips, so a ◯/Δ/◐
-        // was undecodable there (and read as "black circle" to VoiceOver). The
-        // word is the label; the tooltip carries the fuller explanation.
-        mk(limb, "Limb", "Show the solar limb — the photosphere's edge, from RSUN_OBS", limbSel)
-        mk(diff, "Diff", "Running difference: this HDU minus the previous one — how CMEs, waves and dimmings are spotted", diffSel)
-        mk(tune, "Stretch", "Adjust the brightness stretch (percentile clip, gamma, log)", tuneSel)
-        limb.setAccessibilityLabel("Show solar limb")
-        diff.setAccessibilityLabel("Running difference with previous layer")
-        tune.setAccessibilityLabel("Adjust brightness stretch")
-
-        // Enhancement filter picker. RHEF (Radial Histogram Equalizing Filter,
-        // Gilly & Cranmer 2025) removes the corona's radial brightness gradient
-        // to reveal faint off-limb structure at every height. MGN/WOW are coming.
-        filterMenu.appearance = NSAppearance(named: .darkAqua)
-        filterMenu.translatesAutoresizingMaskIntoConstraints = false
-        filterMenu.bezelStyle = .rounded
-        filterMenu.controlSize = .regular
-        filterMenu.toolTip = "Enhancement filter"
-        filterMenu.setAccessibilityLabel("Enhancement filter")
-        // Only ship implemented filters — greyed "(soon)" items read as unfinished
-        // (panel feedback). Descriptive titles so the bare acronym isn't the whole
-        // story where tooltips don't fire. Menu index still maps to Filter.rawValue.
-        for f in FITSPreviewModel.Filter.allCases where f == .none || f == .rhef {
-            filterMenu.addItem(withTitle: f == .rhef ? "RHEF — reveal faint corona" : "No filter")
-        }
-        filterMenu.target = target
-        filterMenu.action = filterSel
-        filterMenu.heightAnchor.constraint(equalToConstant: 26).isActive = true
-
-        panel.wantsLayer = true
-        // Dark appearance so the sliders/checkbox render with dark-mode contrast
-        // on our dark panel rather than washed-out light-mode controls.
-        panel.appearance = NSAppearance(named: .darkAqua)
-        panel.layer?.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 0.97).cgColor
-        panel.layer?.cornerRadius = 8
-        panel.layer?.borderWidth = 1
-        panel.layer?.borderColor = NSColor(calibratedWhite: 0.25, alpha: 1).cgColor
-        panel.isHidden = true
-
-        func row(_ name: String, _ s: NSSlider, _ lo: Double, _ hi: Double,
-                 _ v: Double, _ tip: String) -> NSStackView {
-            s.minValue = lo; s.maxValue = hi; s.doubleValue = v
-            s.target = target; s.action = stretchSel
-            s.isContinuous = true
-            s.toolTip = tip
-            let l = NSTextField(labelWithString: name)
-            l.font = .systemFont(ofSize: 11)
-            l.textColor = NSColor(calibratedWhite: 0.8, alpha: 1)
-            l.setContentHuggingPriority(.required, for: .horizontal)
-            let st = NSStackView(views: [l, s])
-            st.spacing = 6
-            return st
-        }
-        cLog.target = target; cLog.action = stretchSel
-        cLog.toolTip = "Logarithmic scaling — brings out faint off-limb structure"
-        reset.target = target; reset.action = resetSel
-        reset.bezelStyle = .rounded
-        reset.toolTip = "Back to the default stretch"
-
-        limitsLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        limitsLabel.textColor = NSColor(calibratedWhite: 0.85, alpha: 1)
-        limitsLabel.lineBreakMode = .byTruncatingTail
-        limitsLabel.toolTip = "The data values the display is currently clipped to"
-
-        let bottom = NSStackView(views: [cLog, reset])
-        bottom.spacing = 10
-        let stack = NSStackView(views: [
-            row("Low", sLo, 0, 1, Self.posLow(FITSRenderer.pLow),
-                "Clip the darkest pixels to black. Logarithmic, reaching the median: fine control near 0%"),
-            row("High", sHi, 0, 1, Self.posHigh(FITSRenderer.pHigh),
-                "Clip the brightest pixels to white. Logarithmic: fine control near 100%, where a solar image's tail lives"),
-            row("Gamma", sG, 0.1, 2, 0.5, "Below 1 brightens faint structure; above 1 darkens it"),
-            limitsLabel,
-            bottom,
-        ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 5
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        panel.addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: panel.leadingAnchor, constant: 10),
-            stack.trailingAnchor.constraint(equalTo: panel.trailingAnchor, constant: -10),
-            stack.topAnchor.constraint(equalTo: panel.topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: panel.bottomAnchor, constant: -8),
-        ])
-    }
-
-    var stack: NSStackView {
-        let s = NSStackView(views: [filterMenu, limb, diff, tune])
-        s.spacing = 6
-        return s
-    }
-
-    // The clip sliders are LOGARITHMIC in distance from their end of the
-    // distribution, not linear in percentile. Solar images have a heavy tail:
-    // on a typical AIA frame 90–99.5% moves the white point 461→2096 while
-    // 99.5–100% moves it 2096→14966, so a linear percentile slider spends 95%
-    // of its travel doing almost nothing and the last 5% doing everything.
-    // Mapping travel to log(distance-from-the-end) gives even control instead.
-    //
-    // Positions are 0…1; percentiles are rounded so the defaults round-trip
-    // EXACTLY, which `stretchIsDefault` depends on to keep the baked image.
-    /// Low clip spans 0.01 … 50 %. Capping it at 10 % (the obvious symmetric
-    /// choice against the high slider) left it with nothing to do: on an AIA
-    /// frame the 0–10th percentile covers 8.75 counts out of a 15 000 range,
-    /// so the slider moved the black point invisibly. Reaching the median gives
-    /// it 108 counts, which is enough to clip the quiet Sun away and see
-    /// off-limb structure. The tail is genuinely one-sided; matching the two
-    /// ends numerically would just preserve the uselessness symmetrically.
-    private static func pctLow(_ t: Double) -> Double { StretchScale.lowPercent(t) }
-    private static func posLow(_ pct: Double) -> Double { StretchScale.lowPosition(pct) }
-    private static func pctHigh(_ t: Double) -> Double { StretchScale.highPercent(t) }
-    private static func posHigh(_ pct: Double) -> Double { StretchScale.highPosition(pct) }
-
-    func readStretch() -> (lo: Double, hi: Double, gamma: Double, log: Bool) {
-        (Self.pctLow(sLo.doubleValue), Self.pctHigh(sHi.doubleValue),
-         sG.doubleValue, cLog.state == .on)
-    }
-
-    func readFilter() -> FITSPreviewModel.Filter {
-        FITSPreviewModel.Filter(rawValue: filterMenu.indexOfSelectedItem) ?? .none
-    }
-
-    /// - Parameter cmapKey: the page's colormap, because the default gamma is
-    ///   instrument-dependent: a signed magnetogram wants 1.0 (linear), and
-    ///   anything else wants the faint-structure 0.5.
-    func resetStretch(cmapKey: String? = nil) {
-        sLo.doubleValue = Self.posLow(FITSRenderer.pLow)
-        sHi.doubleValue = Self.posHigh(FITSRenderer.pHigh)
-        sG.doubleValue = Double(FITSRenderer.defaultGamma(cmapKey))
-        cLog.state = .off
-    }
-
-    /// Put the sliders where the given stretch says, so the panel opens showing
-    /// the mapping the image was actually baked with.
-    func adoptStretch(_ s: (lo: Double, hi: Double, gamma: Double, log: Bool)) {
-        sLo.doubleValue = Self.posLow(s.lo)
-        sHi.doubleValue = Self.posHigh(s.hi)
-        sG.doubleValue = s.gamma
-        cLog.state = s.log ? .on : .off
-    }
-
-    /// Paint one chip: opaque dark when off, solid amber when on, dimmed when
-    /// unavailable. Drawn explicitly because a borderless button has no bezel to
-    /// tint, and these sit over a bright image.
-    private func paint(_ b: NSButton, on: Bool, enabled: Bool) {
-        b.isEnabled = enabled
-        b.setAccessibilityValue(on ? "on" : "off")   // state is otherwise only a fill colour
-        let bg: NSColor = on ? NSColor(calibratedRed: 0.86, green: 0.63, blue: 0.20, alpha: 0.97)
-                             : NSColor(calibratedWhite: 0.11, alpha: 0.92)
-        let fg: NSColor = on ? .black : (enabled ? .white : NSColor(calibratedWhite: 1, alpha: 0.35))
-        b.layer?.backgroundColor = bg.withAlphaComponent(enabled ? bg.alphaComponent : 0.55).cgColor
-        b.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: on ? 0.5 : 0.28).cgColor
-        b.attributedTitle = NSAttributedString(string: b.title, attributes: [
-            .foregroundColor: fg,
-            .font: NSFont.systemFont(ofSize: 13),
-            .paragraphStyle: {
-                let p = NSMutableParagraphStyle(); p.alignment = .center; return p
-            }(),
-        ])
-    }
-
-    /// Reflect model state in the controls.
-    func sync(model: FITSPreviewModel) {
-        paint(limb, on: model.limbOn, enabled: model.hasLimb)
-        paint(diff, on: model.mode == .diff, enabled: model.canDiff)
-        // The stretch composes with a filter rather than being clobbered by it
-        // (#14): RHEF sets the ordering, the stretch maps that to the ramp.
-        paint(tune, on: model.mode == .stretch, enabled: true)
-        tune.toolTip = model.filter == .none
-            ? "Adjust the brightness stretch (percentile clip, gamma, log)"
-            : "Adjust the stretch applied on top of the \(model.filter.label) filter"
-        panel.isHidden = (model.mode != .stretch)
-        if let l = model.displayLimits() {
-            let u = l.unit.isEmpty ? "" : " " + l.unit
-            limitsLabel.stringValue = "min \(FITSRenderer.fmtValue(l.lo))\(u)\nmax \(FITSRenderer.fmtValue(l.hi))\(u)"
-        } else if model.filter != .none {
-            limitsLabel.stringValue = "clipping \(model.filter.label) output,\nnot raw data values"
-        } else {
-            limitsLabel.stringValue = ""
-        }
-        if filterMenu.indexOfSelectedItem != model.filter.rawValue {
-            filterMenu.selectItem(at: model.filter.rawValue)
-        }
     }
 }

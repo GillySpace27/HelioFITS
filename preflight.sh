@@ -14,6 +14,8 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 echo "==> 2/4 Tests (quitting any running HelioFITS first — hosted tests hang otherwise)"
+echo "    core package first, headless (no app launch, nothing registered with LaunchServices)"
+swift test --package-path HelioFITSCore || { echo "CORE TESTS FAILED"; exit 1; }
 pkill -x HelioFITS 2>/dev/null || true
 xcodebuild test -project HelioFITS.xcodeproj -scheme HelioFITS \
   -destination 'platform=macOS,arch=arm64' \

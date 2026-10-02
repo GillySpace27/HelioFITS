@@ -4,6 +4,8 @@
 //
 //  Created by Gilbert, Gilly on 11/12/24.
 //
+//  Xcode template, not run: the HelioFITS scheme's Test action includes only
+//  HelioFITSTests. A UI test launches the GUI app; run ./lsclean.sh after one.
 
 import XCTest
 

@@ -1,7 +1,7 @@
 //
 //  FITSPreviewModel.swift — pages, current HDU, display mode, stretch, and every
 //  derived image, caption, readout and statistic. Platform-neutral: images are
-//  CGImage; the AppKit views in HelioFITSExtension/FITSPreviewCore.swift wrap them.
+//  CGImage; the AppKit views in HelioFITSMacUI/ wrap them.
 //
 
 import Foundation
@@ -55,7 +55,36 @@ public final class FITSPreviewModel {
     public var cur = 0
     public var mode: Mode = .plain
     public var limbOn = false
-    public var stretch = (lo: 0.5, hi: 99.5, gamma: 0.5, log: false)
+    /// Plane-of-sky radius rings and position-angle spokes over the image (HF-15).
+    /// Only meaningful when `hasRings`; the toggle refuses otherwise.
+    public var ringsOn = false
+    /// The second file of a compare (HF-15) and how it is shown. Set through
+    /// `setCompare(model:mode:)`; the logic lives in FITSPreviewModel+Compare.swift.
+    public internal(set) var compareModel: FITSPreviewModel?
+    public internal(set) var compareMode: CompareMode?
+    /// The last registered second image, kept until the inputs change.
+    var registeredCache: (key: String, image: CGImage?)?
+    /// The last link verdict. Reading the two headers is disk I/O and the verdict is
+    /// asked on every pointer move, so it is kept until a page or file changes.
+    var linkCache: (key: String, status: CompareLink)?
+    public var stretch = (lo: 0.5, hi: 99.5, gamma: 0.5, log: false) {
+        didSet {
+            // Moving a percentile slider hands control back to the percentile rule;
+            // gamma and log keep a typed range (they act after the clip).
+            if stretchOverride != nil,
+               abs(stretch.lo - oldValue.lo) > 1e-9 || abs(stretch.hi - oldValue.hi) > 1e-9 {
+                stretchOverride = nil
+            }
+        }
+    }
+    /// Typed vmin/vmax in data units (HF-12). Session only, never persisted. When
+    /// set it replaces the percentile clip for the live stretch of unfiltered data;
+    /// nil means the standing 0.5 / 99.5 percentile rule. A filter clips in its own
+    /// space, so the override does not apply under one.
+    public private(set) var stretchOverride: (lo: Float, hi: Float)?
+    /// True when the display limits were typed rather than estimated from the
+    /// strided percentile sample.
+    public var limitsAreExact: Bool { stretchOverride != nil }
 
     /// Full-resolution values, in display order, keyed by HDU. EVERYTHING that
     /// reports or re-renders data reads from here: the (x,y)=z chip, the region
@@ -207,6 +236,70 @@ public final class FITSPreviewModel {
         guard n != cur else { return false }
         cur = n
         return true
+    }
+
+    // MARK: viewer commands
+    //
+    // The toolbar actions, written once for the Quick Look preview, the Mac
+    // viewer and the iOS viewer. Each returns whether the host must re-render.
+
+    /// Limb overlay on or off.
+    @discardableResult
+    public func toggleLimb() -> Bool {
+        limbOn.toggle()
+        return true
+    }
+
+    /// Running difference on, or back to plain when it is already on.
+    @discardableResult
+    public func toggleDiff() -> Bool {
+        mode = (mode == .diff) ? .plain : .diff
+        return true
+    }
+
+    /// The Stretch button (the hosts' `toggleTune` selector): stretch mode on, or
+    /// back to plain when it is already on.
+    @discardableResult
+    public func toggleStretch() -> Bool {
+        mode = (mode == .stretch) ? .plain : .stretch
+        return true
+    }
+
+    /// Select an enhancement filter. False when it was already selected.
+    @discardableResult
+    public func setFilter(_ f: Filter) -> Bool {
+        guard f != filter else { return false }
+        filter = f
+        return true
+    }
+
+    /// Back to the default stretch for a colormap: the 0.5 / 99.5 percentile clip,
+    /// that colormap's default gamma (1.0 for hmimag, 0.5 otherwise), log off.
+    /// True only in stretch mode, the one mode that draws `stretch`.
+    @discardableResult
+    public func resetStretch(cmapKey: String?) -> Bool {
+        stretchOverride = nil
+        stretch = (lo: FITSRenderer.pLow, hi: FITSRenderer.pHigh,
+                   gamma: Double(FITSRenderer.defaultGamma(cmapKey)), log: false)
+        return mode == .stretch
+    }
+
+    /// Type the display limits (vmin, vmax) in data units. Refused (false, nothing
+    /// changed) for a non-finite or empty range, or under a filter, which clips in
+    /// its own space. True when the host must re-render.
+    @discardableResult
+    public func setLimits(lo: Float, hi: Float) -> Bool {
+        guard lo.isFinite, hi.isFinite, hi > lo, filter == .none else { return false }
+        stretchOverride = (lo: lo, hi: hi)
+        return mode == .stretch
+    }
+
+    /// Drop typed limits and go back to the percentile rule. True when the host must re-render.
+    @discardableResult
+    public func clearLimits() -> Bool {
+        guard stretchOverride != nil else { return false }
+        stretchOverride = nil
+        return mode == .stretch
     }
 
     // MARK: derived
@@ -418,6 +511,49 @@ public final class FITSPreviewModel {
         return out
     }
 
+    // MARK: colorbar and histogram (HF-12)
+
+    /// The colorbar for what is on screen, or nil when there is nothing honest to
+    /// show: no page, unfiltered Diff mode (a diverging map clipped at the 99th
+    /// percentile of |difference|, not a data range), or a filter whose output has
+    /// not landed yet.
+    ///
+    /// - Unfiltered, Stretch mode: the live limits (typed => exact, else approx.),
+    ///   with the sliders' gamma and log.
+    /// - Unfiltered, Plain mode: the baked limits and the colormap's default gamma,
+    ///   because Plain draws the baked image whatever the sliders say.
+    /// - Filtered: the rank range of the filter output, labelled as not a
+    ///   calibrated radiance. Filter output is always mapped with the sliders.
+    public func colorbar(tickCount: Int = 5) -> Colorbar? {
+        guard let p = page else { return nil }
+        if filter != .none {
+            // image() draws the filter output first, whatever the mode is.
+            guard let g = filterCache[filterKey] else { return nil }
+            let (lo, hi) = filterLevels(g.vals)
+            return Colorbar.make(lut: p.lut, lo: lo, hi: hi, gamma: Float(stretch.gamma),
+                                 log: stretch.log, unit: "", exact: false,
+                                 rankName: filter.label, tickCount: tickCount)
+        }
+        guard mode != .diff else { return nil }
+        let unit = FITSRenderer.headerVal(p.res.header, "BUNIT") ?? ""
+        if mode == .stretch, let l = displayLimits() {
+            return Colorbar.make(lut: p.lut, lo: l.lo, hi: l.hi, gamma: Float(stretch.gamma),
+                                 log: stretch.log, unit: unit, exact: limitsAreExact,
+                                 rankName: nil, tickCount: tickCount)
+        }
+        return Colorbar.make(lut: p.lut, lo: p.res.lo, hi: p.res.hi,
+                             gamma: FITSRenderer.defaultGamma(p.res.cmapKey), log: false,
+                             unit: unit, exact: false, rankName: nil, tickCount: tickCount)
+    }
+
+    /// The whole-image histogram behind the stretch panel's draggable handles:
+    /// 0.1 to 99.9 percentile axis, `bins` counts. Nil until the full-resolution
+    /// pixels are resident, or under a filter (its output has its own range).
+    public func wholeHistogram(bins: Int = 48) -> (lo: Float, hi: Float, counts: [Int])? {
+        guard filter == .none, let f = buffer(cur) else { return nil }
+        return wholeImageHistogram(f, bins: bins)
+    }
+
     // MARK: image synthesis
 
     /// True when the stretch controls are still where they started. At the
@@ -425,7 +561,8 @@ public final class FITSPreviewModel {
     /// otherwise merely opening the colour panel appears to change the contrast
     /// of the data, which is alarming in a tool people read numbers off.
     private var stretchIsDefault: Bool {
-        stretch.lo == FITSRenderer.pLow && stretch.hi == FITSRenderer.pHigh
+        stretchOverride == nil
+            && stretch.lo == FITSRenderer.pLow && stretch.hi == FITSRenderer.pHigh
             && !stretch.log
             && Float(stretch.gamma) == FITSRenderer.defaultGamma(page?.res.cmapKey)
     }
@@ -433,7 +570,8 @@ public final class FITSPreviewModel {
     /// Clip limits for the live stretch, from the SAME routine `render` baked the
     /// image with, so "0.5 – 99.5%" means one thing everywhere.
     private func levels(_ f: Buffer, _ r: FITSRenderer.Result) -> (lo: Float, hi: Float) {
-        f.pix.withUnsafeBufferPointer {
+        if let o = stretchOverride { return o }
+        return f.pix.withUnsafeBufferPointer {
             FITSRenderer.levels($0.baseAddress!, count: f.pix.count,
                                 pLow: stretch.lo, pHigh: stretch.hi, cmapKey: r.cmapKey)
         }
@@ -454,6 +592,7 @@ public final class FITSPreviewModel {
         // under a filter would defeat the point of showing them at all (#12).
         guard filter == .none else { return nil }
         let unit = FITSRenderer.headerVal(p.res.header, "BUNIT") ?? ""
+        if let o = stretchOverride { return (o.lo, o.hi, unit) }
         if stretchIsDefault || buffer(cur) == nil {
             return (p.res.lo, p.res.hi, unit)
         }
@@ -600,27 +739,21 @@ public final class FITSPreviewModel {
         return (gw, gh, out)
     }
 
-    /// Colour the cached RHEF output, applying the stretch on top of it.
+    /// Clip limits for a filter's output.
     ///
-    /// RHEF and the stretch compose rather than compete: the filter decides the
-    /// ordering of the values, the stretch decides how that ordering is mapped
-    /// to the ramp. Kept separate from the equalization because the sort is the
-    /// expensive part (~1 s on a big frame) while this is a per-pixel remap, so
-    /// dragging a slider does not re-run the filter.
-    public func filteredImage(_ g: (w: Int, h: Int, vals: [Float])) -> CGImage? {
-        let n = g.w * g.h
-        // Percentiles OF THE FILTER OUTPUT, so "0.5–99.5%" keeps meaning the same
-        // thing it does for an unfiltered image.
-        // Sample before sorting, exactly as FITSRenderer.levels does. Sorting all
-        // ~1M filter outputs cost 66-71 ms on the main thread PER CALL, and
-        // image() is called on every continuous slider event, so a drag ran at
-        // about 13 fps inside a watchdog'd Quick Look extension. The percentile
-        // edges are indistinguishable from a 200k sample.
-        let stride0 = max(1, g.vals.count / 200_000)
+    /// Percentiles OF THE FILTER OUTPUT, so "0.5–99.5%" keeps meaning the same
+    /// thing it does for an unfiltered image.
+    /// Sample before sorting, exactly as FITSRenderer.levels does. Sorting all
+    /// ~1M filter outputs cost 66-71 ms on the main thread PER CALL, and
+    /// image() is called on every continuous slider event, so a drag ran at
+    /// about 13 fps inside a watchdog'd Quick Look extension. The percentile
+    /// edges are indistinguishable from a 200k sample.
+    private func filterLevels(_ vals: [Float]) -> (lo: Float, hi: Float) {
+        let stride0 = max(1, vals.count / 200_000)
         var finite = [Float]()
-        finite.reserveCapacity(g.vals.count / stride0 + 1)
-        for i in Swift.stride(from: 0, to: g.vals.count, by: stride0) where g.vals[i].isFinite {
-            finite.append(g.vals[i])
+        finite.reserveCapacity(vals.count / stride0 + 1)
+        for i in Swift.stride(from: 0, to: vals.count, by: stride0) where vals[i].isFinite {
+            finite.append(vals[i])
         }
         var lo: Float = 0, hi: Float = 1
         if finite.count > 1 {
@@ -631,6 +764,19 @@ public final class FITSPreviewModel {
             if hi <= lo { lo = finite.first!; hi = finite.last! }
             if hi <= lo { hi = lo + 1 }
         }
+        return (lo, hi)
+    }
+
+    /// Colour the cached RHEF output, applying the stretch on top of it.
+    ///
+    /// RHEF and the stretch compose rather than compete: the filter decides the
+    /// ordering of the values, the stretch decides how that ordering is mapped
+    /// to the ramp. Kept separate from the equalization because the sort is the
+    /// expensive part (~1 s on a big frame) while this is a per-pixel remap, so
+    /// dragging a slider does not re-run the filter.
+    public func filteredImage(_ g: (w: Int, h: Int, vals: [Float])) -> CGImage? {
+        let n = g.w * g.h
+        let (lo, hi) = filterLevels(g.vals)
         let span = hi - lo, gam = Float(stretch.gamma)
         var rgba = [UInt8](repeating: 255, count: n * 4)
         for i in 0..<n {

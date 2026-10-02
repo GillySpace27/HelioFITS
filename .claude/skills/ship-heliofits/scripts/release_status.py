@@ -52,7 +52,7 @@ HOW = {
     "asc_version": ("api",   "Create the {V} version record in App Store Connect."),
     "asc_build":   ("api",   "Attach build {B} to the {V} version record."),
     "asc_notes":   ("api",   "Set What's New — the SHORT form, one headline sentence per fix."),
-    "asc_shots":   ("edit",  "Drag the shots from ~/Desktop/HelioFITS-appstore/ into Media Manager "
+    "asc_shots":   ("edit",  "Drag the shots from screenshots/{V}/ (make-screenshots.sh) into Media Manager "
                              "(App Store Connect ▸ the {V} version ▸ App Previews and Screenshots). "
                              "The API key is read-only for media, so this one is hands."),
     "submitted":   ("gate",  "Submit build {B} of {V} for App Review. Never without Gilly saying so, this run."),
