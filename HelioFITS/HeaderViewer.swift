@@ -1,8 +1,8 @@
 // Native FITS-header viewer. Opened when a .fits file is handed to the app
 // (via the "View HDU header" Quick Action → `open -a HelioFITS`). The app
 // is sandboxed, so it can't shell out to python — the header is parsed here in
-// pure Swift (same 2880-byte-block / 80-char-card walk as the bundled
-// fitsdump.py, verified card-exact vs astropy) and shown in an AppKit window
+// pure Swift (same 2880-byte-block / 80-char-card walk as
+// tools/fitsdump.py, verified card-exact vs astropy) and shown in an AppKit window
 // with a native find bar. No browser involved.
 
 import AppKit
