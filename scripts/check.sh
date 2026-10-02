@@ -122,6 +122,41 @@ check_shim_header_copies() {
 CHECKS+=(check_shim_header_copies)
 
 
+# The newest release tag (highest build number among v<VER>-build.<N>) must be
+# reachable from HEAD or from CHECK_BASE (a tag on a side commit is how a release
+# once shipped from a branch that never merged), and it must not be ahead of
+# Config/Version.xcconfig: N at most CURRENT_PROJECT_VERSION, and when N equals it,
+# the tag's VER equals MARKETING_VERSION. No tags at all passes (a clone without tags).
+# Shown failing on a scratch copy (tag v9.9.9-build.11 on a side commit):
+#   FAIL check_tag_ancestry: newest tag v9.9.9-build.11 is not an ancestor of HEAD or origin/main; tag the merged commit instead (the old tag stays)
+check_tag_ancestry() {
+  local t newest="" max=-1 ver="" xver xbuild
+  [ -f "$MAC_XCCONFIG" ] || { echo "$MAC_XCCONFIG missing"; return 1; }
+  while IFS= read -r t; do
+    if [[ "$t" =~ ^v([0-9][0-9.]*)-build\.([0-9]+)$ ]] && [ "${BASH_REMATCH[2]}" -gt "$max" ]; then
+      max="${BASH_REMATCH[2]}"; ver="${BASH_REMATCH[1]}"; newest="$t"
+    fi
+  done < <(git tag -l 'v*-build.*')
+  [ -n "$newest" ] || return 0
+  if ! git merge-base --is-ancestor "$newest" HEAD 2>/dev/null \
+     && ! git merge-base --is-ancestor "$newest" "$CHECK_BASE" 2>/dev/null; then
+    echo "newest tag $newest is not an ancestor of HEAD or $CHECK_BASE; tag the merged commit instead (the old tag stays)"
+    return 1
+  fi
+  xver="$(awk 'sub(/^MARKETING_VERSION = /, "") { print; exit }' "$MAC_XCCONFIG")"
+  xbuild="$(awk 'sub(/^CURRENT_PROJECT_VERSION = /, "") { print; exit }' "$MAC_XCCONFIG")"
+  [[ "$xbuild" =~ ^[0-9]+$ ]] || { echo "$MAC_XCCONFIG has no numeric CURRENT_PROJECT_VERSION"; return 1; }
+  if [ "$max" -gt "$xbuild" ]; then
+    echo "newest tag $newest is ahead of $MAC_XCCONFIG (build $xbuild); run scripts/bump-version.sh <VER> <BUILD above $max>"
+    return 1
+  fi
+  if [ "$max" -eq "$xbuild" ] && [ "$ver" != "$xver" ]; then
+    echo "newest tag $newest has build $max but $MAC_XCCONFIG says $xver ($xbuild); one build number, one version"
+    return 1
+  fi
+}
+CHECKS+=(check_tag_ancestry)
+
 # ---- run ----
 status=0
 for c in "${CHECKS[@]}"; do
