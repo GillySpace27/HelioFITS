@@ -43,6 +43,17 @@ int fitsshim_read_image(const char *path, long hdu_wanted, long plane_wanted,
                         long *width, long *height,
                         float **pixels, char **header);
 
+// Same, but reads only every *step-th pixel on each axis, step chosen so the
+// longest side is <= max_side (max_side <= 0: step 1, the call above). The
+// buffer is (width/step) x (height/step), sampling pixels 0, step, 2*step, ...
+// (the same nearest decimation FITSRenderer.render does), and a compressed
+// image is decoded one tile at a time, so a big frame never sits in memory
+// whole. *width/*height are still the FULL image size. For the iOS
+// extensions, which have tight memory limits.
+int fitsshim_read_image_max(const char *path, long hdu_wanted, long plane_wanted,
+                            long max_side, long *width, long *height, long *step,
+                            float **pixels, char **header);
+
 
 // 0-based indices of HDUs containing >=2D images. Writes up to max_indices
 // into indices; returns the total number of image HDUs found (may exceed

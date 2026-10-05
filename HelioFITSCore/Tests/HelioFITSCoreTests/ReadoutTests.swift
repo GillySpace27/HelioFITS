@@ -15,6 +15,7 @@
 import Testing
 import Foundation
 @testable import HelioFITSCore
+import CFITSIO
 
 /// Write a minimal BITPIX=-32 image FITS whose pixel (x,y) — 1-based, FITS y
 /// counting UP from the bottom row — holds the value x*100 + y.
@@ -81,6 +82,27 @@ struct ReadoutTests {
         #expect(f.pix[(h - 1) * w] == Float(1 * 100 + 1))          // bot-left  = FITS (1,1)
         #expect(f.pix[w - 1] == Float(w * 100 + h))                // top-right = FITS (w,h)
         #expect(f.pix[h * w - 1] == Float(w * 100 + 1))            // bot-right = FITS (w,1)
+    }
+
+    @Test("The low-memory read samples exactly the pixels render draws")
+    func decimatedRead() throws {
+        let w = 23, h = 17                     // max_side 8 -> step 3 -> 7 x 5 samples
+        let p = try writeRampFITS(w: w, h: h)
+        defer { try? FileManager.default.removeItem(atPath: p) }
+
+        var fw = 0, fh = 0, step = 0
+        var pix: UnsafeMutablePointer<Float>? = nil, hdr: UnsafeMutablePointer<CChar>? = nil
+        #expect(fitsshim_read_image_max(p, 0, 0, 8, &fw, &fh, &step, &pix, &hdr) == 0)
+        defer { free(pix); free(hdr) }
+        #expect(fw == w && fh == h && step == 3)
+        let ow = w / 3, oh = h / 3
+        for j in 0..<oh { for i in 0..<ow {    // buffer is bottom-up FITS order
+            #expect(pix![j * ow + i] == Float((1 + 3 * i) * 100 + (1 + 3 * j)))
+        } }
+
+        let full = try FITSRenderer.render(path: p, maxSide: 8, lowMemory: false)
+        let low = try FITSRenderer.render(path: p, maxSide: 8, lowMemory: true)
+        #expect(low.width == full.width && low.height == full.height && low.factor == full.factor)
     }
 
     @Test("A frame larger than the old 512px grid still reads back exactly")
