@@ -193,6 +193,8 @@ jobs:
         run: python3 -m pip install -r tools/colormaps/requirements.txt
       - name: Regenerate and diff (no output means identical)
         run: python3 tools/colormaps/gen_colormaps.py | diff -u HelioFITSCore/Sources/HelioFITSCore/FITSColormaps.swift -
+      - name: --json-out tests (SU-12)
+        run: python3 tools/colormaps/test_json_out.py
 
   fixtures:
     # HelioFITSTests/Fixtures holds only synthetic files (no mission data until Gilly
