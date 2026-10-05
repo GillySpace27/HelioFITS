@@ -8,6 +8,7 @@
 #                    [--artifact <file> --receipt <json> [--receipt-key <key>]]
 #                    [--base-ref <ref>]          # default origin/main
 #   release-gates.sh --verify-copy
+#   release-gates.sh --declared <product>     # print the version in the product's declared source
 #
 # Each gate prints "GATE <name> PASS" or "GATE <name> REFUSE: <reason> (override: <VAR>=yes-gilly)".
 # Exit 0 when every gate passes, 1 on any REFUSE, 64 on a usage error.
@@ -20,6 +21,7 @@ usage: release-gates.sh --product <heliofits|heliogram|myheliograph|hfstudio> --
          [--version-check <label>=<value>]... [--notes <file>]...
          [--artifact <file> --receipt <json> [--receipt-key <key>]] [--base-ref <ref>]
        release-gates.sh --verify-copy
+       release-gates.sh --declared <product>
 TXT
   exit 64
 }
@@ -27,6 +29,32 @@ TXT
 sha256_stdin() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 | awk '{print $1}'
   else sha256sum | awk '{print $1}'; fi
+}
+
+# declared_version <product>: the version in the product's single declared source, read from the
+# current directory (the product's repository root). Prints nothing when no source is found.
+# The sources are listed in spec/versioning.md (suite SU-15).
+declared_version() {
+  case "$1" in
+    heliofits)
+      if [ -f Config/Version.xcconfig ]; then
+        awk -F= '$1 ~ /^MARKETING_VERSION[ \t]*$/ { print $2; exit }' Config/Version.xcconfig | tr -d '[:space:]'
+      else
+        xcrun agvtool what-marketing-version -terse1 2>/dev/null | tr -d '[:space:]' || true
+      fi ;;
+    heliogram)
+      if [ -f release.env ]; then
+        awk -F= '$1 == "VERSION" { print $2; exit }' release.env | tr -d "\"'[:space:]"
+      elif [ -f build.sh ]; then
+        awk 'match($0, /<key>CFBundleShortVersionString<\/key><string>[^<]*/) { s = substr($0, RSTART, RLENGTH); sub(/.*<string>/, "", s); print s; exit }' build.sh | tr -d '[:space:]'
+      fi ;;
+    myheliograph)
+      if [ -f .deploy-run.json ]; then
+        python3 -c 'import json; print(json.load(open(".deploy-run.json")).get("build_stamp", ""))' 2>/dev/null || true
+      fi ;;
+    hfstudio)
+      if [ -f VERSION ]; then tr -d '[:space:]' < VERSION; fi ;;
+  esac
 }
 
 verify_copy() {
@@ -51,6 +79,7 @@ CHECKS=(); NOTES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --verify-copy) verify_copy; exit $? ;;
+    --declared) [ $# -ge 2 ] || usage; v=$(declared_version "$2" || true); [ -n "$v" ] || exit 1; echo "$v"; exit 0 ;;
     --product) [ $# -ge 2 ] || usage; PRODUCT=$2; shift 2 ;;
     --version) [ $# -ge 2 ] || usage; VERSION=$2; shift 2 ;;
     --version-check) [ $# -ge 2 ] || usage; CHECKS+=("$2"); shift 2 ;;
@@ -103,8 +132,14 @@ elif ! git merge-base --is-ancestor HEAD "$BASE_REF"; then
 fi
 gate ancestor ALLOW_NON_ANCESTOR "$r"
 
-# 3. versions: every --version-check value equals --version.
+# 3. versions: the product's declared source (SU-15) and every --version-check value equal --version.
 r=""
+DECLARED=$(declared_version "$PRODUCT" || true)
+if [ -z "$DECLARED" ]; then
+  r="no declared version source found for $PRODUCT in $(pwd) (see spec/versioning.md)"
+elif [ "$DECLARED" != "$VERSION" ]; then
+  r="declared source says '$DECLARED', release is '$VERSION'"
+fi
 for c in ${CHECKS[@]+"${CHECKS[@]}"}; do
   label=${c%%=*}; value=${c#*=}
   if [ "$value" != "$VERSION" ]; then r="${r:+$r; }$label says '$value', release is '$VERSION'"; fi

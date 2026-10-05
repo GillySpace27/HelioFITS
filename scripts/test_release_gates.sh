@@ -30,6 +30,12 @@ SUM=$( (command -v shasum >/dev/null && shasum -a 256 art.dmg || sha256sum art.d
 printf '{"sha256": "%s"}\n' "$SUM" > receipt-ok.json
 printf '{"dmg_sha256": "%s"}\n' "$SUM" > receipt-studio.json
 printf '{"sha256": "%064d"}\n' 0 > receipt-bad.json
+# SU-15: declared version sources, all read from this directory.
+mkdir -p Config
+printf 'MARKETING_VERSION = 1.4.0\nCURRENT_PROJECT_VERSION = 10\n' > Config/Version.xcconfig
+printf 'VERSION=0.9\nBUILD=9\n' > release.env
+printf '0.8.3\n' > VERSION
+printf '{"build_stamp": "2026.10.01-abc1234"}\n' > .deploy-run.json
 
 fails=0
 # expect <case> <want exit> <grep pattern or -> -- <env assignments...> -- <args...>
@@ -65,6 +71,22 @@ expect receipt-ok       0  "GATE receipt PASS"            DATE_CMD="$T/wed10" --
 expect receipt-studio   0  "GATE receipt PASS"            DATE_CMD="$T/wed10" -- "${OKARGS[@]}" --artifact art.dmg --receipt receipt-studio.json
 expect receipt-bad      1  "GATE receipt REFUSE: art.dmg sha256" DATE_CMD="$T/wed10" -- "${OKARGS[@]}" --artifact art.dmg --receipt receipt-bad.json
 expect receipt-nokey    1  "has no nope key"              DATE_CMD="$T/wed10" -- "${OKARGS[@]}" --artifact art.dmg --receipt receipt-ok.json --receipt-key nope
+
+# SU-15: the declared version source (cases run on main, before the branch cases).
+expect declared-hfstudio         0 "GATE versions PASS" DATE_CMD="$T/wed10" -- --product hfstudio --version 0.8.3
+printf '0.8.3 \n\n' > VERSION
+expect declared-whitespace       0 "GATE versions PASS" DATE_CMD="$T/wed10" -- --product hfstudio --version 0.8.3
+expect declared-heliogram        0 "GATE versions PASS" DATE_CMD="$T/wed10" -- --product heliogram --version 0.9
+printf 'VERSION="0.9"\nBUILD=9\n' > release.env
+expect declared-heliogram-quoted 0 "GATE versions PASS" DATE_CMD="$T/wed10" -- --product heliogram --version 0.9
+expect declared-store            0 "GATE versions PASS" DATE_CMD="$T/wed10" -- --product myheliograph --version 2026.10.01-abc1234
+expect declared-mismatch         1 "GATE versions REFUSE: declared source says '1.4.0', release is '1.5.0'" DATE_CMD="$T/wed10" -- --product heliofits --version 1.5.0
+expect declared-store-differs    1 "declared source says '2026.10.01-abc1234', release is '2026.10.02-abc1234'" DATE_CMD="$T/wed10" -- --product myheliograph --version 2026.10.02-abc1234
+mv VERSION VERSION.off
+expect declared-missing          1 "no declared version source found for hfstudio" DATE_CMD="$T/wed10" -- --product hfstudio --version 0.8.3
+expect declared-print-missing    1 "-" -- --declared hfstudio
+mv VERSION.off VERSION
+expect declared-print            0 "0.8.3" -- --declared hfstudio
 
 G checkout -q feature
 expect non-ancestor     1  "GATE ancestor REFUSE: HEAD"   DATE_CMD="$T/wed10" -- "${OKARGS[@]}"
