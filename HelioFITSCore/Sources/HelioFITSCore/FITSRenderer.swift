@@ -666,6 +666,7 @@ public enum FITSRenderer {
     /// the result is sunkit's exactly. Returns values in [0,1]; NaN where the pixel is non-finite
     /// or its radius falls outside the bins. Pure and deterministic — pinned in
     /// the test suite against a sunkit-image reference.
+    // RHEF-CONVENTION: oRHEF-2.0; deviations: UPS-MEAN, TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN
     public static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
                              nbins: Int, upsilon: Double) -> [Float] {
         let n = values.count
