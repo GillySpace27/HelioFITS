@@ -12,10 +12,13 @@ live.
 The "version" milestone is the exception: it is read from Config/Version.xcconfig
 (the one mac version source, HF-10), so --done version is ignored.
 
-Usage: python3 release_status.py <VERSION> <BUILD> [--done preflight,tests,changelog]
+Usage: python3 release_status.py [<VERSION> <BUILD>] [--done preflight,tests,changelog]
+  With no VERSION, follows the release Config/Version.xcconfig names, and derives
+  preflight, tests and changelog from the tag and CHANGELOG.md (suite SU-5), so
+  the Orrery registry needs neither a pinned version nor --done.
   python3 release_status.py 1.3.1 8 --done preflight,tests,changelog
 """
-import sys, os, re, json, subprocess, argparse, datetime, tempfile
+import sys, os, re, json, shutil, subprocess, argparse, datetime, tempfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 APP_ID = "6790952544"
@@ -128,6 +131,39 @@ def sh(cmd):
 
 
 MISSING = set()   # binaries this run could not find, reported rather than hidden
+TOOL_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
+
+
+def find_tool(name):
+    """Absolute path to a CLI, so launchd's bare PATH cannot hide it (2026-08-23).
+
+    Falls back to the bare name; a missing binary is then recorded in MISSING."""
+    found = shutil.which(name)
+    if found:
+        return found
+    for d in TOOL_DIRS:
+        p = os.path.join(d, name)
+        if os.access(p, os.X_OK):
+            return p
+    return name
+
+
+def target_release(xc):
+    """(version, build) to follow when none is given: the xcconfig's pair (HF-10:
+    scripts/bump-version.sh sets both before the tag), or ("", "") when unreadable."""
+    return xc if xc else ("", "")
+
+
+def derive_local(version, changelog_text, tag_exists):
+    """Session-only milestones re-derived from outside state (suite SU-5).
+
+    RELEASING.md tags (step 5) only after a clean tree, the tests and the changelog
+    (steps 1, 3, 4), so an existing tag for this release counts for preflight and
+    tests. The changelog milestone needs a "## [<version>]" heading."""
+    numeric = bool(re.match(r"^[0-9][0-9.]*$", version or ""))
+    heading = numeric and re.search(r"^## \[" + re.escape(version) + r"\]", changelog_text, re.M)
+    return {"preflight": bool(tag_exists), "tests": bool(tag_exists), "changelog": bool(heading)}
+
 
 def asc_get(path):
     out = subprocess.run([sys.executable, ASC_API, "GET", path], capture_output=True, text=True).stdout
@@ -154,7 +190,7 @@ def check_live(version, build):
     state["tag_pushed"] = bool(tags_remote.strip())
 
     try:
-        gh_out = subprocess.run(["gh", "release", "view", tag, "--json", "url"],
+        gh_out = subprocess.run([find_tool("gh"), "release", "view", tag, "--json", "url"],
                                  cwd=REPO, capture_output=True, text=True)
         state["gh_release"] = gh_out.returncode == 0
     except FileNotFoundError:
@@ -316,7 +352,16 @@ if __name__ == "__main__":
     if args.record and not (args.version and args.build):
         p.error("--record needs <version> <build>")
     done_flags = {k: True for k in args.done.split(",") if k}
+    if not args.version:
+        args.version, args.build = target_release(xcconfig_version())
     live_state = check_live(args.version, args.build)
+    try:
+        with open(CHANGELOG, encoding="utf-8") as fh:
+            changelog_text = fh.read()
+    except OSError:
+        changelog_text = ""
+    for k, v in derive_local(args.version, changelog_text, live_state.get("tag")).items():
+        done_flags[k] = done_flags.get(k, False) or v
     print(render(args.version, args.build, done_flags, live_state))
 
     if args.emit:
