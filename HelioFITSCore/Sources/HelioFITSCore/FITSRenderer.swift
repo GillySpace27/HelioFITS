@@ -674,7 +674,8 @@ public enum FITSRenderer {
     /// magnetogram's is 3e-6 G; PUNCH's smallest real value is 3e-17 against a
     /// 1e-20 tolerance), so it only merges noise, and on data without such noise
     /// the result is sunkit's exactly. Returns values in [0,1]; NaN where the pixel is non-finite
-    /// or its radius falls outside the bins. Pure and deterministic — pinned in
+    /// or its radius is negative. A radius at or beyond `maxRadius` goes in the last bin, so
+    /// callers pass the largest radius on the grid. Pure and deterministic: pinned in
     /// the test suite against a sunkit-image reference.
     public static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
                              nbins: Int, upsilon: Double) -> [Float] {
