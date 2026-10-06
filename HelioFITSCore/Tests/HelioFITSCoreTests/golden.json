@@ -1,0 +1,12 @@
+{
+  "cases" : {
+    "aia_like" : "1a2ca385cd0e91e3395dbd8bc32ac8e69945f081d56b7a5cf8e8d761ff2f01f0",
+    "hmi_mag" : "7d54d69868f14b15c7b375aec3237a887e743b3d7feb8131e68b4105598c35a6",
+    "plain" : "98193046ca7158e0b7d6c42876c17d3751d35ac337a2228a6765e8acad605df1",
+    "punch_cube" : "bdff4dd5c8a2b9345406d792f23ef17482f4ab57845226be207c274651504e9b",
+    "punch_zerofill" : "2309e173fa52b9b655dc39e1b28e749fd0b3be0e52a5ccd4ae3cb949023a88d0",
+    "punch_zerofill_rhef" : "370777840987a00219b93e689b5f39112d720a5c249bc5e8e5e730218ca7ab9f",
+    "table_only" : "1c6b55d3ca528dcb71542726b1300ffa475e1d191cc250d99ef672cf7508747f"
+  },
+  "version" : 1
+}
