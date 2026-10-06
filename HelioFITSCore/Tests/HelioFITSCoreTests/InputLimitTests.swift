@@ -89,7 +89,7 @@ struct InputLimitTests {
         FITSRenderer.limitInputForExtension()
         defer { FITSRenderer.clearInputLimit() }
         let limited = try FITSRenderer.render(path: path, hdu: 0)
-        #expect(limited.png == unlimited.png)
+        #expect(try limited.pngData() == unlimited.pngData())
         #expect(limited.header == unlimited.header)
         #expect(limited.natW == 64 && limited.natH == 48)
     }
