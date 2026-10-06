@@ -654,8 +654,7 @@ public enum FITSRenderer {
         return parts.joined(separator: "  ·  ")
     }
 
-    /// Human summary of a FITS file that has NO image HDUs (tables, spectra,
-    /// event lists) — shown instead of a blank Quick Look failure.
+    // RHEF-CONVENTION: oRHEF-2.0; deviations: UPS-MEAN, TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN
     /// The core of the Radial Histogram Equalizing Filter (Gilly & Cranmer 2025,
     /// Solar Phys. 300, 174): bin pixels into equally-spaced radial annuli, rank
     /// each annulus's finite values to a percentile in (0,1], then apply the
@@ -675,9 +674,9 @@ public enum FITSRenderer {
     /// magnetogram's is 3e-6 G; PUNCH's smallest real value is 3e-17 against a
     /// 1e-20 tolerance), so it only merges noise, and on data without such noise
     /// the result is sunkit's exactly. Returns values in [0,1]; NaN where the pixel is non-finite
-    /// or its radius falls outside the bins. Pure and deterministic — pinned in
+    /// or its radius is negative. A radius at or beyond `maxRadius` goes in the last bin, so
+    /// callers pass the largest radius on the grid. Pure and deterministic: pinned in
     /// the test suite against a sunkit-image reference.
-    // RHEF-CONVENTION: oRHEF-2.0; deviations: UPS-MEAN, TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN
     public static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
                              nbins: Int, upsilon: Double) -> [Float] {
         let n = values.count
@@ -793,6 +792,8 @@ public enum FITSRenderer {
         ctx.strokePath()
     }
 
+    /// Human summary of a FITS file that has NO image HDUs (tables, spectra,
+    /// event lists); shown instead of a blank Quick Look failure.
     public static func noImageSummary(path: String) -> String {
         var hdus: [(h: Int, xt: String, nm: String, naxis: Int)] = []
         var h = 0
