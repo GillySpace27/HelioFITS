@@ -20,11 +20,7 @@ class ThumbnailProvider: QLThumbnailProvider {
         do {
             // ponytail: nearest-multiple-of-2 decimation, not exact resize — QL scales the rest.
             let r = try FITSRenderer.render(path: request.fileURL.path, maxSide: max(px, 64))
-            guard let src = CGImageSourceCreateWithData(r.png as CFData, nil),
-                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
-                throw NSError(domain: "FITS", code: -20,
-                              userInfo: [NSLocalizedDescriptionKey: "PNG decode failed"])
-            }
+            let img = r.image
             let scale = min(request.maximumSize.width / CGFloat(img.width),
                             request.maximumSize.height / CGFloat(img.height))
             let size = CGSize(width: CGFloat(img.width) * scale,
