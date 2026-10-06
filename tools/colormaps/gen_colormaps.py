@@ -81,13 +81,47 @@ def extra_table(key):
     return b"".join(rows)
 
 
-def render():
+def all_tables():
     entries = sunpy_tables()
     names = {k for k, _ in entries}
     for key in EXTRA_KEYS:
         if key in names:
             raise SystemExit("sunpy now carries %s; decide which source wins before regenerating" % key)
         entries.append((key, extra_table(key)))
+    return entries
+
+
+def table_source(key):
+    """Where a table came from: the installed sunpy, or the one `# SOURCE: ` line of its CSV."""
+    if key not in EXTRA_KEYS:
+        import sunpy
+        return "sunpy " + sunpy.__version__
+    path = os.path.join(HERE, "extra", key + ".csv")
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("# SOURCE: "):
+                return line[len("# SOURCE: "):].strip()
+    raise SystemExit("%s: no '# SOURCE: ' line" % path)
+
+
+def write_json_tables(out_dir):
+    """SU-12: one <name>.json per table, {"name", "source", "rgb": 256 x [r, g, b]}. Never overwrites."""
+    import json
+    os.makedirs(out_dir, exist_ok=True)
+    count = 0
+    for key, lut in all_tables():
+        path = os.path.join(out_dir, key + ".json")
+        if os.path.exists(path):
+            raise SystemExit("%s exists; move it aside first (nothing is overwritten)" % path)
+        rgb = [list(lut[i:i + 3]) for i in range(0, 768, 3)]
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(json.dumps({"name": key, "source": table_source(key), "rgb": rgb}, separators=(",", ":")) + "\n")
+        count += 1
+    print("wrote %d tables to %s" % (count, out_dir), file=sys.stderr)
+
+
+def render():
+    entries = all_tables()
     lines = [HEADER]
     for key, lut in entries:
         if len(lut) != 768:
@@ -100,7 +134,12 @@ def render():
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", help="write here instead of stdout")
+    ap.add_argument("--json-out", help="write one <name>.json per table into this folder (SU-12); no Swift text unless --out is given")
     args = ap.parse_args()
+    if args.json_out:
+        write_json_tables(args.json_out)
+        if not args.out:
+            return
     text = render()
     if args.out:
         with open(args.out, "w", encoding="utf-8", newline="\n") as f:
