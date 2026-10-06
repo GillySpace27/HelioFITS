@@ -49,7 +49,10 @@ public enum FITSRenderer {
     public static let appGroup = "UB45PPC2JS.com.gillyspace27.fits"
 
     public struct Result {
-        public let png: Data; public let header: String; public let width: Int; public let height: Int
+        /// The rendered image, built in memory: draw it directly. PNG bytes are
+        /// made only when asked for, by `pngData()`.
+        public let image: CGImage
+        public let header: String; public let width: Int; public let height: Int
         public let natW: Int; public let natH: Int          // native NAXIS1/2
         public let factor: Int                       // native → display decimation of `png`
 
@@ -59,6 +62,13 @@ public enum FITSRenderer {
         // limits from a different population of pixels and shifting the contrast.
         public let lo: Float; public let hi: Float; public let gam: Float
         public let cmapKey: String?
+
+        /// PNG encoding of `image`, for writing a file or attaching to a reply.
+        public func pngData() throws -> Data { try FITSRenderer.finalizePNG(image) }
+
+        /// Kept so older callers compile; it encodes on every access.
+        @available(*, deprecated, message: "Use image or pngData()")
+        public var png: Data { (try? pngData()) ?? Data() }
     }
 
     /// Percentile clip limits from a strided sample of finite pixels, plus the
@@ -294,13 +304,13 @@ public enum FITSRenderer {
                 rgba[i * 4 + 1] = lut[v + 1]
                 rgba[i * 4 + 2] = lut[v + 2]
             }
-            let png = try encodePNG(rgba: &rgba, width: ow, height: oh)
-            return Result(png: png, header: header + "COLORMAP  \(key)\n", width: ow, height: oh,
+            let img = try makeImage(rgba: rgba, width: ow, height: oh)
+            return Result(image: img, header: header + "COLORMAP  \(key)\n", width: ow, height: oh,
                           natW: w, natH: h, factor: factor,
                           lo: lo, hi: hi, gam: gam, cmapKey: key)
         }
-        let png = try encodePNG(gray: &bytes, width: ow, height: oh)
-        return Result(png: png, header: header, width: ow, height: oh,
+        let img = try makeImage(gray: bytes, width: ow, height: oh)
+        return Result(image: img, header: header, width: ow, height: oh,
                       natW: w, natH: h, factor: factor,
                       lo: lo, hi: hi, gam: gam, cmapKey: cmapKey)
     }
@@ -852,28 +862,34 @@ public enum FITSRenderer {
 
 
 
-    private static func encodePNG(rgba bytes: inout [UInt8], width: Int, height: Int) throws -> Data {
-        let cs = CGColorSpaceCreateDeviceRGB()
-        guard let ctx = CGContext(data: &bytes, width: width, height: height,
-                                  bitsPerComponent: 8, bytesPerRow: width * 4, space: cs,
-                                  bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue),
-              let cg = ctx.makeImage() else {
+    /// An RGBX image (8 bits per channel, alpha byte skipped) that owns a copy of
+    /// `bytes`. Same layout the PNG encoder was handed before HF-8. Internal so
+    /// tests can build a Result.
+    static func makeImage(rgba bytes: [UInt8], width: Int, height: Int) throws -> CGImage {
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let cg = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                               bytesPerRow: width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                               provider: provider, decode: nil, shouldInterpolate: false,
+                               intent: .defaultIntent) else {
             throw NSError(domain: "FITS", code: -10,
-                          userInfo: [NSLocalizedDescriptionKey: "CGContext (RGBA) failed"])
+                          userInfo: [NSLocalizedDescriptionKey: "CGImage (RGBA) failed"])
         }
-        return try finalizePNG(cg)
+        return cg
     }
 
-    private static func encodePNG(gray bytes: inout [UInt8], width: Int, height: Int) throws -> Data {
-        let cs = CGColorSpaceCreateDeviceGray()
-        guard let ctx = CGContext(data: &bytes, width: width, height: height,
-                                  bitsPerComponent: 8, bytesPerRow: width, space: cs,
-                                  bitmapInfo: CGImageAlphaInfo.none.rawValue),
-              let cg = ctx.makeImage() else {
+    /// An 8-bit grey image that owns a copy of `bytes`.
+    static func makeImage(gray bytes: [UInt8], width: Int, height: Int) throws -> CGImage {
+        guard let provider = CGDataProvider(data: Data(bytes) as CFData),
+              let cg = CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 8,
+                               bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                               bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue),
+                               provider: provider, decode: nil, shouldInterpolate: false,
+                               intent: .defaultIntent) else {
             throw NSError(domain: "FITS", code: -10,
-                          userInfo: [NSLocalizedDescriptionKey: "CGContext failed"])
+                          userInfo: [NSLocalizedDescriptionKey: "CGImage (gray) failed"])
         }
-        return try finalizePNG(cg)
+        return cg
     }
 
     private static func finalizePNG(_ cg: CGImage) throws -> Data {

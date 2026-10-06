@@ -70,12 +70,7 @@ struct GoldenRenderTests {
 
     /// The image a host draws for a render result.
     static func drawable(_ r: FITSRenderer.Result) throws -> CGImage {
-        // Before HF-8 Task 3: the PNG the hosts decoded.
-        guard let src = CGImageSourceCreateWithData(r.png as CFData, nil),
-              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else {
-            throw PixelBytes.Unsupported(description: "PNG decode failed")
-        }
-        return img
+        r.image          // golden.json was recorded from the decoded PNG before HF-8 Task 3
     }
 
     /// A primary HDU with NAXIS = 0 and nothing else: a valid FITS with no image.
