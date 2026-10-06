@@ -150,9 +150,8 @@ public final class FITSPreviewModel {
         }
 
         for (h, plane) in slots {
-            guard let r = try? FITSRenderer.render(path: path, maxSide: maxSide, hdu: h, plane: plane),
-                  let src = CGImageSourceCreateWithData(r.png as CFData, nil),
-                  let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { continue }
+            guard let r = try? FITSRenderer.render(path: path, maxSide: maxSide, hdu: h, plane: plane) else { continue }
+            let img = r.image
             let cards = FITSRenderer.cards(path: path, hdu: h) ?? ""
             let key = FITSRenderer.colormapKey(fromHeader: r.header)
             m.pages.append(Page(

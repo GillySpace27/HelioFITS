@@ -255,7 +255,8 @@ struct HistogramBinTests {
         pix[12] = .infinity                // must be skipped, not binned
         pix[13] = .nan
         let buf: FITSPreviewModel.Buffer = (w: n, h: n, pix: pix)
-        let res = FITSRenderer.Result(png: Data(), header: "", width: n, height: n,
+        let blank = try FITSRenderer.makeImage(gray: [UInt8](repeating: 0, count: n * n), width: n, height: n)
+        let res = FITSRenderer.Result(image: blank, header: "", width: n, height: n,
                                       natW: n, natH: n, factor: 1,
                                       lo: 0, hi: 1, gam: 0.5, cmapKey: nil)
         // rhefValues walks the same data; if the binner traps this never returns.

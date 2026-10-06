@@ -38,7 +38,8 @@ struct FilterStretchTests {
     @Test("gamma changes the filtered image")
     func gammaAffectsFilteredOutput() throws {
         let buf = corona()
-        let res = FITSRenderer.Result(png: Data(), header: "", width: buf.w, height: buf.h,
+        let blank = try FITSRenderer.makeImage(gray: [UInt8](repeating: 0, count: buf.w * buf.h), width: buf.w, height: buf.h)
+        let res = FITSRenderer.Result(image: blank, header: "", width: buf.w, height: buf.h,
                                       natW: buf.w, natH: buf.h, factor: 1,
                                       lo: 0, hi: 1, gam: 0.5, cmapKey: nil)
         let g = try #require(FITSPreviewModel.rhefValues(buffer: buf, res: res, wcs: nil))
@@ -55,7 +56,8 @@ struct FilterStretchTests {
     @Test("percentile clip changes the filtered image")
     func clipAffectsFilteredOutput() throws {
         let buf = corona()
-        let res = FITSRenderer.Result(png: Data(), header: "", width: buf.w, height: buf.h,
+        let blank = try FITSRenderer.makeImage(gray: [UInt8](repeating: 0, count: buf.w * buf.h), width: buf.w, height: buf.h)
+        let res = FITSRenderer.Result(image: blank, header: "", width: buf.w, height: buf.h,
                                       natW: buf.w, natH: buf.h, factor: 1,
                                       lo: 0, hi: 1, gam: 0.5, cmapKey: nil)
         let g = try #require(FITSPreviewModel.rhefValues(buffer: buf, res: res, wcs: nil))

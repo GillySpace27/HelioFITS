@@ -22,6 +22,6 @@ struct QuickRender {
             ? FITSRenderer.caption(res: r, cards: FITSRenderer.cards(path: path, hdu: idx[0]) ?? "",
                                    index: 1, of: n)
             : ""
-        return QuickRender(png: r.png, width: r.width, height: r.height, caption: caption)
+        return QuickRender(png: try r.pngData(), width: r.width, height: r.height, caption: caption)
     }
 }

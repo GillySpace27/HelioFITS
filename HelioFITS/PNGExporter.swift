@@ -35,7 +35,7 @@ enum PNGExporter {
                 let base = ((p as NSString).lastPathComponent as NSString).deletingPathExtension
                 let out = folder.appendingPathComponent(hdu >= 0 ? "\(base)_hdu\(hdu).png" : "\(base).png")
                 do {
-                    try FITSRenderer.render(path: p, maxSide: 2048, hdu: hdu).png.write(to: out)
+                    try FITSRenderer.render(path: p, maxSide: 2048, hdu: hdu).pngData().write(to: out)
                     written.append(out)
                 } catch {
                     failures.append("\((p as NSString).lastPathComponent): \(error.localizedDescription)")
