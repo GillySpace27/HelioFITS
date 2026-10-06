@@ -8,13 +8,15 @@ import PackageDescription
 let package = Package(
     name: "HelioFITSCore",
     platforms: [.macOS("14.5"), .iOS("17.0")],
-    products: [.library(name: "HelioFITSCore", targets: ["HelioFITSCore"])],
+    products: [.library(name: "HelioFITSCore", targets: ["HelioFITSCore"]),
+               .executable(name: "heliofits", targets: ["heliofits"])],
     targets: [
         // Built by HelioFITSExtension/cfitsio/build-universal.sh: libcfitsio.a with
         // fitsshim.c baked in, plus its headers and a module map (`import CFITSIO`).
         .binaryTarget(name: "CFITSIO", path: "CFITSIO.xcframework"),
         .target(name: "HelioFITSCore", dependencies: ["CFITSIO"],
                 linkerSettings: [.linkedLibrary("z")]),
+        .executableTarget(name: "heliofits", dependencies: ["HelioFITSCore"]),
         // Headless tests: `swift test --package-path HelioFITSCore`. No app launch,
         // nothing registered with LaunchServices. Tests that need the app module
         // (canvas, toolbar) stay hosted in HelioFITSTests/.
