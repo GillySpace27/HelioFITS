@@ -206,11 +206,13 @@ Update this list when a branch merges or parks.
   gates itself with `.enabled(if:)` and reports as skipped elsewhere.
 - Real cutouts in `HelioFITSTests/Fixtures/Real/`: `aia_cutout.fits` (from `AIA20231011_0000_0193.fits`)
   and `punch_pam_cube_cutout.fits` (from `PUNCH_L3_PAM_20250920001600_v0l.fits`), with their own
-  `README.md` (SHA-256, header facts, credit lines). Reach them with `RepoPaths.fixture("Real/<name>")`.
-  App samples `Sample-AIA.fits` and `Sample-PUNCH.fits` are in `HelioFITS/Samples/` with `SOURCES.md`.
-  Gilly answered register question 21 on 2026-10-12 (no HMI or multi-extension source). The samples
-  are not yet in the Xcode app target, so `SampleFiles.bundled()` still finds nothing in a built app
-  and the Try a Sample and Save Samples buttons stay hidden until that is wired on a Mac.
+  `SOURCES.md` (SHA-256, header facts, credit lines; its `table_only.fits` row is the root synthetic
+  file, byte-identical). Reach them with `RepoPaths.fixture("Real/<name>")`. `HelioFITSTests` is a
+  synchronized Xcode group that copies every file flat into the test bundle, so no two files under it
+  may share a basename (a second `README.md` or `table_only.fits` fails the build). App samples
+  `Sample-AIA.fits` and `Sample-PUNCH.fits` are in `HelioFITS/Samples/` with `SOURCES.md`; the
+  synchronized `HelioFITS` group bundles them, and `SampleFiles.bundled()` finds them flat in Resources.
+  Gilly answered register question 21 on 2026-10-12 (no HMI or multi-extension source).
 - `scripts/make_fixtures.py` never overwrites: to re-cut, move the old files aside first. `--selftest`
   runs on synthetic data, `--dry-run` writes nothing. CI regenerates the synthetic set and diffs it.
   Do not hand-edit the FITS files or `README.md` there.
