@@ -198,9 +198,11 @@ jobs:
         run: python3 tools/colormaps/test_json_out.py
 
   fixtures:
-    # HelioFITSTests/Fixtures holds only synthetic files (no mission data until Gilly
-    # answers register question 21). They are generated, so a hand edit or a script
-    # change that moves a byte shows up here as a diff. Regenerate with
+    # HelioFITSTests/Fixtures holds the synthetic files; the real AIA and PUNCH cutouts
+    # live in its Real/ folder (register question 21, answered 2026-10-12) and are cut
+    # from files on Gilly's Mac, so CI cannot regenerate them and the diff skips Real/.
+    # The synthetic files are generated, so a hand edit or a script change that moves a
+    # byte shows up here as a diff. Regenerate with
     # python3 scripts/make_fixtures.py --synthetic after moving the old files aside.
     needs: check
     runs-on: ubuntu-latest
@@ -217,4 +219,4 @@ jobs:
       - name: Regenerate the synthetic fixtures and diff (no output means identical)
         run: |
           python3 scripts/make_fixtures.py --synthetic --tests-out "$RUNNER_TEMP/fixtures"
-          diff -r "$RUNNER_TEMP/fixtures" HelioFITSTests/Fixtures
+          diff -r -x Real "$RUNNER_TEMP/fixtures" HelioFITSTests/Fixtures
