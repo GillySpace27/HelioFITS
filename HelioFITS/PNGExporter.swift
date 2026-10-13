@@ -31,7 +31,7 @@ enum PNGExporter {
             for p in paths {
                 // Same HDU the previews show: folder rule (or default), -2 resolved
                 // to a concrete index. -1 stays auto → the shim picks first image HDU.
-                let hdu = FITSRenderer.resolveAutoHDU(path: p, want: FITSRenderer.selectedHDU(forFileAt: p))
+                let hdu = FITSRenderer.resolveAutoHDU(path: p, want: SharedSettings.selectedHDU(forFileAt: p))
                 let base = ((p as NSString).lastPathComponent as NSString).deletingPathExtension
                 let out = folder.appendingPathComponent(hdu >= 0 ? "\(base)_hdu\(hdu).png" : "\(base).png")
                 do {

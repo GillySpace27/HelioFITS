@@ -2,8 +2,10 @@
 
 import SwiftUI
 import AppKit
+import HelioFITSCore
 
-let fitsAppGroup = "UB45PPC2JS.com.gillyspace27.fits"
+/// Forwarder kept for old call sites; the name lives in SharedSettings.suiteName.
+let fitsAppGroup = SharedSettings.suiteName
 
 @main
 struct HelioFITSApp: App {
@@ -61,10 +63,15 @@ struct HelioFITSApp: App {
                     NSWorkspace.shared.open(
                         URL(string: "https://github.com/GillySpace27/HelioFITS/issues/new")!)
                 }
+                #if DIRECT_DOWNLOAD
+                // Direct-download builds only: ship.sh sets DIRECT_DOWNLOAD. The App
+                // Store build updates through the store and has no such item. The
+                // /releases index, never /releases/latest (that one hides pre-releases).
                 Button("Check for Updates…") {
                     NSWorkspace.shared.open(
-                        URL(string: "https://github.com/GillySpace27/HelioFITS/releases/latest")!)
+                        URL(string: "https://github.com/GillySpace27/HelioFITS/releases")!)
                 }
+                #endif
             }
         }
 

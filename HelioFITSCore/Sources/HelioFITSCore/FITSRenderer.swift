@@ -46,7 +46,8 @@ public enum FITSRenderer {
 
 
     // Shared with the container app (HDU-selection UI) via app group.
-    public static let appGroup = "UB45PPC2JS.com.gillyspace27.fits"
+    @available(*, deprecated, message: "Use SharedSettings.suiteName")
+    public static let appGroup = SharedSettings.suiteName
 
     public struct Result {
         /// The rendered image, built in memory: draw it directly. PNG bytes are
@@ -215,14 +216,11 @@ public enum FITSRenderer {
     }
 
     /// Which HDU to display for a file: per-directory rule wins, then the
-    /// global default, else -1 (auto = first image HDU).
+    /// global default, else -1 (auto = first image HDU). Forwarder kept for old
+    /// call sites; the rule and its keys live in SharedSettings.
+    @available(*, deprecated, message: "Use SharedSettings.selectedHDU(forFileAt:)")
     public static func selectedHDU(forFileAt path: String) -> Int {
-        guard let d = UserDefaults(suiteName: appGroup) else { return -1 }
-        let dir = (path as NSString).deletingLastPathComponent
-        if let per = d.dictionary(forKey: "dirHDU") as? [String: Int], let v = per[dir] {
-            return v
-        }
-        return d.object(forKey: "defaultHDU") != nil ? d.integer(forKey: "defaultHDU") : -1
+        SharedSettings.selectedHDU(forFileAt: path)
     }
 
     /// Resolve the "auto = last image HDU" sentinel (-2) to a concrete index by
@@ -257,7 +255,7 @@ public enum FITSRenderer {
         var w: Int = 0, h: Int = 0, step: Int = 1
         var pixPtr: UnsafeMutablePointer<Float>? = nil
         var hdrPtr: UnsafeMutablePointer<CChar>? = nil
-        let want = hdu ?? selectedHDU(forFileAt: path)
+        let want = hdu ?? SharedSettings.selectedHDU(forFileAt: path)
         let rc = fitsshim_read_image_max(path, resolveAutoHDU(path: path, want: want), plane,
                                          lowMemory ? maxSide : 0, &w, &h, &step, &pixPtr, &hdrPtr)
         guard rc == 0, let pix = pixPtr, w > 0, h > 0 else {

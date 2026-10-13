@@ -250,14 +250,15 @@ struct SettingsView: View {
 
     private func load() {
         guard let d = PreviewSettings.suite else { status = "⚠️ App-group defaults unavailable"; return }
-        defaultHDU = d.object(forKey: "defaultHDU") != nil ? d.integer(forKey: "defaultHDU") : -1
-        dirRules = (d.dictionary(forKey: "dirHDU") as? [String: Int]) ?? [:]
+        defaultHDU = d.object(forKey: SharedSettings.defaultHDUKey) != nil
+            ? d.integer(forKey: SharedSettings.defaultHDUKey) : -1
+        dirRules = (d.dictionary(forKey: SharedSettings.dirHDUKey) as? [String: Int]) ?? [:]
     }
 
     private func save() {
         guard let d = PreviewSettings.suite else { return }
-        d.set(defaultHDU, forKey: "defaultHDU")
-        d.set(dirRules, forKey: "dirHDU")
+        d.set(defaultHDU, forKey: SharedSettings.defaultHDUKey)
+        d.set(dirRules, forKey: SharedSettings.dirHDUKey)
         status = "Saved. Previews (Space) update immediately; use “Refresh icons” to regenerate thumbnails."
     }
 
@@ -279,19 +280,24 @@ struct SettingsView: View {
 private func hduChoices(first: String, last: String) -> some View {
     Text(first).tag(-1)
     Text(last).tag(-2)
-    ForEach(0..<10, id: \.self) { Text("HDU \($0)").tag($0) }
+    ForEach(PreviewSettings.hduChoices, id: \.self) { Text("HDU \($0)").tag($0) }
 }
 
 // MARK: - Shared settings plumbing
 
 enum PreviewSettings {
-    static var suite: UserDefaults? { UserDefaults(suiteName: fitsAppGroup) }
+    /// HDU indices both pickers offer (Settings and "Sync FITS previews"). The viewer's
+    /// pager reaches FITSRenderer.maxPagerHDUs (128); whether these should too is
+    /// Gilly's call (register open question 17), so the range is unchanged here.
+    static let hduChoices: Range<Int> = 0..<10
+
+    static var suite: UserDefaults? { SharedSettings.suite }
 
     static func setRule(_ hdu: Int, for dirs: [String]) {
         guard let d = suite else { return }
-        var rules = (d.dictionary(forKey: "dirHDU") as? [String: Int]) ?? [:]
+        var rules = (d.dictionary(forKey: SharedSettings.dirHDUKey) as? [String: Int]) ?? [:]
         for dir in dirs { rules[dir] = hdu }
-        d.set(rules, forKey: "dirHDU")
+        d.set(rules, forKey: SharedSettings.dirHDUKey)
     }
 
     // ponytail: works while the app holds the open-panel grant for this
@@ -321,7 +327,7 @@ enum PreviewSettings {
             ? (dirs[0] as NSString).abbreviatingWithTildeInPath
             : "\(dirs.count) folders"
         let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 180, height: 26))
-        let choices: [(String, Int)] = [("Auto (first)", -1), ("Auto (last)", -2)] + (0..<10).map { ("HDU \($0)", $0) }
+        let choices: [(String, Int)] = [("Auto (first)", -1), ("Auto (last)", -2)] + PreviewSettings.hduChoices.map { ("HDU \($0)", $0) }
         for (title, tag) in choices { popup.addItem(withTitle: title); popup.lastItem?.tag = tag }
         alert.accessoryView = popup
         alert.addButton(withTitle: "Apply")
