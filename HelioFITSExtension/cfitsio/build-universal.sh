@@ -16,10 +16,10 @@
 # The tarball must match CFITSIO_SHA256 or nothing is built. The xcframework it
 # replaces is copied to build-attic/CFITSIO.xcframework-<UTC>/ first (git-ignored,
 # never pruned), and HelioFITSCore/CFITSIO.stamp records what was baked in.
-# Today scripts/check.sh checks only the header copies in the xcframework
-# (check_shim_header_copies); it does not read the stamp. Planned (HF-6 Task 7, not
-# done): a check_cfitsio_stamp that compares the stamp with the current fitsshim.c
-# and fitsshim.h. The stamp file does not exist until this script has run once.
+# scripts/check.sh checks the header copies in the xcframework
+# (check_shim_header_copies) and compares the stamp with CFITSIO_VERSION,
+# CFITSIO_SHA256 and the current fitsshim.c and fitsshim.h (check_cfitsio_stamp,
+# HF-6 Task 7), so an edited shim fails the check until this script runs again.
 #
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -128,8 +128,8 @@ xcodebuild -create-xcframework \
   -output "$xcf"
 
 # Record what was baked in. Keyed on source hashes, not on libcfitsio.a (static
-# archives embed timestamps). scripts/watch.py reads cfitsio_version from it today;
-# scripts/check.sh will read the hashes once check_cfitsio_stamp exists (HF-6 Task 7).
+# archives embed timestamps). scripts/watch.py reads cfitsio_version from it, and
+# scripts/check.sh (check_cfitsio_stamp) reads the version and the hashes.
 stamp="$root/HelioFITSCore/CFITSIO.stamp"
 {
   echo "cfitsio_version=$CFITSIO_VERSION"
