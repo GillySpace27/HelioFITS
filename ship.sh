@@ -40,11 +40,14 @@ echo "==> Archiving (Developer ID, hardened runtime, secure timestamp)"
 # runs on both Apple Silicon and Intel. A plain Xcode archive is already universal
 # (ARCHS_STANDARD, no EXCLUDED_ARCHS); we spell it out here for clarity.
 # Regenerate the fat CFITSIO lib with HelioFITSExtension/cfitsio/build-universal.sh.
+# DIRECT_DOWNLOAD compiles in Help > Check for Updates (the /releases index); the
+# App Store archive never sets it.
 xcodebuild -project HelioFITS.xcodeproj -scheme HelioFITS \
   -configuration Release -destination 'generic/platform=macOS' \
   ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
   CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=UB45PPC2JS \
   CODE_SIGN_IDENTITY="Developer ID Application" \
+  SWIFT_ACTIVE_COMPILATION_CONDITIONS='$(inherited) DIRECT_DOWNLOAD' \
   -archivePath "$ARCH" archive
 
 cp -R "$ARCH/Products/Applications/HelioFITS.app" "$APP"
