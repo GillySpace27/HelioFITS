@@ -2,9 +2,8 @@
 //  RHEFConformanceTests.swift: FITSRenderer.rhefEqualize against the fastRHEF golden RHEF
 //  bundle (RH-6). The bundle is read from RHEF_GOLDEN_DIR, else from HelioFITSCore/Tests/golden
 //  (outside the test target's folder, so SwiftPM never treats its files as resources). That
-//  folder is not committed: fastRHEF is private, and copying its bundle into this public
-//  repository (fastRHEF tools/sync_golden.sh) waits on Gilly's yes. Until then this test is
-//  skipped in report mode.
+//  folder is a committed copy of the bundle (PR #51, 8348695; its SOURCE.txt names the fastRHEF
+//  commit and manifest sha256), refreshed only with fastRHEF tools/sync_golden.sh.
 //
 //  Only binning=equal-width cases run: rhefEqualize bins equal-width to maxRadius from the
 //  radii it is handed, and the bundle's generator asserts that this binning reproduces the
