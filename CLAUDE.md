@@ -193,7 +193,8 @@ one build does not cover the next (SKILL.md "What it cannot finish without Gilly
 
 Update this list when a branch merges or parks.
 
-- PR #35 claude/ios-memory (8a26d00): open, waiting on Gilly's merge-or-park decision. It adds `fitsshim_read_image_max`, rebuilds `HelioFITSCore/CFITSIO.xcframework` and adds `lowMemory:` to `FITSRenderer.render`; do not start work on the shim, the xcframework or `FITSRenderer.render` until it settles.
+- PR #54 claude/HF-5-real-fixtures: merged as 27ae573 on 2026-10-13.
+- PR #35 claude/ios-memory: merged as e1b7e12 on 2026-10-05.
 - PR #34 claude/rhef-ties: merged as 2c12f45 on 2026-09-29.
 
 ## Sample data
