@@ -146,7 +146,7 @@ struct ViewerView: View {
             Menu {
                 Picker("Filter", selection: Binding(get: { m.filter }, set: { if m.setFilter($0) { viewer.refresh() } })) {
                     Text("No filter").tag(FITSPreviewModel.Filter.none)
-                    Text("RHEF — reveal faint corona").tag(FITSPreviewModel.Filter.rhef)
+                    Text("RHEF: reveal faint corona").tag(FITSPreviewModel.Filter.rhef)
                 }
             } label: {
                 Label(m.filter == .rhef ? "RHEF" : "Filter", systemImage: "camera.filters")
