@@ -29,6 +29,16 @@ All notable changes to HelioFITS are recorded here. Format follows
   unchanged. Copy Python now calls `rhef` with
   that default rather than `method="numpy"`.
 
+### Changed
+
+- **iPhone and iPad read only the pixels they draw.** Rendering on iOS now reads a
+  strided subset of a large image through a new `fitsshim_read_image_max` in the
+  CFITSIO shim (a compressed image is decoded one tile at a time), so a 4096x4096
+  PUNCH PAM plane never sits in memory whole. The Mac keeps the full read, so its
+  clip levels are unchanged. The iOS preview also drops a PNG decode it did not
+  need. The author measured, in the Simulator on a PUNCH PAM cube, a preview peak
+  of 73 MB and a thumbnail peak of 8.5 MB (#35).
+
 ## [1.4.0] - 2026-09-27
 
 Opening the app now opens the viewer, the viewer knows where its file lives, and Copy Python
