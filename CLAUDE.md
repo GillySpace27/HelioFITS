@@ -208,8 +208,11 @@ Update this list when a branch merges or parks.
   and `punch_pam_cube_cutout.fits` (from `PUNCH_L3_PAM_20250920001600_v0l.fits`), with their own
   `SOURCES.md` (SHA-256, header facts, credit lines; its `table_only.fits` row is the root synthetic
   file, byte-identical). Reach them with `RepoPaths.fixture("Real/<name>")`. `HelioFITSTests` is a
-  synchronized Xcode group that copies every file flat into the test bundle, so no two files under it
-  may share a basename (a second `README.md` or `table_only.fits` fails the build). App samples
+  synchronized Xcode group that copies every non-source file flat into the test bundle, so no two
+  files under it may share a basename (a second `README.md` or `table_only.fits` fails the build).
+  Every file under `Fixtures/` is a membership exception of the `HelioFITSTests` target in
+  `HelioFITS.xcodeproj/project.pbxproj` (HF-5 Task 4), so none is copied; a new fixture needs its
+  own line there. App samples
   `Sample-AIA.fits` and `Sample-PUNCH.fits` are in `HelioFITS/Samples/` with `SOURCES.md`; the
   synchronized `HelioFITS` group bundles them, and `SampleFiles.bundled()` finds them flat in Resources.
   Gilly answered register question 21 on 2026-10-12 (no HMI or multi-extension source).

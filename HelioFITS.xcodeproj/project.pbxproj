@@ -110,6 +110,19 @@
 			);
 			target = A3AE31B22CE3ED1A0080470D /* HelioFITS */;
 		};
+		AB12CD372CE3ED570080470D /* Exceptions for "HelioFITSTests" folder in "HelioFITSTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Fixtures/README.md,
+				Fixtures/Real/SOURCES.md,
+				Fixtures/Real/aia_cutout.fits,
+				Fixtures/Real/punch_pam_cube_cutout.fits,
+				Fixtures/synthetic_cube.fits,
+				Fixtures/synthetic_disk.fits,
+				Fixtures/table_only.fits,
+			);
+			target = A3AE31C32CE3ED1C0080470D /* HelioFITSTests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -124,6 +137,7 @@
 		A3AE31C72CE3ED1C0080470D /* HelioFITSTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				AB12CD372CE3ED570080470D /* Exceptions for "HelioFITSTests" folder in "HelioFITSTests" target */,
 			);
 			path = HelioFITSTests;
 			sourceTree = "<group>";
