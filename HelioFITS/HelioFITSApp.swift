@@ -2,8 +2,10 @@
 
 import SwiftUI
 import AppKit
+import HelioFITSCore
 
-let fitsAppGroup = "UB45PPC2JS.com.gillyspace27.fits"
+/// Forwarder kept for old call sites; the name lives in SharedSettings.suiteName.
+let fitsAppGroup = SharedSettings.suiteName
 
 @main
 struct HelioFITSApp: App {

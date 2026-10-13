@@ -250,14 +250,15 @@ struct SettingsView: View {
 
     private func load() {
         guard let d = PreviewSettings.suite else { status = "⚠️ App-group defaults unavailable"; return }
-        defaultHDU = d.object(forKey: "defaultHDU") != nil ? d.integer(forKey: "defaultHDU") : -1
-        dirRules = (d.dictionary(forKey: "dirHDU") as? [String: Int]) ?? [:]
+        defaultHDU = d.object(forKey: SharedSettings.defaultHDUKey) != nil
+            ? d.integer(forKey: SharedSettings.defaultHDUKey) : -1
+        dirRules = (d.dictionary(forKey: SharedSettings.dirHDUKey) as? [String: Int]) ?? [:]
     }
 
     private func save() {
         guard let d = PreviewSettings.suite else { return }
-        d.set(defaultHDU, forKey: "defaultHDU")
-        d.set(dirRules, forKey: "dirHDU")
+        d.set(defaultHDU, forKey: SharedSettings.defaultHDUKey)
+        d.set(dirRules, forKey: SharedSettings.dirHDUKey)
         status = "Saved. Previews (Space) update immediately; use “Refresh icons” to regenerate thumbnails."
     }
 
@@ -285,13 +286,13 @@ private func hduChoices(first: String, last: String) -> some View {
 // MARK: - Shared settings plumbing
 
 enum PreviewSettings {
-    static var suite: UserDefaults? { UserDefaults(suiteName: fitsAppGroup) }
+    static var suite: UserDefaults? { SharedSettings.suite }
 
     static func setRule(_ hdu: Int, for dirs: [String]) {
         guard let d = suite else { return }
-        var rules = (d.dictionary(forKey: "dirHDU") as? [String: Int]) ?? [:]
+        var rules = (d.dictionary(forKey: SharedSettings.dirHDUKey) as? [String: Int]) ?? [:]
         for dir in dirs { rules[dir] = hdu }
-        d.set(rules, forKey: "dirHDU")
+        d.set(rules, forKey: SharedSettings.dirHDUKey)
     }
 
     // ponytail: works while the app holds the open-panel grant for this

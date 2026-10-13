@@ -163,7 +163,7 @@ public final class FITSPreviewModel {
         }
         // Start on the HDU the folder rule / global default selects (plane 0).
         let want = FITSRenderer.resolveAutoHDU(path: path,
-                                               want: FITSRenderer.selectedHDU(forFileAt: path))
+                                               want: SharedSettings.selectedHDU(forFileAt: path))
         m.cur = m.pages.firstIndex { $0.hdu == want } ?? 0
         // Adopt the baked gamma. A signed magnetogram is baked linear (gamma 1)
         // so 0 G lands on the colormap midpoint; leaving the model at 0.5 made
