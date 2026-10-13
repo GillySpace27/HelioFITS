@@ -21,6 +21,7 @@
 		EF80CA266A0D3179F0403B72 /* QuickRender.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADD2810723F362DDC2C84ADC /* QuickRender.swift */; };
 		FB729B3C7492B822A52A2F92 /* HelioFITSCore in Frameworks */ = {isa = PBXBuildFile; productRef = 96B7FA45DE3475E16D0A56AD /* HelioFITSCore */; };
 		FDB2F672D43E445321DFF47B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 47A8B21861D0D6B6119CC887 /* Assets.xcassets */; };
+		BF99FBE4C5DA485104307138 /* Samples in Resources */ = {isa = PBXBuildFile; fileRef = FEE217CBC5C2850AECE048AC /* Samples */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -61,6 +62,7 @@
 		2B42322DBCA7D0727A998741 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		40731E348C3A606C765196EE /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		47A8B21861D0D6B6119CC887 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FEE217CBC5C2850AECE048AC /* Samples */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Samples; path = ../HelioFITS/Samples; sourceTree = SOURCE_ROOT; };
 		77C73B345321DED616D20D04 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		85B802A44AECFCB89BC756E9 /* HelioFITSPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HelioFITSPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD8CAD11922FD4FC26717FB1 /* HelioFITS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HelioFITS.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -124,6 +126,7 @@
 			children = (
 				D6D0DACB2E84EDD4CF1B463F /* HelioFITSApp.swift */,
 				47A8B21861D0D6B6119CC887 /* Assets.xcassets */,
+				FEE217CBC5C2850AECE048AC /* Samples */,
 				D8258131F1A4479773719D70 /* Info.plist */,
 				EED76AF4FA75B761F318BED7 /* ViewerView.swift */,
 			);
@@ -294,6 +297,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FDB2F672D43E445321DFF47B /* Assets.xcassets in Resources */,
+				BF99FBE4C5DA485104307138 /* Samples in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

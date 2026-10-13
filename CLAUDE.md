@@ -204,10 +204,15 @@ Update this list when a branch merges or parks.
   committed. Core tests reach them with `RepoPaths.fixture("<name>")`; `Fuzz/build.sh` seeds its
   corpora from them. Use these, never files on Gilly's disk; a test that needs a large local file
   gates itself with `.enabled(if:)` and reports as skipped elsewhere.
-- Real AIA, HMI and PUNCH cutouts (`aia_cutout.fits`, `punch_pam_cube_cutout.fits`, ...) and the app
-  samples in `HelioFITS/Samples/` do not exist yet: they wait for Gilly's answer to register question 21
-  (sources, right to commit, SDO credit line). `SampleFiles.bundled()` finds nothing until then, so the
-  Try a Sample and Save Samples buttons stay hidden. Cut them with `scripts/make_fixtures.py --punch ... --aia ...`.
+- Real cutouts in `HelioFITSTests/Fixtures/Real/`: `aia_cutout.fits` (from `AIA20231011_0000_0193.fits`)
+  and `punch_pam_cube_cutout.fits` (from `PUNCH_L3_PAM_20250920001600_v0l.fits`), with their own
+  `SOURCES.md` (SHA-256, header facts, credit lines; its `table_only.fits` row is the root synthetic
+  file, byte-identical). Reach them with `RepoPaths.fixture("Real/<name>")`. `HelioFITSTests` is a
+  synchronized Xcode group that copies every file flat into the test bundle, so no two files under it
+  may share a basename (a second `README.md` or `table_only.fits` fails the build). App samples
+  `Sample-AIA.fits` and `Sample-PUNCH.fits` are in `HelioFITS/Samples/` with `SOURCES.md`; the
+  synchronized `HelioFITS` group bundles them, and `SampleFiles.bundled()` finds them flat in Resources.
+  Gilly answered register question 21 on 2026-10-12 (no HMI or multi-extension source).
 - `scripts/make_fixtures.py` never overwrites: to re-cut, move the old files aside first. `--selftest`
   runs on synthetic data, `--dry-run` writes nothing. CI regenerates the synthetic set and diffs it.
   Do not hand-edit the FITS files or `README.md` there.
