@@ -166,6 +166,35 @@ check_release_gates() {
 }
 CHECKS+=(check_release_gates)
 
+# HelioFITSCore/CFITSIO.stamp records what build-universal.sh baked into
+# CFITSIO.xcframework. fitsshim.c is in no Xcode target, so an edited shim does
+# nothing until the library is rebuilt (1.3.0 shipped a dead ASPIICS branch that way).
+# Shown failing on a scratch copy (a comment line appended to fitsshim.c):
+#   FAIL check_cfitsio_stamp: fitsshim.c changed since the library was built (stamp f084bb3c24f6, now c9afa21e6c24). Re-run HelioFITSExtension/cfitsio/build-universal.sh: editing fitsshim.c alone does nothing, the library is what the app links.
+check_cfitsio_stamp() {
+  local stamp="HelioFITSCore/CFITSIO.stamp" bu="HelioFITSExtension/cfitsio/build-universal.sh"
+  local remedy="Re-run $bu: editing fitsshim.c alone does nothing, the library is what the app links."
+  local want_keys="cfitsio_version tarball_sha256 fitsshim_c_sha256 fitsshim_h_sha256 xcode_version built_at"
+  local keys ver sha f key now was
+  [ -f "$stamp" ] || { echo "$stamp missing. $remedy"; return 1; }
+  keys="$(sed -n 's/^\([a-z_0-9]*\)=.*/\1/p' "$stamp" | tr '\n' ' ')"
+  [ "${keys% }" = "$want_keys" ] || { echo "$stamp keys are '${keys% }', expected '$want_keys'. $remedy"; return 1; }
+  ver="$(sed -n 's/^CFITSIO_VERSION="\(.*\)"/\1/p' "$bu")"
+  sha="$(sed -n 's/^CFITSIO_SHA256="\(.*\)"/\1/p' "$bu")"
+  [ "$(sed -n 's/^cfitsio_version=//p' "$stamp")" = "$ver" ] \
+    || { echo "stamp cfitsio_version differs from CFITSIO_VERSION=$ver in $bu. $remedy"; return 1; }
+  [ "$(sed -n 's/^tarball_sha256=//p' "$stamp")" = "$sha" ] \
+    || { echo "stamp tarball_sha256 differs from CFITSIO_SHA256 in $bu. $remedy"; return 1; }
+  for f in c h; do
+    key="fitsshim_${f}_sha256"
+    was="$(sed -n "s/^$key=//p" "$stamp")"
+    now="$(shasum -a 256 "HelioFITSExtension/cfitsio/fitsshim.$f" | cut -d' ' -f1)"
+    [ "$now" = "$was" ] \
+      || { echo "fitsshim.$f changed since the library was built (stamp ${was:0:12}, now ${now:0:12}). $remedy"; return 1; }
+  done
+}
+CHECKS+=(check_cfitsio_stamp)
+
 # ---- run ----
 status=0
 for c in "${CHECKS[@]}"; do
