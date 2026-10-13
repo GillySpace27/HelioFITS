@@ -14,4 +14,4 @@ file's header, not asserted here.
 ## Credit
 
 - PUNCH data: open data policy, no restrictions on use. "PUNCH is a heliophysics mission to study the corona, solar wind, and space weather as an integrated system, and is part of NASA's Explorers program (Contract 80GSFC14C0014)" (wording from DeForest et al. 2026, Sol. Phys. 301, 16, section 6).
-- SDO/AIA data: Courtesy of NASA/SDO and the AIA, EVE, and HMI science teams.
+- SDO/AIA data: Imagery courtesy of NASA/SDO and the AIA science team.
