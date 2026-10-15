@@ -187,6 +187,7 @@ struct SettingsView: View {
     @State private var defaultHDU: Int = -1
     @State private var dirRules: [String: Int] = [:]
     @State private var status = ""
+    @State private var pins = ""
 
     var body: some View {
         Form {
@@ -238,6 +239,22 @@ struct SettingsView: View {
             } footer: {
                 if !status.isEmpty { Text(status).foregroundStyle(.secondary) }
             }
+
+            Section {
+                TextField("Keywords", text: $pins, prompt: Text("EXPTIME, WAVELNTH"))
+                    .font(.system(size: 13, design: .monospaced))
+                    .onSubmit(savePins)
+                    .accessibilityLabel("Pinned header keywords")
+                HStack {
+                    Spacer()
+                    Button("Save Keywords", action: savePins)
+                }
+            } header: {
+                Text("Pinned keywords")
+            } footer: {
+                Text("Shown after the caption in the viewer and in Quick Look, when the layer has them. You can also pin from a header line in the viewer.")
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .frame(width: 620)
@@ -253,6 +270,14 @@ struct SettingsView: View {
         defaultHDU = d.object(forKey: SharedSettings.defaultHDUKey) != nil
             ? d.integer(forKey: SharedSettings.defaultHDUKey) : -1
         dirRules = (d.dictionary(forKey: SharedSettings.dirHDUKey) as? [String: Int]) ?? [:]
+        pins = SharedSettings.pinnedKeywords(in: d).joined(separator: ", ")
+    }
+
+    private func savePins() {
+        guard let d = PreviewSettings.suite else { return }
+        SharedSettings.setPinnedKeywords([pins], in: d)
+        pins = SharedSettings.pinnedKeywords(in: d).joined(separator: ", ")
+        status = "Saved. Previews (Space) show pinned keywords the next time they open."
     }
 
     private func save() {

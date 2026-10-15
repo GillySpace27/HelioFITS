@@ -15,6 +15,11 @@ final class FITSToolbar {
     /// Optional chips (HF-15): present only when the host passes a selector.
     let rings = NSButton(), compare = NSButton()
     private let hasRingsChip: Bool, hasCompareChip: Bool
+    /// Optional Header chip (HF-13), beside Stretch. The host owns the drawer and
+    /// sets `headerOn` so the chip paints its state.
+    let header = NSButton()
+    private let hasHeaderChip: Bool
+    var headerOn = false
     let filterMenu = NSPopUpButton(frame: .zero, pullsDown: false)
     let panel = NSView()
     let sLo = NSSlider(), sHi = NSSlider(), sG = NSSlider()
@@ -35,8 +40,10 @@ final class FITSToolbar {
     ///   convention from HF-7). The host answers by calling `applyLimits(to:)`.
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
          tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector,
-         limitsSel: Selector? = nil, ringsSel: Selector? = nil, compareSel: Selector? = nil) {
+         limitsSel: Selector? = nil, ringsSel: Selector? = nil, compareSel: Selector? = nil,
+         headerSel: Selector? = nil) {
         self.hasRingsChip = ringsSel != nil
+        self.hasHeaderChip = headerSel != nil
         self.hasCompareChip = compareSel != nil
         self.limitsSel = limitsSel
         self.limitsTarget = target
@@ -69,6 +76,10 @@ final class FITSToolbar {
         if let compareSel {
             mk(compare, "Compare", "Compare with a second file, lined up by helioprojective coordinates", compareSel)
             compare.setAccessibilityLabel("Compare with a second file")
+        }
+        if let headerSel {
+            mk(header, "Header", "Show this layer's FITS header: pinned keywords first, then quick groups", headerSel)
+            header.setAccessibilityLabel("Show the FITS header")
         }
         limb.setAccessibilityLabel("Show solar limb")
         diff.setAccessibilityLabel("Running difference with previous layer")
@@ -265,6 +276,7 @@ final class FITSToolbar {
         var views: [NSView] = [filterMenu, limb]
         if hasRingsChip { views.append(rings) }
         views += [diff, tune]
+        if hasHeaderChip { views.append(header) }
         if hasCompareChip { views.append(compare) }
         let s = NSStackView(views: views)
         s.spacing = 6
@@ -367,6 +379,7 @@ final class FITSToolbar {
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
         if hasRingsChip { setRingsGreyed(!model.hasRings, on: model.ringsOn, model: model) }
         if hasCompareChip { paint(compare, on: model.compareModel != nil, enabled: true) }
+        if hasHeaderChip { paint(header, on: headerOn, enabled: true) }
         // The stretch composes with a filter rather than being clobbered by it
         // (#14): RHEF sets the ordering, the stretch maps that to the ramp.
         paint(tune, on: model.mode == .stretch, enabled: true)

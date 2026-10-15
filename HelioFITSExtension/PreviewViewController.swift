@@ -42,6 +42,16 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private var toolStack = NSStackView()
     private var compact = false
     private var statsFits = true
+    /// The header drawer (HF-13): this layer's cards, pinned keywords first, one
+    /// group at a time. Buttons only: whether the Space panel delivers keystrokes to
+    /// a search field is unverified (the HF-13 spike), so there is no search here.
+    /// It only reads the pins; it never writes the app group.
+    private let drawer = NSView()
+    private let drawerText = NSTextView()
+    private let groupPicker = NSSegmentedControl()
+    private var drawerGroup: FITSHeader.Group?
+    private var drawerAboveTools: NSLayoutConstraint!
+    private var drawerAbovePanel: NSLayoutConstraint!
 
     override func loadView() {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 700))
@@ -75,12 +85,14 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         tools = FITSToolbar(target: self, limbSel: #selector(toggleLimb), diffSel: #selector(toggleDiff),
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
                             resetSel: #selector(resetStretch), filterSel: #selector(filterChanged),
-                            limitsSel: #selector(limitsChanged(_:)), ringsSel: #selector(toggleRings))
+                            limitsSel: #selector(limitsChanged(_:)), ringsSel: #selector(toggleRings),
+                            headerSel: #selector(toggleHeader))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
         root.addSubview(toolStack)
         root.addSubview(tools.panel)
+        buildDrawer(in: root)
 
         NSLayoutConstraint.activate([
             canvas.leadingAnchor.constraint(equalTo: root.leadingAnchor),
@@ -102,6 +114,72 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         view = root
     }
 
+    private func buildDrawer(in root: NSView) {
+        drawer.wantsLayer = true
+        drawer.layer?.backgroundColor = NSColor(calibratedWhite: 0.07, alpha: 0.96).cgColor
+        drawer.layer?.cornerRadius = 8
+        drawer.layer?.borderWidth = 1
+        drawer.layer?.borderColor = NSColor(calibratedWhite: 0.25, alpha: 1).cgColor
+        drawer.isHidden = true
+        drawer.translatesAutoresizingMaskIntoConstraints = false
+
+        groupPicker.segmentCount = FITSHeader.Group.allCases.count + 1
+        groupPicker.setLabel("All", forSegment: 0)
+        for (i, g) in FITSHeader.Group.allCases.enumerated() { groupPicker.setLabel(g.rawValue, forSegment: i + 1) }
+        groupPicker.trackingMode = .selectOne
+        groupPicker.selectedSegment = 0
+        groupPicker.controlSize = .small
+        groupPicker.target = self
+        groupPicker.action = #selector(groupChanged(_:))
+        groupPicker.setAccessibilityLabel("Header keyword group")
+
+        let scroll = NSScrollView()
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        drawerText.isEditable = false
+        drawerText.isSelectable = true
+        drawerText.drawsBackground = false
+        drawerText.textColor = NSColor(calibratedRed: 0.62, green: 0.89, blue: 0.69, alpha: 1)
+        drawerText.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        drawerText.textContainerInset = NSSize(width: 6, height: 6)
+        drawerText.isVerticallyResizable = true
+        drawerText.isHorizontallyResizable = false
+        drawerText.autoresizingMask = [.width]
+        drawerText.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        drawerText.textContainer?.widthTracksTextView = true
+        drawerText.setAccessibilityLabel("FITS header")
+        scroll.documentView = drawerText
+
+        let stack = NSStackView(views: [groupPicker, scroll])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 6
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        drawer.addSubview(stack)
+        root.addSubview(drawer)
+
+        // Right-hand, under the top edge, above the toolbar or above the stretch
+        // panel when that is open. 360 pt when there is room, never under 240 pt.
+        let wide = drawer.widthAnchor.constraint(equalToConstant: 360)
+        wide.priority = .defaultHigh
+        drawerAboveTools = drawer.bottomAnchor.constraint(equalTo: toolStack.topAnchor, constant: -8)
+        drawerAbovePanel = drawer.bottomAnchor.constraint(equalTo: tools.panel.topAnchor, constant: -8)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: drawer.leadingAnchor, constant: 8),
+            stack.trailingAnchor.constraint(equalTo: drawer.trailingAnchor, constant: -8),
+            stack.topAnchor.constraint(equalTo: drawer.topAnchor, constant: 8),
+            stack.bottomAnchor.constraint(equalTo: drawer.bottomAnchor, constant: -8),
+            scroll.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            drawer.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -10),
+            drawer.topAnchor.constraint(equalTo: root.topAnchor, constant: 28),
+            wide,
+            drawer.widthAnchor.constraint(greaterThanOrEqualToConstant: 240),
+            drawer.widthAnchor.constraint(lessThanOrEqualTo: root.widthAnchor, constant: -20),
+            drawerAboveTools,
+        ])
+    }
+
     override func viewDidLayout() {
         super.viewDidLayout()
         // Finder never delivers clicks or mouse-move to a hosted extension view
@@ -115,6 +193,9 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         if !statsFits { stats.isHidden = true }
         // The toolbar row grew by the Rings chip; below ~560 pt it would run off the left edge.
         tools.rings.isHidden = view.bounds.width < 560
+        // The Header chip widens the row by one more chip, and the drawer needs room.
+        tools.header.isHidden = view.bounds.width < 624
+        if tools.header.isHidden && tools.headerOn { tools.headerOn = false; refresh() }
         let isCompact = view.bounds.width < 380
         guard isCompact != compact else { return }
         compact = isCompact
@@ -181,6 +262,16 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     @objc private func toggleDiff() { if model.toggleDiff() { refresh() } }
     @objc private func toggleRings() { if model.toggleRings() { refresh() } }
     @objc private func toggleTune() { if model.toggleStretch() { refresh() } }
+    @objc private func toggleHeader() {
+        tools.headerOn.toggle()
+        if tools.headerOn { stats.isHidden = true; canvas.selection = nil }
+        refresh()
+    }
+    @objc private func groupChanged(_ sender: NSSegmentedControl) {
+        let i = sender.selectedSegment - 1
+        drawerGroup = FITSHeader.Group.allCases.indices.contains(i) ? FITSHeader.Group.allCases[i] : nil
+        refresh()
+    }
     @objc private func filterChanged() { if model.setFilter(tools.readFilter()) { refresh() } }
     @objc private func stretchChanged() {
         model.stretch = tools.readStretch()
@@ -195,7 +286,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     }
 
     private func region(_ r: (u0: Double, v0: Double, u1: Double, v1: Double)?) {
-        guard !compact, statsFits, let r,
+        guard !compact, statsFits, !tools.headerOn, let r,
               let s = model.statistics(u0: r.u0, v0: r.v0, u1: r.u1, v1: r.v1) else {
             stats.isHidden = true
             return
@@ -209,7 +300,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     private func refresh() {
         model.prefetchFullRes()     // exact readout/statistics for this HDU
         canvas.image = model.image().map(NSImage.init)
-        canvas.caption = model.caption()
+        let pins = SharedSettings.pinnedKeywords()
+        canvas.caption = model.caption(pinned: pins)
         canvas.limb = compact ? nil : model.limbCircle()
         canvas.colorbar = compact ? nil : model.colorbar()
         canvas.rings = (model.ringsOn && !compact) ? model.rings() : nil
@@ -223,6 +315,25 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         if let ideal = canvas.idealSize() { preferredContentSize = ideal }
         tools.sync(model: model)
         if compact { tools.panel.isHidden = true }
+        updateDrawer(pins: pins)
         canvas.needsDisplay = true
+    }
+
+    /// Show or hide the drawer and fill it for the current layer, so it follows
+    /// every HDU step.
+    private func updateDrawer(pins: [String]) {
+        let open = tools.headerOn && !compact && model.page != nil
+        drawer.isHidden = !open
+        guard open else { return }
+        let panelUp = !tools.panel.isHidden
+        // Deactivate before activating so the two never hold at once.
+        if panelUp { drawerAboveTools.isActive = false; drawerAbovePanel.isActive = true }
+        else { drawerAbovePanel.isActive = false; drawerAboveTools.isActive = true }
+        var text = model.headerCards()
+            .map { FITSHeader.drawerText(cards: $0, group: drawerGroup, pinned: pins) } ?? ""
+        if text.isEmpty {
+            text = drawerGroup.map { "No \($0.rawValue) keywords in this layer." } ?? "No header for this layer."
+        }
+        if drawerText.string != text { drawerText.string = text }
     }
 }

@@ -73,7 +73,7 @@ final class Viewer: ObservableObject, Identifiable {
     func refresh() {
         model.prefetchFullRes()
         image = model.image()
-        caption = model.caption()
+        caption = model.caption(pinned: SharedSettings.pinnedKeywords(in: UserDefaults.standard))
         colorbar = model.colorbar(tickCount: 5)
         rings = model.ringsOn ? model.rings() : nil
         compareImage = model.compareModel == nil ? nil : model.registeredCompareImage()
@@ -167,6 +167,7 @@ struct ViewerView: View {
     /// one importer, because two .fileImporter modifiers in one hierarchy can conflict.
     var chooseCompare: () -> Void = {}
     @State private var showStretch = false
+    @State private var showHeader = false
     @State private var copied = false
     /// Where the swipe divider sits, as a fraction of the image width.
     @State private var swipe = 0.5
@@ -209,6 +210,9 @@ struct ViewerView: View {
         .toolbar { if !viewer.loading && !viewer.failed { bottomBar } }
         .sheet(isPresented: $showStretch) {
             StretchPanel(viewer: viewer).presentationDetents([.height(430), .large])
+        }
+        .sheet(isPresented: $showHeader) {
+            HeaderSheet(viewer: viewer).presentationDetents([.medium, .large])
         }
         .alert(viewer.compareProblem?.title ?? "",
                isPresented: Binding(get: { viewer.compareProblem != nil },
@@ -274,6 +278,7 @@ struct ViewerView: View {
             }
             .disabled(!m.canDiff)
             Button { showStretch = true } label: { Label("Stretch", systemImage: "slider.horizontal.3") }
+            Button { showHeader = true } label: { Label("Header", systemImage: "list.bullet.rectangle") }
             Menu {
                 Button { chooseCompare() } label: {
                     Label("Compare With File…", systemImage: "doc.on.doc")
@@ -305,6 +310,67 @@ struct ViewerView: View {
         let p = viewer.model.pages[i]
         return p.plane > 0 || viewer.model.pages.contains(where: { $0.hdu == p.hdu && $0.plane > 0 })
             ? "HDU \(p.hdu), plane \(p.plane + 1)" : "HDU \(p.hdu)"
+    }
+}
+
+// MARK: - Header
+
+/// This layer's FITS header, searchable, with pinned keywords first (HF-13). Swipe a
+/// card to pin or unpin its keyword; pins live in this app's own defaults (iOS has no
+/// app group) and show after the viewer's caption.
+struct HeaderSheet: View {
+    @ObservedObject var viewer: Viewer
+    @State private var query = ""
+    @State private var pins = SharedSettings.pinnedKeywords(in: UserDefaults.standard)
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let cards = FITSHeader.cardLines(viewer.model.headerCards() ?? "")
+        let q = query.trimmingCharacters(in: .whitespaces).uppercased()
+        let shown = q.isEmpty ? cards : cards.filter { $0.uppercased().contains(q) }
+        let pinned = pins.compactMap { k in shown.first { FITSHeader.keyword(of: $0) == k } }
+        let rest = shown.filter { !pins.contains(FITSHeader.keyword(of: $0)) }
+        NavigationStack {
+            List {
+                if !pinned.isEmpty {
+                    Section("Pinned") {
+                        ForEach(Array(pinned.enumerated()), id: \.offset) { row($0.element) }
+                    }
+                }
+                Section("HDU \(viewer.model.page?.hdu ?? 0)") {
+                    ForEach(Array(rest.enumerated()), id: \.offset) { row($0.element) }
+                }
+            }
+            .searchable(text: $query, prompt: "Search header")
+            .navigationTitle("Header")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+    }
+
+    private func row(_ line: String) -> some View {
+        let key = FITSHeader.keyword(of: line)
+        let chars = Array(line)
+        let hasValue = chars.count > 8 && chars[8] == "="
+        let isPinned = pins.contains(key)
+        return Text(line)
+            .font(.system(.caption, design: .monospaced))
+            .lineLimit(2)
+            .textSelection(.enabled)
+            .swipeActions {
+                if hasValue {
+                    Button(isPinned ? "Unpin" : "Pin") { toggle(key) }
+                        .tint(isPinned ? .gray : .orange)
+                }
+            }
+    }
+
+    private func toggle(_ key: String) {
+        if let i = pins.firstIndex(of: key) { pins.remove(at: i) } else { pins.append(key) }
+        SharedSettings.setPinnedKeywords(pins, in: UserDefaults.standard)
+        viewer.refresh()
     }
 }
 

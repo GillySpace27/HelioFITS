@@ -316,8 +316,7 @@ public final class FITSPreviewModel {
     public func caption(pinned: [String]) -> String {
         let base = caption()
         guard !pinned.isEmpty, let cards = headerCards() else { return base }
-        let extra: [String] = []   // RED ON PURPOSE: pins ignored
-        _ = cards
+        let extra = pinned.compactMap { k in FITSRenderer.cardVal(cards, k).map { "\(k)=\($0)" } }
         return extra.isEmpty ? base : ([base] + extra).joined(separator: "  ·  ")
     }
 

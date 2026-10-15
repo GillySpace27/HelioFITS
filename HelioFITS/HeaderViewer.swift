@@ -48,6 +48,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let copy = NSButton()
         /// Add the provenance footer strip under saved PNGs (HF-16). Per window, off by default.
         var burnIn = false
+        /// The header pane, for the Pin button (HF-13).
+        weak var headerView: NSTextView?
         var split: NSSplitView?           // so the image pane can be sized to the image
         var gen = 0                       // drops superseded background renders
         var scoped = false
@@ -260,6 +262,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         tv.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         tv.textContainerInset = NSSize(width: 14, height: 12)
         tv.string = headerText
+        c.headerView = tv
         tv.usesFindBar = true
         tv.isIncrementalSearchingEnabled = true
         tv.isVerticallyResizable = true
@@ -301,7 +304,9 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let info = iconButton("info.circle", "Provenance: what a saved PNG records about this view",
                               #selector(showProvenance(_:)))
 
-        let right = NSStackView(views: [reveal, copyPath, info, c.copy, c.save])
+        let pin = iconButton("pin", "Pin the keyword on the selected header line: it then shows in the caption here and in Quick Look. Click again to unpin.",
+                             #selector(pinKeyword(_:)))
+        let right = NSStackView(views: [reveal, copyPath, info, pin, c.copy, c.save])
         right.spacing = 8
         let barStack = NSStackView(views: [c.popup, NSView(), right])
         barStack.spacing = 10
@@ -423,7 +428,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     private func refresh(_ c: Ctx) {
         c.model.prefetchFullRes()   // exact readout/statistics for this HDU
         c.canvas.image = c.model.image().map(NSImage.init)
-        c.canvas.caption = c.model.caption()
+        c.canvas.caption = c.model.caption(pinned: SharedSettings.pinnedKeywords())
         c.canvas.limb = c.model.limbCircle()
         c.canvas.colorbar = c.model.colorbar()
         c.canvas.rings = c.model.ringsOn ? c.model.rings() : nil
@@ -477,6 +482,21 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     }
 
     /// The Info button: the recipe a saved PNG will carry, with Copy and the burn-in switch.
+    /// Pin or unpin the keyword on the header line holding the selection (HF-13).
+    /// Writes the app-group list Quick Look reads; every open window repaints.
+    @objc private func pinKeyword(_ sender: NSButton) {
+        guard let c = ctx(for: sender), let tv = c.headerView else { return }
+        let ns = tv.string as NSString
+        let line = ns.substring(with: ns.lineRange(for: tv.selectedRange()))
+        let chars = Array(line)
+        let key = FITSHeader.keyword(of: line)
+        guard !key.isEmpty, chars.count > 8, chars[8] == "=" else { NSSound.beep(); return }
+        var pins = SharedSettings.pinnedKeywords()
+        if let i = pins.firstIndex(of: key) { pins.remove(at: i) } else { pins.append(key) }
+        SharedSettings.setPinnedKeywords(pins)
+        for other in ctx.values { refresh(other) }
+    }
+
     @objc private func showProvenance(_ sender: NSButton) {
         guard let c = ctx(for: sender), !c.model.isEmpty else { return }
         let panel = ProvenancePanel(text: provenance(c).text, burnIn: c.burnIn) { [weak c] on in c?.burnIn = on }
