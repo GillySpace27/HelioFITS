@@ -79,7 +79,11 @@ case "--export":
     let hdu = resolvedHDU(file)
     do {
         let r = try FITSRenderer.render(path: file, maxSide: maxSide, hdu: hdu, plane: plane)
-        try r.pngData().write(to: URL(fileURLWithPath: out))
+        // The recipe travels in the PNG's text chunks, as in the app's exports (HF-16).
+        let rule = options["--hdu"] == nil ? "first image HDU" : "--hdu option"
+        try Provenance(result: r, fileName: (file as NSString).lastPathComponent, hdu: hdu, plane: plane,
+                       hduRule: rule, appVersion: "heliofits command line")
+            .writePNG(r.image, to: URL(fileURLWithPath: out))
         print("wrote \(out) (\(r.width)x\(r.height), hdu \(hdu))")
     } catch {
         fail("heliofits: \(error.localizedDescription)", code: 1)

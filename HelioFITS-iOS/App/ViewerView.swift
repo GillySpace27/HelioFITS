@@ -287,7 +287,8 @@ struct ViewerView: View {
             .disabled(m.page?.wcs == nil || viewer.compareLoading)
             Menu {
                 if let img = viewer.image {
-                    ShareLink(item: Image(decorative: img, scale: 1),
+                    // The PNG carries the recipe of what is on screen (HF-16).
+                    ShareLink(item: ProvenancePNG(image: img, name: viewer.name, model: m),
                               preview: SharePreview(viewer.name, image: Image(decorative: img, scale: 1))) {
                         Label("Share Image", systemImage: "photo")
                     }
@@ -304,6 +305,26 @@ struct ViewerView: View {
         let p = viewer.model.pages[i]
         return p.plane > 0 || viewer.model.pages.contains(where: { $0.hdu == p.hdu && $0.plane > 0 })
             ? "HDU \(p.hdu), plane \(p.plane + 1)" : "HDU \(p.hdu)"
+    }
+}
+
+// MARK: - Share
+
+/// The displayed image as a PNG with its provenance recipe in the text chunks
+/// (HF-16). The recipe is read and the PNG encoded only when it is actually
+/// shared, not on every redraw of the toolbar.
+struct ProvenancePNG: Transferable {
+    let image: CGImage
+    let name: String
+    let model: FITSPreviewModel
+
+    @MainActor func pngData() throws -> Data {
+        try Provenance(model: model, fileName: name, appVersion: Provenance.appVersion()).pngData(image)
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        DataRepresentation(exportedContentType: .png) { item in try await item.pngData() }
+            .suggestedFileName { item in (item.name as NSString).deletingPathExtension + ".png" }
     }
 }
 
