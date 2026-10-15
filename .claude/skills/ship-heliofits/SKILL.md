@@ -1,6 +1,6 @@
 ---
 name: ship-heliofits
-description: Full HelioFITS release pipeline — version bump, conditional libcfitsio.a rebuild, tests on both arches, changelog (two-tier), tag, ship.sh (Developer ID + notarize + GitHub release), and the Mac App Store archive + upload. Use whenever Gilly says "ship a patch/release", "cut a new version", "publish vX.Y.Z", "ship this as build N", or asks to deploy/release HelioFITS. Do NOT use for a single code fix with no release attached, or for other repos.
+description: Full HelioFITS release pipeline: version bump, conditional libcfitsio.a rebuild, tests on both arches, changelog (two-tier), tag, ship.sh (Developer ID + notarize + GitHub release), and the Mac App Store archive + upload. Use whenever Gilly says "ship a patch/release", "cut a new version", "publish vX.Y.Z", "ship this as build N", or asks to deploy/release HelioFITS. Also use when Gilly says "update the apple store" or asks to sync the App Store listing text from STORE.md (scripts/store_sync.py). Do NOT use for a single code fix with no release attached, or for other repos.
 ---
 
 # ship-heliofits
@@ -68,6 +68,34 @@ reporting" terms for a single team. Keep usage inside that scope, always:
 - This does not relax the confirmation gate above. A working API key makes
   more of the pipeline automatable; it does not make Submit to Review or
   Release This Version automatic.
+
+## Listing text: "update the apple store"
+
+`STORE.md` is the source of truth for the listing text. `scripts/store_sync.py`
+syncs it to App Store Connect, en-US only: name, subtitle, promotional text,
+description, keywords, What's New, support and marketing URLs. Screenshots,
+review notes, Submit and Release are not handled.
+
+1. Diff, GET calls only, safe unasked:
+   `python3 .claude/skills/ship-heliofits/scripts/store_sync.py`
+   It prints each field whose live text differs from STORE.md (whitespace and
+   line wrapping alone are not a change), then `pending: ...; blocked: ...`.
+   Exit 0 nothing to do, 2 changes pending, 1 failure, 3 UNCHECKED (no key or
+   App Store Connect unreachable).
+2. Show Gilly the diff and ask which fields to write. Each write changes a
+   store listing, so it needs his yes for those fields, every time.
+3. Apply only the fields he named:
+   `python3 .claude/skills/ship-heliofits/scripts/store_sync.py --apply subtitle,promotionalText`
+   It refuses a field that is not pending or cannot be written, writes nothing
+   in that case, and reads every write back; a mismatch exits 1.
+
+What can be written when: promotional text on the live version at any time;
+description, keywords, What's New and the URLs only on a version being
+prepared (create the next version record first); name and subtitle only while
+an app info is being edited, which App Store Connect opens with a new version.
+The tool prints "cannot write: <reason>" for a blocked field. Those state rules
+were written from Apple's documented behaviour and are UNCHECKED against the
+live API until the first diff run on Gilly's Mac; record the result here.
 
 ## Progress tracker — show this after every milestone
 
