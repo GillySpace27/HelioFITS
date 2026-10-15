@@ -224,7 +224,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                               stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)),
                               filterSel: #selector(filterChanged(_:)),
                               limitsSel: #selector(limitsChanged(_:)),
-                              ringsSel: #selector(toggleRings(_:)), compareSel: #selector(compareClicked(_:)))
+                              ringsSel: #selector(toggleRings(_:)), compareSel: #selector(compareClicked(_:)),
+                              swipeSel: #selector(toggleSwipe(_:)))
         let toolStack = c.tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -387,6 +388,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         if c.model.toggleDiff() { refresh(c) }
     }
 
+    @objc private func toggleSwipe(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        if c.model.toggleBeforeAfter() { refresh(c) }
+    }
+
     @objc private func toggleRings(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
         if c.model.toggleRings() { refresh(c) }
@@ -436,6 +442,15 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         // then mode, so the canvas never sees a mode with nothing to show.
         c.canvas.compareImage = c.model.registeredCompareImage().map(NSImage.init)
         c.canvas.compareMode = c.canvas.compareImage == nil ? nil : c.model.compareMode
+        // Before and after (HF-19): with no compare file, the unfiltered image under the filter.
+        if c.canvas.compareImage == nil, c.model.beforeAfterShown {
+            c.canvas.image = c.model.unfilteredImage().map(NSImage.init)
+            c.canvas.compareImage = c.model.image().map(NSImage.init)
+            c.canvas.compareMode = .swipe
+            c.canvas.swipeLabels = ("Raw", c.model.filter.label)
+        } else {
+            c.canvas.swipeLabels = ("A", "B")
+        }
         if let p = c.model.page {
             c.canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }

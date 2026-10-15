@@ -15,6 +15,10 @@ final class FITSToolbar {
     /// Optional chips (HF-15): present only when the host passes a selector.
     let rings = NSButton(), compare = NSButton()
     private let hasRingsChip: Bool, hasCompareChip: Bool
+    /// Optional Swipe chip (HF-19): the unfiltered image left of a divider, the
+    /// filter right of it. Greyed while no filter is on.
+    let swipe = NSButton()
+    private let hasSwipeChip: Bool
     /// Optional Header chip (HF-13), beside Stretch. The host owns the drawer and
     /// sets `headerOn` so the chip paints its state.
     let header = NSButton()
@@ -41,7 +45,8 @@ final class FITSToolbar {
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
          tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector,
          limitsSel: Selector? = nil, ringsSel: Selector? = nil, compareSel: Selector? = nil,
-         headerSel: Selector? = nil) {
+         headerSel: Selector? = nil, swipeSel: Selector? = nil) {
+        self.hasSwipeChip = swipeSel != nil
         self.hasRingsChip = ringsSel != nil
         self.hasHeaderChip = headerSel != nil
         self.hasCompareChip = compareSel != nil
@@ -77,6 +82,11 @@ final class FITSToolbar {
             mk(compare, "Compare", "Compare with a second file, lined up by helioprojective coordinates", compareSel)
             compare.setAccessibilityLabel("Compare with a second file")
         }
+        if let swipeSel {
+            mk(swipe, "Swipe", "Before and after: the unfiltered image left of a divider, the filter right of it. "
+               + "Drag the divider, or Option-Left and Option-Right", swipeSel)
+            swipe.setAccessibilityLabel("Before and after swipe")
+        }
         if let headerSel {
             mk(header, "Header", "Show this layer's FITS header: pinned keywords first, then quick groups", headerSel)
             header.setAccessibilityLabel("Show the FITS header")
@@ -87,18 +97,21 @@ final class FITSToolbar {
 
         // Enhancement filter picker. RHEF (Radial Histogram Equalizing Filter,
         // Gilly & Cranmer 2025) removes the corona's radial brightness gradient
-        // to reveal faint off-limb structure at every height. MGN/WOW are coming.
+        // to reveal faint off-limb structure at every height. MGN (Morgan and
+        // Druckmueller 2014) and WOW (Auchere et al. 2023) bring out structure at
+        // every scale; their widths are divided by the display decimation (HF-19).
         filterMenu.appearance = NSAppearance(named: .darkAqua)
         filterMenu.translatesAutoresizingMaskIntoConstraints = false
         filterMenu.bezelStyle = .rounded
         filterMenu.controlSize = .regular
-        filterMenu.toolTip = "Enhancement filter"
+        filterMenu.toolTip = "Enhancement filter. " + FITSPreviewModel.Filter.gridNote
         filterMenu.setAccessibilityLabel("Enhancement filter")
         // Only ship implemented filters; greyed "(soon)" items read as unfinished
         // (panel feedback). Descriptive titles so the bare acronym isn't the whole
-        // story where tooltips don't fire. Menu index still maps to Filter.rawValue.
-        for f in FITSPreviewModel.Filter.allCases where f == .none || f == .rhef {
-            filterMenu.addItem(withTitle: f == .rhef ? "RHEF: reveal faint corona" : "No filter")
+        // story where tooltips don't fire. Menu index still maps to Filter.rawValue,
+        // so every case is listed in order.
+        for f in FITSPreviewModel.Filter.allCases {
+            filterMenu.addItem(withTitle: f.menuTitle)
         }
         filterMenu.target = target
         filterMenu.action = filterSel
@@ -273,7 +286,9 @@ final class FITSToolbar {
     }
 
     var stack: NSStackView {
-        var views: [NSView] = [filterMenu, limb]
+        var views: [NSView] = [filterMenu]
+        if hasSwipeChip { views.append(swipe) }
+        views.append(limb)
         if hasRingsChip { views.append(rings) }
         views += [diff, tune]
         if hasHeaderChip { views.append(header) }
@@ -379,6 +394,7 @@ final class FITSToolbar {
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
         if hasRingsChip { setRingsGreyed(!model.hasRings, on: model.ringsOn, model: model) }
         if hasCompareChip { paint(compare, on: model.compareModel != nil, enabled: true) }
+        if hasSwipeChip { paint(swipe, on: model.beforeAfter && model.filter != .none, enabled: model.filter != .none) }
         if hasHeaderChip { paint(header, on: headerOn, enabled: true) }
         // The stretch composes with a filter rather than being clobbered by it
         // (#14): RHEF sets the ordering, the stretch maps that to the ramp.

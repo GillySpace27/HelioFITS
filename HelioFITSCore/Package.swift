@@ -20,6 +20,6 @@ let package = Package(
         // Headless tests: `swift test --package-path HelioFITSCore`. No app launch,
         // nothing registered with LaunchServices. Tests that need the app module
         // (canvas, toolbar) stay hosted in HelioFITSTests/.
-        .testTarget(name: "HelioFITSCoreTests", dependencies: ["HelioFITSCore", "CFITSIO"], exclude: ["golden.json"]),
+        .testTarget(name: "HelioFITSCoreTests", dependencies: ["HelioFITSCore", "CFITSIO"], exclude: ["golden.json", "filters.json"]),
     ]
 )

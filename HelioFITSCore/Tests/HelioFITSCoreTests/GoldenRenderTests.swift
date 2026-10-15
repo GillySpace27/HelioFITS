@@ -98,7 +98,7 @@ struct GoldenRenderTests {
 
     /// RGBA8 bytes per case. Values are integer patterns (no transcendental functions),
     /// so only the renderer's own arithmetic can differ between machines.
-    /// HF-19 adds aia_like_mgn and aia_like_wow here.
+    /// MGN and WOW (HF-19) are pinned by MGNTests and WOWTests against filters.json instead.
     static func cases() throws -> [String: [UInt8]] {
         var out: [String: [UInt8]] = [:]
         func render(_ path: String, plane: Int = 0) throws -> [UInt8] {

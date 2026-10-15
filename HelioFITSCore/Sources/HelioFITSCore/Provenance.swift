@@ -67,7 +67,8 @@ public struct Provenance {
                     f.append(("limits_kind", "approx"))
                     f.append(("gamma", Self.num(gamma)))
                     f.append(("log", log ? "true" : "false"))
-                    f.append(("filter_note", Self.rhefNote))
+                    f.append(("filter_note", name == "RHEF" ? Self.rhefNote
+                              : "\(name) on the display grid: a visualization, not a calibrated radiance"))
                 case .difference(let prevHDU, let prevPlane):
                     f.append(("mode", "difference"))
                     f.append(("filter", "none"))
