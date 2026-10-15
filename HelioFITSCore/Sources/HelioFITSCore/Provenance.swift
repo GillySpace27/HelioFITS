@@ -128,12 +128,12 @@ public struct Provenance {
     // MARK: PNG
 
     /// ImageIO PNG text properties: Description holds the whole recipe, Software the
-    /// app version, Title the footer line, Comment the filter wording when there is one.
+    /// app version, Title the footer line (which carries the filter wording when there
+    /// is one). No Comment key: ImageIO on macOS does not read one back (CI, 2026-10-15).
     public var pngProperties: [String: Any] {
         var png: [String: Any] = [kCGImagePropertyPNGDescription as String: text]
         if let s = value("software") { png[kCGImagePropertyPNGSoftware as String] = s }
         if !footer.isEmpty { png[kCGImagePropertyPNGTitle as String] = footer }
-        if let note = value("filter_note") { png[kCGImagePropertyPNGComment as String] = note }
         return [kCGImagePropertyPNGDictionary as String: png]
     }
 

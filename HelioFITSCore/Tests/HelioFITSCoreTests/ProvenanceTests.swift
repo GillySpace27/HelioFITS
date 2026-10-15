@@ -68,7 +68,7 @@ import ImageIO
         #expect(prov.value("percentiles") == nil)
     }
 
-    @Test("RHEF output carries the RHEF wording, in the recipe and the PNG comment")
+    @Test("RHEF output carries the RHEF wording, in the recipe and the PNG title")
     func rhefWording() async throws {
         let m = FITSPreviewModel.load(path: try Self.diskPath(), maxSide: 256)
         m.prefetchFullRes()
@@ -84,7 +84,10 @@ import ImageIO
         #expect(Provenance.rhefNote.contains("not a calibrated radiance"))
         let img = try #require(m.image())
         let png = try #require(Self.pngText(try prov.pngData(img)))
-        #expect(png[kCGImagePropertyPNGComment as String] as? String == Provenance.rhefNote)
+        let title = png[kCGImagePropertyPNGTitle as String] as? String
+        #expect(title?.contains(Provenance.rhefNote) == true, "\(title ?? "nil")")
+        let desc = png[kCGImagePropertyPNGDescription as String] as? String
+        #expect(desc?.contains("filter_note=\(Provenance.rhefNote)") == true)
     }
 
     @Test("a plain render records its defaults and the HDU rule")
