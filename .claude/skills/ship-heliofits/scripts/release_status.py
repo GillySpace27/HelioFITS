@@ -111,6 +111,17 @@ def _selftest():
     assert shots_verdict([]) == (False, None)
     assert shots_verdict(["COMPLETE"] * 5) == (True, "5 delivered")
     assert shots_verdict(["COMPLETE", "AWAITING_UPLOAD"]) == (False, "1 delivered, 1 not yet")
+    # HF-21: a call that could not answer is UNCHECKED, never "not done".
+    assert asc_unchecked(None, "needs credentials") == "needs credentials"
+    assert asc_unchecked({"data": []}, "x") is None, "an empty answer is a real answer"
+    assert gh_verdict(0, "") == (True, None)
+    assert gh_verdict(1, "release not found") == (False, None)
+    ok, why = gh_verdict(1, "error connecting to api.github.com")
+    assert ok is False and why, "a network failure must be UNCHECKED"
+    assert gh_verdict(None, "") == (False, "gh not found on PATH")
+    text = render("1.0", "1", {}, {"_unchecked": {"tag_pushed": "git ls-remote failed"}})
+    assert "UNCHECKED: git ls-remote failed" in text
+    assert text.count("▶") == 1, "an UNCHECKED step must not hide the next step to do"
     print("selftest ok")
 
 
@@ -130,6 +141,7 @@ def sh(cmd):
         return ""
 
 
+PLATFORM = "MAC_OS"   # set from --platform (HF-21)
 MISSING = set()   # binaries this run could not find, reported rather than hidden
 TOOL_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin")
 
@@ -165,12 +177,34 @@ def derive_local(version, changelog_text, tag_exists):
     return {"preflight": bool(tag_exists), "tests": bool(tag_exists), "changelog": bool(heading)}
 
 
+ASC_STATUS = {"last": ""}   # the last asc_get status line, so a failure can say why (HF-21)
+
+
 def asc_get(path):
     out = subprocess.run([sys.executable, ASC_API, "GET", path], capture_output=True, text=True).stdout
     status_line, _, body = out.partition("\n")
+    ASC_STATUS["last"] = status_line.strip() or "no answer from asc_api.py"
     if not status_line.startswith("HTTP 200"):
         return None
     return json.loads(body)
+
+
+def asc_unchecked(answer, reason):
+    """HF-21: `reason` when App Store Connect did not answer (None), else None. An answer with
+    no data is a real answer ("no such record"), so it stays a plain not-done."""
+    return reason if answer is None else None
+
+
+def gh_verdict(returncode, stderr):
+    """(done, unchecked_reason) for `gh release view`. Exit 0 is done; "not found" is a real
+    "not published"; any other failure (no gh, no network, no login) cannot say, so UNCHECKED."""
+    if returncode is None:
+        return False, "gh not found on PATH"
+    if returncode == 0:
+        return True, None
+    if "not found" in (stderr or "").lower():
+        return False, None
+    return False, "gh could not answer: " + ((stderr or "").strip().splitlines() or ["no message"])[-1][:120]
 
 def check_live(version, build):
     tag = f"v{version}-build.{build}"
@@ -186,20 +220,35 @@ def check_live(version, build):
     tags_local = sh(["git", "tag", "-l", tag])
     state["tag"] = tag in tags_local.splitlines()
 
-    tags_remote = sh(["git", "ls-remote", "--tags", "origin", tag])
-    state["tag_pushed"] = bool(tags_remote.strip())
+    unchecked = {}
+    try:
+        lr = subprocess.run(["git", "ls-remote", "--tags", "origin", tag], cwd=REPO,
+                            capture_output=True, text=True, timeout=60)
+        state["tag_pushed"] = lr.returncode == 0 and bool(lr.stdout.strip())
+        if lr.returncode != 0:
+            unchecked["tag_pushed"] = "git ls-remote failed: " + ((lr.stderr or "").strip()[-100:] or "no message")
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        state["tag_pushed"] = False
+        unchecked["tag_pushed"] = "git ls-remote could not run: " + type(e).__name__
 
     try:
         gh_out = subprocess.run([find_tool("gh"), "release", "view", tag, "--json", "url"],
                                  cwd=REPO, capture_output=True, text=True)
-        state["gh_release"] = gh_out.returncode == 0
+        state["gh_release"], why = gh_verdict(gh_out.returncode, gh_out.stderr)
+        if why:
+            unchecked["gh_release"] = why
     except FileNotFoundError:
         MISSING.add("gh")
         state["gh_release"] = False
+        unchecked["gh_release"] = gh_verdict(None, "")[1]
 
     versions = asc_get(f"/v1/apps/{APP_ID}/appStoreVersions"
-                        f"?filter[versionString]={version}&filter[platform]=MAC_OS"
+                        f"?filter[versionString]={version}&filter[platform]={PLATFORM}"
                         f"&fields[appStoreVersions]=versionString,appStoreState")
+    why = asc_unchecked(versions, "App Store Connect did not answer (%s)" % ASC_STATUS["last"])
+    if why:
+        for k in ("asc_version", "asc_build", "asc_notes", "asc_shots", "submitted", "released"):
+            unchecked[k] = why
     v = None
     if versions and versions.get("data"):
         v = versions["data"][0]
@@ -211,6 +260,8 @@ def check_live(version, build):
     if version_id:
         b = asc_get(f"/v1/appStoreVersions/{version_id}/build?fields[builds]=version")
         state["asc_build"] = bool(b and b.get("data"))
+        if b is None:
+            unchecked["asc_build"] = "App Store Connect did not answer (%s)" % ASC_STATUS["last"]
 
     state["asc_notes"] = False
     if version_id:
@@ -249,10 +300,12 @@ def check_live(version, build):
         state["_notes"] = {**state.get("_notes", {}),
                            "gh_release": f"{', '.join(sorted(MISSING))} not on PATH, so this is UNCHECKED, not undone"}
     state["_missing"] = sorted(MISSING)
+    state["_unchecked"] = unchecked
     return state
 
 def render(version, build, done_flags, live_state):
     combined = {**done_flags, **live_state}
+    unchecked = combined.get("_unchecked", {})
     total = len(MILESTONES)
     done_count = sum(1 for key, _ in MILESTONES if combined.get(key))
     filled = round(20 * done_count / total)
@@ -264,6 +317,10 @@ def render(version, build, done_flags, live_state):
     seen_incomplete = False
     for key, label in MILESTONES:
         ok = combined.get(key)
+        if not ok and key in unchecked:
+            # HF-21: could not look is not "not done"; it must not hide the next real step.
+            lines.append(f"❓ {label}  (UNCHECKED: {unchecked[key]})")
+            continue
         if ok:
             mark = "✅"
         elif not seen_incomplete:
@@ -340,12 +397,15 @@ if __name__ == "__main__":
     p.add_argument("--done", default="", help="comma-separated session-only milestones to mark done: preflight,version,tests,changelog")
     p.add_argument("--record", action="store_true",
                    help="append this release to the HelioSoftware feed in $SITE (default ~/vscode/Website), only if App Store Connect says READY_FOR_SALE")
+    p.add_argument("--platform", default="MAC_OS", choices=["MAC_OS", "IOS"],
+                   help="App Store platform of the version record to follow (default MAC_OS)")
     p.add_argument("--selftest", action="store_true", help="run the screenshot-verdict asserts and exit")
     p.add_argument("--emit", action="store_true",
                    help="also write a timestamped snapshot to ~/.claude/runbooks/state/ "
                         "for the dashboard. The snapshot is a CACHE, never truth: it records "
                         "checked_at so consumers can show its age and grey it out when stale.")
     args = p.parse_args()
+    PLATFORM = args.platform
     if args.selftest:
         _selftest()
         sys.exit(0)
@@ -380,6 +440,7 @@ if __name__ == "__main__":
                 {"key": k, "label": lb, "done": bool(combined.get(k)),
                  "note": combined.get("_notes", {}).get(k),
                  "gated": k in ("submitted", "released"),
+                 "unchecked": combined.get("_unchecked", {}).get(k),
                  "how_kind": HOW.get(k, ("", ""))[0],
                  "how": HOW.get(k, ("", ""))[1].format(V=args.version, B=args.build)}
                 for k, lb in MILESTONES

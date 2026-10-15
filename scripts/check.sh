@@ -195,6 +195,16 @@ check_cfitsio_stamp() {
 }
 CHECKS+=(check_cfitsio_stamp)
 
+# The release tracker, the typed gates and the release-notes lint (HF-21). Pure Python, no network.
+# Shown failing with the UNCHECKED rendering reverted: "NameError: name 'asc_unchecked' is not defined".
+check_release_spine() {
+  local out
+  out="$(python3 .claude/skills/ship-heliofits/scripts/release_status.py --selftest 2>&1)" \
+    || { echo "release_status.py --selftest: ${out##*$'\n'}"; return 1; }
+  out="$(python3 scripts/test_release_spine.py 2>&1)" || { echo "scripts/test_release_spine.py: ${out##*$'\n'}"; return 1; }
+}
+CHECKS+=(check_release_spine)
+
 # ---- run ----
 status=0
 for c in "${CHECKS[@]}"; do
