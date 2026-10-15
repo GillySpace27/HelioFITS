@@ -188,6 +188,7 @@ struct SettingsView: View {
     @State private var dirRules: [String: Int] = [:]
     @State private var status = ""
     @State private var pins = ""
+    @State private var rhefCovers = false
 
     var body: some View {
         Form {
@@ -241,6 +242,17 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Show RHEF covers on thumbnails of files with a solar limb", isOn: Binding(
+                    get: { rhefCovers },
+                    set: { rhefCovers = $0; saveCovers() }))
+            } header: {
+                Text("Thumbnails")
+            } footer: {
+                Text("RHEF (Gilly & Cranmer 2025) brings out faint corona at icon size: a visualization, not a calibrated radiance. Slower per icon. Use “Refresh icons” on a folder rule to redraw existing thumbnails.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 TextField("Keywords", text: $pins, prompt: Text("EXPTIME, WAVELNTH"))
                     .font(.system(size: 13, design: .monospaced))
                     .onSubmit(savePins)
@@ -271,6 +283,13 @@ struct SettingsView: View {
             ? d.integer(forKey: SharedSettings.defaultHDUKey) : -1
         dirRules = (d.dictionary(forKey: SharedSettings.dirHDUKey) as? [String: Int]) ?? [:]
         pins = SharedSettings.pinnedKeywords(in: d).joined(separator: ", ")
+        rhefCovers = d.bool(forKey: SharedSettings.rhefCoversKey)
+    }
+
+    private func saveCovers() {
+        guard let d = PreviewSettings.suite else { return }
+        d.set(rhefCovers, forKey: SharedSettings.rhefCoversKey)
+        status = "Saved. New thumbnails use it; “Refresh icons” redraws a folder's existing ones."
     }
 
     private func savePins() {
