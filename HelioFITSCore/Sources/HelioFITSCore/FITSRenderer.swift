@@ -727,8 +727,7 @@ public enum FITSRenderer {
         keys.sort()
 
         let idxMask: UInt64 = (1 << 23) - 1
-        let upsHigh = upsilon   // RED ON PURPOSE: upsilonHigh ignored
-        _ = upsilonHigh
+        let upsHigh = upsilonHigh ?? upsilon
         var start = 0
         while start < keys.count {
             let bin = keys[start] >> 53
