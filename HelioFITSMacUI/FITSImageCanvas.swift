@@ -80,6 +80,15 @@ final class FITSImageCanvas: NSView {
     var onHover: ((Double, Double)?) -> Void = { _ in }     // normalized, or nil
     var onRegion: (((u0: Double, v0: Double, u1: Double, v1: Double)?) -> Void)?
     var onZoomChanged: (() -> Void)?
+
+    /// Keyboard readout cursor (HF-18), in normalized image coordinates so it stays pinned to the
+    /// data under zoom and pan. nil until the first Option-arrow. Not an `on*` callback: it reports
+    /// through onHover and onRegion, which every host already subscribes to.
+    private(set) var keyCursor: ReadoutCursor?
+    /// An extending box asks the host for its statistics after this many seconds of quiet, so a
+    /// held key does not run the full-resolution statistic on every repeat. 0 reports at once.
+    var keyStatsDelay: TimeInterval = 0.12
+    private var keyStatsWork: DispatchWorkItem?
     /// Fired when the compare view changes without a mouse event over the image:
     /// the blink flips, or the swipe divider is dragged. Hosts re-sample the readout.
     var onCompareChanged: (() -> Void)?
@@ -96,7 +105,7 @@ final class FITSImageCanvas: NSView {
     override func accessibilityLabel() -> String? { caption.isEmpty ? "FITS image" : caption }
     override func accessibilityValue() -> Any? { readout }
     override func accessibilityHelp() -> String? {
-        "Up and Down arrows blink between layers. Command plus, minus, and 0 zoom. Command-C copies the pixel readout."
+        "Up and Down arrows blink between layers. Option plus an arrow moves a readout cursor; Option-Shift plus an arrow measures a box; Escape clears them. Command plus, minus, and 0 zoom. Command-C copies the pixel readout."
     }
 
     private(set) var zoom: CGFloat = 1              // 1 = fit
@@ -345,6 +354,78 @@ final class FITSImageCanvas: NSView {
         needsDisplay = true
     }
 
+    // MARK: keyboard readout cursor (HF-18)
+    //
+    // Option-arrow moves a crosshair and reports through onHover, the path the mouse uses, so
+    // every host's readout works unchanged. Option-Shift-arrow extends a box from where the
+    // crosshair was and reports through onRegion, the path a mouse drag uses. Option-Command-arrow
+    // moves one displayed pixel. Plain arrows still blink layers; Escape clears. The Quick Look
+    // host leaves key handling to Finder, so this is guaranteed in the viewer window only.
+
+    private static func cursorDirection(_ chars: String) -> ReadoutCursor.Direction? {
+        guard let scalar = chars.unicodeScalars.first else { return nil }
+        switch Int(scalar.value) {
+        case NSUpArrowFunctionKey:    return .up
+        case NSDownArrowFunctionKey:  return .down
+        case NSLeftArrowFunctionKey:  return .left
+        case NSRightArrowFunctionKey: return .right
+        default: return nil
+        }
+    }
+
+    private func moveKeyCursor(_ d: ReadoutCursor.Direction, extend: Bool, fine: Bool) {
+        guard let sz = image?.size, sz.width > 0 else { return }
+        var c: ReadoutCursor
+        if let k = keyCursor {
+            c = k
+        } else if let p = lastPointer, let n = normalized(p) {
+            c = ReadoutCursor(u: n.u, v: n.v)
+        } else {
+            c = ReadoutCursor()
+        }
+        let step = ReadoutCursor.step(fine: fine, imageWidth: Double(sz.width))
+        if extend { c.extend(d, step: step) } else { c.move(d, step: step) }
+        keyCursor = c
+        onHover((c.u, c.v))
+        if let b = c.box {
+            selection = (b.u0, b.v0, b.u1, b.v1)
+            reportKeyRegion()
+        } else if selection != nil {
+            selection = nil
+            keyStatsWork?.cancel()
+            onRegion?(nil)
+        }
+        needsDisplay = true
+        NSAccessibility.post(element: self, notification: .valueChanged)
+    }
+
+    private func reportKeyRegion() {
+        keyStatsWork?.cancel()
+        let send = { [weak self] in
+            guard let self, let s = self.selection else { return }
+            self.onRegion?(s)
+        }
+        if keyStatsDelay <= 0 { send(); return }
+        let w = DispatchWorkItem(block: send)
+        keyStatsWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + keyStatsDelay, execute: w)
+    }
+
+    /// Escape: drop the crosshair and any box. Returns whether anything was cleared.
+    @discardableResult
+    func clearKeyCursor() -> Bool {
+        guard keyCursor != nil || selection != nil else { return false }
+        keyStatsWork?.cancel()
+        let hadSelection = selection != nil
+        keyCursor = nil
+        selection = nil
+        if hadSelection { onRegion?(nil) }
+        if mouseInside, lastPointer != nil { refreshReadout() } else { onHover(nil) }
+        needsDisplay = true
+        NSAccessibility.post(element: self, notification: .valueChanged)
+        return true
+    }
+
     // MARK: keyboard
     //
     // The preview was mouse-only - no way to blink layers, zoom, or read the
@@ -375,6 +456,13 @@ final class FITSImageCanvas: NSView {
             default: break
             }
         }
+        // HF-18: Option-arrow drives the readout cursor. This test comes BEFORE the plain-arrow
+        // block below, which steps layers on any arrow key.
+        if e.modifierFlags.contains(.option), let dir = Self.cursorDirection(chars) {
+            moveKeyCursor(dir, extend: e.modifierFlags.contains(.shift), fine: e.modifierFlags.contains(.command))
+            return
+        }
+        if e.keyCode == 53, clearKeyCursor() { return }          // Escape
         if pageCount > 1, let scalar = chars.unicodeScalars.first {
             switch Int(scalar.value) {
             case NSUpArrowFunctionKey, NSRightArrowFunctionKey:   onScrollStep?(1);  return
@@ -473,6 +561,7 @@ final class FITSImageCanvas: NSView {
         cmdDown = e.modifierFlags.contains(.command)
         cursorForMode.set()
         lastPointer = canvasPoint(convert(e.locationInWindow, from: nil))
+        if keyCursor != nil { keyCursor = nil; needsDisplay = true }     // the mouse takes the readout back
         if compareMode != nil { needsDisplay = true }          // the linked crosshair follows the pointer
         guard dragStart == nil, panStart == nil else { return }
         onHover(normalized(lastPointer!))
@@ -482,6 +571,7 @@ final class FITSImageCanvas: NSView {
     /// pointer changes without a mouse event: zoom, pan (#13), and blinking to
     /// another HDU, which is the app's primary navigation.
     func refreshReadout() {
+        if let k = keyCursor { onHover((k.u, k.v)); return }      // HF-18: the keyboard cursor owns the readout
         guard mouseInside, let p = lastPointer else { return }
         onHover(normalized(p))
     }
@@ -494,7 +584,7 @@ final class FITSImageCanvas: NSView {
     override func mouseExited(with e: NSEvent) {
         mouseInside = false
         lastPointer = nil
-        onHover(nil)
+        if keyCursor == nil { onHover(nil) }                             // a keyboard cursor keeps its readout
         NSCursor.arrow.set()
     }
 
@@ -710,6 +800,18 @@ final class FITSImageCanvas: NSView {
 
         if let r = rings { drawRings(r) }
         drawCrosshair()
+        if let k = keyCursor, let c = viewPoint(u: k.u, v: k.v) {
+            let arm: CGFloat = 9
+            let cross = NSBezierPath()
+            cross.move(to: NSPoint(x: c.x - arm, y: c.y)); cross.line(to: NSPoint(x: c.x + arm, y: c.y))
+            cross.move(to: NSPoint(x: c.x, y: c.y - arm)); cross.line(to: NSPoint(x: c.x, y: c.y + arm))
+            cross.lineWidth = 3.5
+            NSColor(calibratedWhite: 0, alpha: 0.85).setStroke()
+            cross.stroke()
+            cross.lineWidth = 1.2
+            NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 1).setStroke()
+            cross.stroke()
+        }
         NSGraphicsContext.current?.restoreGraphicsState()
     }
 
