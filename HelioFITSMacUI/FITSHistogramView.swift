@@ -5,6 +5,7 @@
 //
 
 import AppKit
+import HelioFITSCore
 
 /// Counts are drawn on a square-root scale so the faint tail stays visible next to
 /// the quiet-Sun peak. The axis is the model's 0.1 to 99.9 percentile range; the
@@ -57,7 +58,7 @@ final class FITSHistogramView: NSView {
     // MARK: drawing
 
     override func draw(_ dirty: NSRect) {
-        NSColor(calibratedWhite: 0.14, alpha: 1).setFill()
+        Theme.color(Palette.sliderHistogramBackdrop).setFill()
         NSBezierPath(roundedRect: bounds, xRadius: 4, yRadius: 4).fill()
 
         let top = counts.map { sqrt(Double($0)) }.max() ?? 0
@@ -65,7 +66,7 @@ final class FITSHistogramView: NSView {
             let n = counts.count
             let barW = plotWidth / CGFloat(n)
             let plotH = bounds.height - 10
-            NSColor(calibratedWhite: 0.55, alpha: 1).setFill()
+            Theme.color(Palette.sliderHistogramBars).setFill()
             for (i, c) in counts.enumerated() where c > 0 {
                 let h = max(1, CGFloat(sqrt(Double(c)) / top) * plotH)
                 NSRect(x: pad + CGFloat(i) * barW, y: 4, width: max(1, barW - 1), height: h).fill()
@@ -74,10 +75,10 @@ final class FITSHistogramView: NSView {
 
         // The span between the handles is what the colormap covers.
         let xl = x(for: lo), xh = x(for: hi)
-        NSColor(calibratedRed: 0.86, green: 0.63, blue: 0.20, alpha: 0.14).setFill()
+        Theme.color(Palette.rangeBandFill).setFill()
         NSRect(x: xl, y: 0, width: max(0, xh - xl), height: bounds.height).fill()
         for px in [xl, xh] {
-            NSColor(calibratedRed: 0.86, green: 0.63, blue: 0.20, alpha: 1).setFill()
+            Theme.color(Palette.rangeHandle).setFill()
             NSRect(x: px - 1, y: 0, width: 2, height: bounds.height).fill()
             NSBezierPath(roundedRect: NSRect(x: px - 4, y: bounds.height / 2 - 8, width: 8, height: 16),
                          xRadius: 3, yRadius: 3).fill()

@@ -195,6 +195,26 @@ check_cfitsio_stamp() {
 }
 CHECKS+=(check_cfitsio_stamp)
 
+# STORE.md is the one source of store claims (HF-17): limits, no Apple name in the subtitle, no new
+# Spotlight-importer claim for the App Store build. Offline. Shown failing before store/known-claims.txt
+# existed: "FAIL: description: mentions 'Spotlight'; the Spotlight importer is not in the App Store build".
+check_store_claims() {
+  local out
+  out="$(python3 scripts/store_sync.py lint 2>&1)" || { grep -m1 '^FAIL' <<<"$out" || echo "store_sync.py lint failed"; return 1; }
+  out="$(python3 scripts/test_store_sync.py 2>&1)" || { echo "scripts/test_store_sync.py: ${out##*$'\n'}"; return 1; }
+}
+CHECKS+=(check_store_claims)
+
+# The release tracker, the typed gates and the release-notes lint (HF-21). Pure Python, no network.
+# Shown failing with the UNCHECKED rendering reverted: "NameError: name 'asc_unchecked' is not defined".
+check_release_spine() {
+  local out
+  out="$(python3 .claude/skills/ship-heliofits/scripts/release_status.py --selftest 2>&1)" \
+    || { echo "release_status.py --selftest: ${out##*$'\n'}"; return 1; }
+  out="$(python3 scripts/test_release_spine.py 2>&1)" || { echo "scripts/test_release_spine.py: ${out##*$'\n'}"; return 1; }
+}
+CHECKS+=(check_release_spine)
+
 # ---- run ----
 status=0
 for c in "${CHECKS[@]}"; do

@@ -77,7 +77,7 @@ final class Viewer: ObservableObject, Identifiable {
         caption = model.caption(pinned: SharedSettings.pinnedKeywords(in: UserDefaults.standard))
         colorbar = model.colorbar(tickCount: 5)
         rings = model.ringsOn ? model.rings() : nil
-        compareImage = model.compareModel == nil ? nil : model.registeredCompareImage()
+        compareImage = model.canvasCompare()?.image
         objectWillChange.send()
     }
 
@@ -215,12 +215,14 @@ struct ViewerView: View {
                                compare: viewer.compareImage, swipe: swipe,
                                onSample: { viewer.sample(u: $0, v: $1) },
                                onSwipe: { viewer.step($0) })
-                    if viewer.compareImage != nil { compareStrip }
+                    if viewer.compareImage != nil {
+                        if viewer.model.compareModel == nil { revealStrip } else { compareStrip }
+                    }
                     if let bar = viewer.colorbar {
                         ColorbarStrip(bar: bar).padding(.horizontal, 16).padding(.top, 6)
                     }
                     Text(viewer.caption)
-                        .font(.footnote).foregroundStyle(Color(white: 0.8))
+                        .font(.footnote).foregroundStyle(Color(Palette.iosCaptionText))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal).padding(.vertical, 6)
                 }
@@ -229,7 +231,7 @@ struct ViewerView: View {
                         .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(.white)
                         .padding(8)
-                        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+                        .background(Color(Palette.iosReadoutBackdrop), in: RoundedRectangle(cornerRadius: 8))
                         .padding(10)
                         .onTapGesture { viewer.readout = nil }
                         .accessibilityLabel("Pixel readout: \(r)")
@@ -263,7 +265,18 @@ struct ViewerView: View {
                 Text("B").font(.system(.footnote, design: .monospaced).weight(.semibold))
             }
             Text("B: \(viewer.compareName ?? ""), \(link). Solar rotation between the two times is not compensated.")
-                .font(.caption2).foregroundStyle(Color(white: 0.8))
+                .font(.caption2).foregroundStyle(Color(Palette.iosCaptionText))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16).padding(.top, 6)
+    }
+
+    /// Reveal wipe (RH-13): the RHEF image left of the divider, the plain image right of it.
+    private var revealStrip: some View {
+        HStack(spacing: 8) {
+            Text("RHEF").font(.system(.footnote, design: .monospaced).weight(.semibold))
+            Slider(value: $swipe, in: 0...1).accessibilityLabel("Reveal divider between RHEF and the plain image")
+            Text("plain").font(.system(.footnote, design: .monospaced).weight(.semibold))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16).padding(.top, 6)
@@ -291,11 +304,13 @@ struct ViewerView: View {
             Spacer()
             Menu {
                 Picker("Filter", selection: Binding(get: { m.filter }, set: { if m.setFilter($0) { viewer.refresh() } })) {
-                    Text("No filter").tag(FITSPreviewModel.Filter.none)
-                    Text("RHEF: reveal faint corona").tag(FITSPreviewModel.Filter.rhef)
+                    ForEach(FITSPreviewModel.Filter.allCases, id: \.self) { f in
+                        Text(f.menuTitle).tag(f)
+                    }
                 }
+                Text(FITSPreviewModel.Filter.gridNote)
             } label: {
-                Label(m.filter == .rhef ? "RHEF" : "Filter", systemImage: "camera.filters")
+                Label(m.filter == .none ? "Filter" : m.filter.label, systemImage: "camera.filters")
             }
             Toggle(isOn: Binding(get: { m.limbOn }, set: { if $0 != m.limbOn, m.toggleLimb() { viewer.refresh() } })) {
                 Label("Limb", systemImage: "circle.dashed")
@@ -470,6 +485,9 @@ struct StretchPanel: View {
     @State private var log = false
     @State private var vminText = ""
     @State private var vmaxText = ""
+    @State private var shadows = FITSRenderer.rhefUpsilon
+    @State private var highlights = FITSRenderer.rhefUpsilon
+    @State private var reveal = false
 
     var body: some View {
         let m = viewer.model
@@ -483,6 +501,12 @@ struct StretchPanel: View {
             slider("High", $high, 0...1, String(format: "%.2f %%", StretchScale.highPercent(high)))
             slider("Gamma", $gamma, 0.1...2, String(format: "%.2f", gamma))
             Toggle("Logarithmic", isOn: $log)
+            if m.filter == .rhef {
+                // RHEF (RH-13): re-shape the cached ranks live; the wipe shows the plain image right of the divider.
+                slider("Shadows", $shadows, 0.05...1, String(format: "%.2f", shadows))
+                slider("Highlights", $highlights, 0.05...1, String(format: "%.2f", highlights))
+                Toggle("Reveal plain image (drag the divider)", isOn: $reveal)
+            }
             limitsRow(m)
             if let l = m.displayLimits() {
                 Text("Clipped to \(FITSRenderer.fmtValue(l.lo)) … \(FITSRenderer.fmtValue(l.hi))\(l.unit.isEmpty ? "" : " \(l.unit)")")
@@ -494,8 +518,12 @@ struct StretchPanel: View {
             low = StretchScale.lowPosition(m.stretch.lo)
             high = StretchScale.highPosition(m.stretch.hi)
             gamma = m.stretch.gamma; log = m.stretch.log
+            shadows = m.upsilonLow; highlights = m.upsilonHigh; reveal = m.revealRaw
             syncFields()
         }
+        .onChange(of: shadows) { applyRHEF() }
+        .onChange(of: highlights) { applyRHEF() }
+        .onChange(of: reveal) { applyRHEF() }
         .onChange(of: low) { apply() }
         .onChange(of: high) { apply() }
         .onChange(of: gamma) { apply() }
@@ -509,6 +537,14 @@ struct StretchPanel: View {
             Slider(value: v, in: r)
             Text(value).font(.system(.footnote, design: .monospaced)).frame(width: 72, alignment: .trailing)
         }
+    }
+
+    private func applyRHEF() {
+        let m = viewer.model
+        let shaped = m.setUpsilon(low: shadows, high: highlights)
+        let wipe = reveal != m.revealRaw
+        m.revealRaw = reveal
+        if shaped || wipe { viewer.refresh() }
     }
 
     private func apply() {
@@ -613,7 +649,7 @@ struct ColorbarStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(bar.note.isEmpty ? bar.heading : "\(bar.heading), \(bar.note)")
-                .font(.caption2).foregroundStyle(Color(white: 0.8))
+                .font(.caption2).foregroundStyle(Color(Palette.iosCaptionText))
             GeometryReader { geo in
                 let w = geo.size.width
                 ZStack(alignment: .topLeading) {
@@ -880,6 +916,15 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     }
     func gestureRecognizer(_ g: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
+// MARK: palette (HF-18)
+
+extension Color {
+    /// A Palette colour, built the way the old literal was (`Color(white:)` or `Color(red:green:blue:)`).
+    init(_ c: Palette.RGBA) {
+        if c.isGray { self = Color(white: c.r, opacity: c.a) } else { self = Color(red: c.r, green: c.g, blue: c.b, opacity: c.a) }
+    }
 }
 
 // MARK: folder movie (HF-14)

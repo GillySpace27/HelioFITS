@@ -15,6 +15,10 @@ final class FITSToolbar {
     /// Optional chips (HF-15): present only when the host passes a selector.
     let rings = NSButton(), compare = NSButton()
     private let hasRingsChip: Bool, hasCompareChip: Bool
+    /// Optional Swipe chip (HF-19): the unfiltered image left of a divider, the
+    /// filter right of it. Greyed while no filter is on.
+    let swipe = NSButton()
+    private let hasSwipeChip: Bool
     /// Optional Header chip (HF-13), beside Stretch. The host owns the drawer and
     /// sets `headerOn` so the chip paints its state.
     let header = NSButton()
@@ -37,6 +41,11 @@ final class FITSToolbar {
     let histogram = FITSHistogramView(frame: .zero)
     private let limitsSel: Selector?
     private weak var limitsTarget: AnyObject?
+    /// RHEF Shadows, Highlights and the reveal wipe (RH-13): present only when the host
+    /// passes `upsilonSel`; shown in the stretch panel while the RHEF filter is on.
+    let sShadows = NSSlider(), sHighlights = NSSlider()
+    let cReveal = NSButton(checkboxWithTitle: "Reveal plain image", target: nil, action: nil)
+    private var rhefRows: [NSView] = []
 
     /// - Parameter target: receives the actions; must implement the selectors.
     /// - Parameter limitsSel: fired when vmin/vmax are typed or a histogram handle
@@ -45,7 +54,9 @@ final class FITSToolbar {
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
          tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector,
          limitsSel: Selector? = nil, ringsSel: Selector? = nil, compareSel: Selector? = nil,
-         headerSel: Selector? = nil, playSel: Selector? = nil) {
+         headerSel: Selector? = nil, swipeSel: Selector? = nil, playSel: Selector? = nil,
+         upsilonSel: Selector? = nil) {
+        self.hasSwipeChip = swipeSel != nil
         self.hasRingsChip = ringsSel != nil
         self.hasHeaderChip = headerSel != nil
         self.hasPlayChip = playSel != nil
@@ -82,6 +93,11 @@ final class FITSToolbar {
             mk(compare, "Compare", "Compare with a second file, lined up by helioprojective coordinates", compareSel)
             compare.setAccessibilityLabel("Compare with a second file")
         }
+        if let swipeSel {
+            mk(swipe, "Swipe", "Before and after: the unfiltered image left of a divider, the filter right of it. "
+               + "Drag the divider, or Option-Left and Option-Right", swipeSel)
+            swipe.setAccessibilityLabel("Before and after swipe")
+        }
         if let headerSel {
             mk(header, "Header", "Show this layer's FITS header: pinned keywords first, then quick groups", headerSel)
             header.setAccessibilityLabel("Show the FITS header")
@@ -96,18 +112,21 @@ final class FITSToolbar {
 
         // Enhancement filter picker. RHEF (Radial Histogram Equalizing Filter,
         // Gilly & Cranmer 2025) removes the corona's radial brightness gradient
-        // to reveal faint off-limb structure at every height. MGN/WOW are coming.
+        // to reveal faint off-limb structure at every height. MGN (Morgan and
+        // Druckmueller 2014) and WOW (Auchere et al. 2023) bring out structure at
+        // every scale; their widths are divided by the display decimation (HF-19).
         filterMenu.appearance = NSAppearance(named: .darkAqua)
         filterMenu.translatesAutoresizingMaskIntoConstraints = false
         filterMenu.bezelStyle = .rounded
         filterMenu.controlSize = .regular
-        filterMenu.toolTip = "Enhancement filter"
+        filterMenu.toolTip = "Enhancement filter. " + FITSPreviewModel.Filter.gridNote
         filterMenu.setAccessibilityLabel("Enhancement filter")
         // Only ship implemented filters; greyed "(soon)" items read as unfinished
         // (panel feedback). Descriptive titles so the bare acronym isn't the whole
-        // story where tooltips don't fire. Menu index still maps to Filter.rawValue.
-        for f in FITSPreviewModel.Filter.allCases where f == .none || f == .rhef {
-            filterMenu.addItem(withTitle: f == .rhef ? "RHEF: reveal faint corona" : "No filter")
+        // story where tooltips don't fire. Menu index still maps to Filter.rawValue,
+        // so every case is listed in order.
+        for f in FITSPreviewModel.Filter.allCases {
+            filterMenu.addItem(withTitle: f.menuTitle)
         }
         filterMenu.target = target
         filterMenu.action = filterSel
@@ -117,10 +136,10 @@ final class FITSToolbar {
         // Dark appearance so the sliders/checkbox render with dark-mode contrast
         // on our dark panel rather than washed-out light-mode controls.
         panel.appearance = NSAppearance(named: .darkAqua)
-        panel.layer?.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 0.97).cgColor
+        panel.layer?.backgroundColor = Theme.color(Palette.panelFill).cgColor
         panel.layer?.cornerRadius = 8
         panel.layer?.borderWidth = 1
-        panel.layer?.borderColor = NSColor(calibratedWhite: 0.25, alpha: 1).cgColor
+        panel.layer?.borderColor = Theme.color(Palette.cardStroke).cgColor
         panel.isHidden = true
 
         func row(_ name: String, _ s: NSSlider, _ lo: Double, _ hi: Double,
@@ -129,24 +148,27 @@ final class FITSToolbar {
             s.target = target; s.action = stretchSel
             s.isContinuous = true
             s.toolTip = tip
+            s.setAccessibilityLabel(name == "Gamma" ? "Gamma" : name + " clip")
             let l = NSTextField(labelWithString: name)
-            l.font = .systemFont(ofSize: 11)
-            l.textColor = NSColor(calibratedWhite: 0.8, alpha: 1)
+            l.font = Theme.font(11)
+            l.textColor = Theme.color(Palette.panelLabel)
             l.setContentHuggingPriority(.required, for: .horizontal)
             let st = NSStackView(views: [l, s])
             st.spacing = 6
             return st
         }
         cLog.target = target; cLog.action = stretchSel
+        cLog.setAccessibilityLabel("Logarithmic scaling")
         cLog.toolTip = "Logarithmic scaling: brings out faint off-limb structure"
         reset.target = target; reset.action = resetSel
         reset.bezelStyle = .rounded
         reset.toolTip = "Back to the default stretch"
 
-        limitsLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        limitsLabel.textColor = NSColor(calibratedWhite: 0.85, alpha: 1)
+        limitsLabel.font = Theme.mono(11)
+        limitsLabel.textColor = Theme.color(Palette.limitsText)
         limitsLabel.lineBreakMode = .byTruncatingTail
         limitsLabel.toolTip = "The data values the display is currently clipped to"
+        limitsLabel.setAccessibilityLabel("Display limits")
 
         let bottom = NSStackView(views: [cLog, reset])
         bottom.spacing = 10
@@ -156,15 +178,15 @@ final class FITSToolbar {
         if let limitsSel {
             func field(_ f: NSTextField, _ name: String, _ tip: String) -> NSStackView {
                 f.target = target; f.action = limitsSel
-                f.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                f.font = Theme.mono(11)
                 f.placeholderString = "auto"
                 f.toolTip = tip
                 f.setAccessibilityLabel(name)
                 f.translatesAutoresizingMaskIntoConstraints = false
                 f.widthAnchor.constraint(equalToConstant: 76).isActive = true
                 let l = NSTextField(labelWithString: name)
-                l.font = .systemFont(ofSize: 11)
-                l.textColor = NSColor(calibratedWhite: 0.8, alpha: 1)
+                l.font = Theme.font(11)
+                l.textColor = Theme.color(Palette.panelLabel)
                 l.setContentHuggingPriority(.required, for: .horizontal)
                 let st = NSStackView(views: [l, f])
                 st.spacing = 4
@@ -186,13 +208,37 @@ final class FITSToolbar {
             }
             limitViews = [histogram, fields]
         }
+        if let upsilonSel {
+            func urow(_ name: String, _ s: NSSlider, _ tip: String) -> NSStackView {
+                s.minValue = 0.05; s.maxValue = 1; s.doubleValue = FITSRenderer.rhefUpsilon
+                s.target = target; s.action = upsilonSel
+                s.isContinuous = true
+                s.toolTip = tip
+                s.setAccessibilityLabel(name)
+                let l = NSTextField(labelWithString: name)
+                l.font = Theme.font(11)
+                l.textColor = Theme.color(Palette.panelLabel)
+                l.setContentHuggingPriority(.required, for: .horizontal)
+                let st = NSStackView(views: [l, s])
+                st.spacing = 6
+                return st
+            }
+            cReveal.target = target; cReveal.action = upsilonSel
+            cReveal.toolTip = "Drag the divider: the RHEF image on its left, the plain image on its right"
+            rhefRows = [
+                urow("Shadows", sShadows, "RHEF Upsilon below the middle rank. Lower brightens faint structure"),
+                urow("Highlights", sHighlights, "RHEF Upsilon from the middle rank up. Lower flattens the brightest structure"),
+                cReveal,
+            ]
+            rhefRows.forEach { $0.isHidden = true }
+        }
         let stack = NSStackView(views: [
             row("Low", sLo, 0, 1, Self.posLow(FITSRenderer.pLow),
                 "Clip the darkest pixels to black. Logarithmic, reaching the median: fine control near 0%"),
             row("High", sHi, 0, 1, Self.posHigh(FITSRenderer.pHigh),
                 "Clip the brightest pixels to white. Logarithmic: fine control near 100%, where a solar image's tail lives"),
             row("Gamma", sG, 0.1, 2, 0.5, "Below 1 brightens faint structure; above 1 darkens it"),
-        ] + limitViews + [
+        ] + rhefRows + limitViews + [
             limitsLabel,
             bottom,
         ])
@@ -282,7 +328,9 @@ final class FITSToolbar {
     }
 
     var stack: NSStackView {
-        var views: [NSView] = [filterMenu, limb]
+        var views: [NSView] = [filterMenu]
+        if hasSwipeChip { views.append(swipe) }
+        views.append(limb)
         if hasRingsChip { views.append(rings) }
         views += [diff, tune]
         if hasHeaderChip { views.append(header) }
@@ -317,6 +365,12 @@ final class FITSToolbar {
     func readStretch() -> (lo: Double, hi: Double, gamma: Double, log: Bool) {
         (Self.pctLow(sLo.doubleValue), Self.pctHigh(sHi.doubleValue),
          sG.doubleValue, cLog.state == .on)
+    }
+
+    /// The Shadows and Highlights sliders; the defaults when the host has none.
+    func readUpsilon() -> (low: Double, high: Double) {
+        rhefRows.isEmpty ? (FITSRenderer.rhefUpsilon, FITSRenderer.rhefUpsilon)
+                         : (sShadows.doubleValue, sHighlights.doubleValue)
     }
 
     func readFilter() -> FITSPreviewModel.Filter {
@@ -360,14 +414,14 @@ final class FITSToolbar {
     private func paint(_ b: NSButton, on: Bool, enabled: Bool) {
         b.isEnabled = enabled
         b.setAccessibilityValue(on ? "on" : "off")   // state is otherwise only a fill colour
-        let bg: NSColor = on ? NSColor(calibratedRed: 0.86, green: 0.63, blue: 0.20, alpha: 0.97)
-                             : NSColor(calibratedWhite: 0.11, alpha: 0.92)
-        let fg: NSColor = on ? .black : (enabled ? .white : NSColor(calibratedWhite: 1, alpha: 0.35))
+        let bg: NSColor = on ? Theme.color(Palette.toggleOn)
+                             : Theme.color(Palette.toggleOff)
+        let fg: NSColor = on ? .black : (enabled ? .white : Theme.color(Palette.toggleDisabledText))
         b.layer?.backgroundColor = bg.withAlphaComponent(enabled ? bg.alphaComponent : 0.55).cgColor
-        b.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: on ? 0.5 : 0.28).cgColor
+        b.layer?.borderColor = Theme.color(on ? Palette.chipBorderOn : Palette.chipBorderOff).cgColor
         b.attributedTitle = NSAttributedString(string: b.title, attributes: [
             .foregroundColor: fg,
-            .font: NSFont.systemFont(ofSize: 13),
+            .font: Theme.font(13),
             .paragraphStyle: {
                 let p = NSMutableParagraphStyle(); p.alignment = .center; return p
             }(),
@@ -389,6 +443,7 @@ final class FITSToolbar {
         paint(diff, on: model.mode == .diff, enabled: model.canDiff)
         if hasRingsChip { setRingsGreyed(!model.hasRings, on: model.ringsOn, model: model) }
         if hasCompareChip { paint(compare, on: model.compareModel != nil, enabled: true) }
+        if hasSwipeChip { paint(swipe, on: model.beforeAfter && model.filter != .none, enabled: model.filter != .none) }
         if hasHeaderChip { paint(header, on: headerOn, enabled: true) }
         if hasPlayChip {
             play.title = playOn ? "Pause" : "Play"
@@ -401,6 +456,12 @@ final class FITSToolbar {
             ? "Adjust the brightness stretch (percentile clip, gamma, log)"
             : "Adjust the stretch applied on top of the \(model.filter.label) filter"
         panel.isHidden = (model.mode != .stretch)
+        if !rhefRows.isEmpty {
+            rhefRows.forEach { $0.isHidden = model.filter != .rhef }
+            sShadows.doubleValue = model.upsilonLow
+            sHighlights.doubleValue = model.upsilonHigh
+            cReveal.state = model.revealRaw ? .on : .off
+        }
         if let l = model.displayLimits() {
             let u = l.unit.isEmpty ? "" : " " + l.unit
             limitsLabel.stringValue = "min \(FITSRenderer.fmtValue(l.lo))\(u)\nmax \(FITSRenderer.fmtValue(l.hi))\(u)"

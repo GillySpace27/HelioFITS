@@ -139,6 +139,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             DispatchQueue.main.async {
                 guard let self, let win, let c = self.ctx[ObjectIdentifier(win)], c.gen == gen else { return }
                 c.model = m
+                m.rhefCap = SharedSettings.suite?.bool(forKey: SharedSettings.rhefFullResKey) == true ? 1 << 20 : 1024
                 // Off-main renders (full-res buffer, RHEF filter) call this when
                 // they land — repaint so the filtered image actually swaps in.
                 m.onFullRes = { [weak self, weak win] in
@@ -275,7 +276,9 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                               stretchSel: #selector(stretchChanged(_:)), resetSel: #selector(resetStretch(_:)),
                               filterSel: #selector(filterChanged(_:)),
                               limitsSel: #selector(limitsChanged(_:)),
-                              ringsSel: #selector(toggleRings(_:)), compareSel: #selector(compareClicked(_:)))
+                              ringsSel: #selector(toggleRings(_:)), compareSel: #selector(compareClicked(_:)),
+                              swipeSel: #selector(toggleSwipe(_:)),
+                              upsilonSel: #selector(upsilonChanged(_:)))
         let toolStack = c.tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -308,9 +311,9 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = true
-        tv.backgroundColor = NSColor(calibratedWhite: 0.05, alpha: 1)
-        tv.textColor = NSColor(calibratedRed: 0.62, green: 0.89, blue: 0.69, alpha: 1)
-        tv.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        tv.backgroundColor = Theme.color(Palette.headerBackground)
+        tv.textColor = Theme.color(Palette.headerText)
+        tv.font = Theme.mono(12)
         tv.textContainerInset = NSSize(width: 14, height: 12)
         tv.string = headerText
         c.headerView = tv
@@ -446,6 +449,11 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         if c.model.toggleDiff() { refresh(c) }
     }
 
+    @objc private func toggleSwipe(_ s: NSButton) {
+        guard let c = ctx(for: s) else { return }
+        if c.model.toggleBeforeAfter() { refresh(c) }
+    }
+
     @objc private func toggleRings(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
         if c.model.toggleRings() { refresh(c) }
@@ -473,6 +481,17 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         if c.model.mode == .stretch { refresh(c) }
     }
 
+    /// Shadows, Highlights or the reveal checkbox moved (RH-13): re-shape the cached ranks.
+    @objc private func upsilonChanged(_ s: NSControl) {
+        guard let c = ctx(for: s) else { return }
+        let u = c.tools.readUpsilon()
+        let reveal = c.tools.cReveal.state == .on
+        let shaped = c.model.setUpsilon(low: u.low, high: u.high)
+        let wipe = reveal != c.model.revealRaw
+        c.model.revealRaw = reveal
+        if shaped || wipe { refresh(c) }
+    }
+
     @objc private func resetStretch(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
         if c.tools.applyReset(to: c.model) { refresh(c) }
@@ -493,8 +512,19 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.rings = c.model.ringsOn ? c.model.rings() : nil
         // Compare: the second image already lined up on this one's grid. Image first,
         // then mode, so the canvas never sees a mode with nothing to show.
-        c.canvas.compareImage = c.model.registeredCompareImage().map(NSImage.init)
-        c.canvas.compareMode = c.canvas.compareImage == nil ? nil : c.model.compareMode
+        let cmp = c.model.canvasCompare()
+        c.canvas.compareImage = cmp.map { NSImage($0.image) }
+        c.canvas.compareMode = cmp?.mode
+        // Before and after (HF-19): with no compare file or reveal wipe, the unfiltered
+        // image under the filter.
+        if cmp == nil, c.model.beforeAfterShown {
+            c.canvas.image = c.model.unfilteredImage().map(NSImage.init)
+            c.canvas.compareImage = c.model.image().map(NSImage.init)
+            c.canvas.compareMode = .swipe
+            c.canvas.swipeLabels = ("Raw", c.model.filter.label)
+        } else {
+            c.canvas.swipeLabels = ("A", "B")
+        }
         if let p = c.model.page {
             c.canvas.natSize = CGSize(width: p.res.natW, height: p.res.natH)
         }
@@ -733,7 +763,7 @@ private final class ProvenancePanel: NSViewController {
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = false
-        tv.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        tv.font = Theme.mono(11)
         tv.textContainerInset = NSSize(width: 4, height: 4)
         let scroll = NSScrollView()
         scroll.documentView = tv
@@ -743,7 +773,7 @@ private final class ProvenancePanel: NSViewController {
         tv.isVerticallyResizable = true
 
         let title = NSTextField(labelWithString: "Saved PNGs carry this recipe")
-        title.font = .boldSystemFont(ofSize: 12)
+        title.font = Theme.bold(12)
         let copy = NSButton(title: "Copy", target: self, action: #selector(copyRecipe(_:)))
         let burn = NSButton(checkboxWithTitle: "Add a caption strip under saved PNGs",
                             target: self, action: #selector(burnChanged(_:)))
@@ -799,7 +829,7 @@ extension HeaderWindowController {
         c.scrubber.toolTip = "Scrub through the folder's frames (DATE-OBS order)"
         c.scrubber.setAccessibilityLabel("Frame")
         c.scrubber.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
-        c.frameLabel.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        c.frameLabel.font = Theme.monoDigit(11)
         c.frameLabel.textColor = .secondaryLabelColor
         syncMovieControls(c)
     }
