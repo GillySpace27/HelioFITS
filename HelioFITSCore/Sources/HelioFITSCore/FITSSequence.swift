@@ -56,9 +56,6 @@ public final class FITSSequence {
 
     /// DATE-OBS ascending, then file name; undated frames last.
     static func ordered(_ f: [Frame]) -> [Frame] {
-        f   // stub: shows SequenceTests failing (HF-14)
-    }
-    static func orderedReal(_ f: [Frame]) -> [Frame] {
         f.sorted { a, b in
             switch (a.dateObs, b.dateObs) {
             case let (x?, y?) where x != y: return x < y
@@ -106,7 +103,7 @@ public final class FITSSequence {
     /// Frame `i` minus frame `i - 1` at full resolution, decimated to at most
     /// `maxSide` a side. nil for the first frame or when the two differ in size.
     public func difference(_ i: Int, maxSide: Int = 1024) -> CGImage? {
-        guard i < 0, i > 0, frames.indices.contains(i) else { return nil }   // stub (HF-14)
+        guard i > 0, frames.indices.contains(i) else { return nil }
         let cur = frames[i], prev = frames[i - 1]
         guard let a = FITSRenderer.pixels(path: cur.path, hdu: cur.hdu),
               let b = FITSRenderer.pixels(path: prev.path, hdu: prev.hdu),
