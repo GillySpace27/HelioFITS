@@ -932,6 +932,11 @@ public final class FITSPreviewModel {
     /// expensive part (~1 s on a big frame) while this is a per-pixel remap, so
     /// dragging a slider does not re-run the filter.
     public func filteredImage(_ g: (w: Int, h: Int, vals: [Float])) -> CGImage? {
+        filteredImage(g, lut: page?.lut)
+    }
+
+    /// `filteredImage` with an explicit colour table, so a movie can colour a page that is not current.
+    func filteredImage(_ g: (w: Int, h: Int, vals: [Float]), lut: [UInt8]?) -> CGImage? {
         let n = g.w * g.h
         let (lo, hi) = filterLevels(g.vals)
         let span = hi - lo, gam = Float(stretch.gamma)
@@ -943,7 +948,7 @@ public final class FITSPreviewModel {
             t = max(0, min(1, t))
             if stretch.log { t = Float(Foundation.log(1 + 9 * Double(t)) / Foundation.log(10.0)) }
             let v = max(0, min(255, Int(powf(t, gam) * 255)))
-            if let lut = page?.lut {
+            if let lut {
                 rgba[i4] = lut[v*3]; rgba[i4+1] = lut[v*3+1]; rgba[i4+2] = lut[v*3+2]
             } else {
                 rgba[i4] = UInt8(v); rgba[i4+1] = UInt8(v); rgba[i4+2] = UInt8(v)

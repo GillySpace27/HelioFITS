@@ -45,6 +45,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         var onCompareRefresh: () -> Void = {}
         let popup = NSPopUpButton()
         let save = NSButton()
+        let saveRHEF = NSButton()
         let copy = NSButton()
         /// Add the provenance footer strip under saved PNGs (HF-16). Per window, off by default.
         var burnIn = false
@@ -148,6 +149,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                 c.tools.adoptStretch(m.stretch)   // panel opens on the baked mapping
                 self.populatePopup(c, headerText: text)
                 c.save.isEnabled = !m.isEmpty
+                c.saveRHEF.isEnabled = !m.isEmpty
                 c.copy.isEnabled = !m.isEmpty
                 c.canvas.pageCount = max(m.count, c.sequence?.count ?? 0)
                 self.syncMovieControls(c)
@@ -342,6 +344,13 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.save.isEnabled = false
         c.save.toolTip = "Export the displayed HDU as a colour-mapped PNG: the image as you see it"
 
+        c.saveRHEF.title = "Save RHEF PNG…"
+        c.saveRHEF.bezelStyle = .rounded
+        c.saveRHEF.target = self
+        c.saveRHEF.action = #selector(saveRHEFPNG(_:))
+        c.saveRHEF.isEnabled = false
+        c.saveRHEF.toolTip = "Export this image through RHEF (Gilly & Cranmer 2025) as a PNG with its recipe and RHEF stamp, whatever filter is showing. A visualization, not a calibrated radiance."
+
         c.copy.title = "Copy Python"
         c.copy.bezelStyle = .rounded
         c.copy.target = self
@@ -358,7 +367,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
         let pin = iconButton("pin", "Pin the keyword on the selected header line: it then shows in the caption here and in Quick Look. Click again to unpin.",
                              #selector(pinKeyword(_:)))
-        let right = NSStackView(views: [reveal, copyPath, info, pin, c.copy, c.save])
+        let right = NSStackView(views: [reveal, copyPath, info, pin, c.copy, c.saveRHEF, c.save])
         right.spacing = 8
         setUpMovieControls(c)
         let barStack = NSStackView(views: [c.popup, c.play, c.fpsMenu, c.scrubber, c.frameLabel, NSView(), right])
@@ -564,6 +573,26 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    /// Save RHEF PNG (RH-18): ask where first, then run the filter off the main thread.
+    @objc private func saveRHEFPNG(_ sender: NSButton) {
+        guard let win = sender.window, let c = ctx(for: sender), !c.model.isEmpty else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = c.url.deletingPathExtension().lastPathComponent + "_rhef.png"
+        let model = c.model, name = c.url.lastPathComponent, version = Provenance.appVersion()
+        panel.beginSheetModal(for: win) { resp in
+            guard resp == .OK, let url = panel.url else { return }
+            sender.isEnabled = false
+            DispatchQueue.global(qos: .userInitiated).async {
+                let data = model.rhefPNG(fileName: name, appVersion: version)
+                DispatchQueue.main.async {
+                    sender.isEnabled = true
+                    guard let data, (try? data.write(to: url)) != nil else { NSSound.beep(); return }
+                }
+            }
+        }
+    }
+
     /// The Info button: the recipe a saved PNG will carry, with Copy and the burn-in switch.
     /// Pin or unpin the keyword on the header line holding the selection (HF-13).
     /// Writes the app-group list Quick Look reads; every open window repaints.
@@ -608,7 +637,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     /// File > Export Movie (HF-14): the playing frames, or the layers of this file, as H.264,
     /// HEVC or an animated PNG with the provenance in the movie's description. Refuses to
     /// overwrite. Frames are a visualization, not a calibrated radiance.
-    @objc func exportMovie(_ sender: Any?) {
+    /// The same movie with every frame run through RHEF (RH-18), stamped and described as such.
+    @objc func exportRHEFMovie(_ sender: Any?) { exportMovie(sender, rhef: true) }
+
+    @objc func exportMovie(_ sender: Any?) { exportMovie(sender, rhef: false) }
+
+    private func exportMovie(_ sender: Any?, rhef: Bool) {
         guard let w = NSApp.keyWindow, let c = ctx[ObjectIdentifier(w)] else { NSSound.beep(); return }
         let count = c.sequence?.count ?? c.model.count
         guard count > 1 else { NSSound.beep(); return }
@@ -625,8 +659,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let diff = c.model.mode == .diff
         let layers = c.model.pages.map { $0.image }
         let fps = c.fps
-        let note = Provenance(model: c.model, fileName: c.url.lastPathComponent,
-                              appVersion: Provenance.appVersion()).text
+        let model = c.model
+        let note = rhef
+            ? model.rhefMovieNote(fileName: c.url.lastPathComponent, appVersion: Provenance.appVersion(),
+                                  count: count, fps: fps, folder: seq != nil)
+            : Provenance(model: c.model, fileName: c.url.lastPathComponent,
+                         appVersion: Provenance.appVersion()).text
             + "\nframes: \(count) at \(fps) per second" + (seq != nil ? " (a folder, in DATE-OBS order)" : " (the layers of one file)")
         panel.beginSheetModal(for: w) { resp in
             guard resp == .OK, let picked = panel.url else { return }
@@ -635,6 +673,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             Task.detached {
                 do {
                     try await MovieExporter.write(count: count, fps: fps, format: format, to: url, description: note) { i in
+                        if rhef {
+                            if let seq { return seq.frames.indices.contains(i) ? model.rhefFrame(file: seq.frames[i].path) : nil }
+                            return model.rhefFrame(page: i)
+                        }
                         if let seq { return diff ? (seq.difference(i) ?? seq.image(i)) : seq.image(i) }
                         return layers.indices.contains(i) ? layers[i] : nil
                     }
