@@ -291,11 +291,13 @@ struct ViewerView: View {
             Spacer()
             Menu {
                 Picker("Filter", selection: Binding(get: { m.filter }, set: { if m.setFilter($0) { viewer.refresh() } })) {
-                    Text("No filter").tag(FITSPreviewModel.Filter.none)
-                    Text("RHEF: reveal faint corona").tag(FITSPreviewModel.Filter.rhef)
+                    ForEach(FITSPreviewModel.Filter.allCases, id: \.self) { f in
+                        Text(f.menuTitle).tag(f)
+                    }
                 }
+                Text(FITSPreviewModel.Filter.gridNote)
             } label: {
-                Label(m.filter == .rhef ? "RHEF" : "Filter", systemImage: "camera.filters")
+                Label(m.filter == .none ? "Filter" : m.filter.label, systemImage: "camera.filters")
             }
             Toggle(isOn: Binding(get: { m.limbOn }, set: { if $0 != m.limbOn, m.toggleLimb() { viewer.refresh() } })) {
                 Label("Limb", systemImage: "circle.dashed")
