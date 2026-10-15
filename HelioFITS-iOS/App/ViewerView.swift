@@ -191,7 +191,7 @@ struct ViewerView: View {
                         ColorbarStrip(bar: bar).padding(.horizontal, 16).padding(.top, 6)
                     }
                     Text(viewer.caption)
-                        .font(.footnote).foregroundStyle(Color(white: 0.8))
+                        .font(.footnote).foregroundStyle(Color(Palette.iosCaptionText))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal).padding(.vertical, 6)
                 }
@@ -200,7 +200,7 @@ struct ViewerView: View {
                         .font(.system(.footnote, design: .monospaced))
                         .foregroundStyle(.white)
                         .padding(8)
-                        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+                        .background(Color(Palette.iosReadoutBackdrop), in: RoundedRectangle(cornerRadius: 8))
                         .padding(10)
                         .onTapGesture { viewer.readout = nil }
                         .accessibilityLabel("Pixel readout: \(r)")
@@ -234,7 +234,7 @@ struct ViewerView: View {
                 Text("B").font(.system(.footnote, design: .monospaced).weight(.semibold))
             }
             Text("B: \(viewer.compareName ?? ""), \(link). Solar rotation between the two times is not compensated.")
-                .font(.caption2).foregroundStyle(Color(white: 0.8))
+                .font(.caption2).foregroundStyle(Color(Palette.iosCaptionText))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16).padding(.top, 6)
@@ -547,7 +547,7 @@ struct ColorbarStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(bar.note.isEmpty ? bar.heading : "\(bar.heading), \(bar.note)")
-                .font(.caption2).foregroundStyle(Color(white: 0.8))
+                .font(.caption2).foregroundStyle(Color(Palette.iosCaptionText))
             GeometryReader { geo in
                 let w = geo.size.width
                 ZStack(alignment: .topLeading) {
@@ -814,4 +814,13 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     }
     func gestureRecognizer(_ g: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
+// MARK: palette (HF-18)
+
+extension Color {
+    /// A Palette colour, built the way the old literal was (`Color(white:)` or `Color(red:green:blue:)`).
+    init(_ c: Palette.RGBA) {
+        if c.isGray { self = Color(white: c.r, opacity: c.a) } else { self = Color(red: c.r, green: c.g, blue: c.b, opacity: c.a) }
+    }
 }

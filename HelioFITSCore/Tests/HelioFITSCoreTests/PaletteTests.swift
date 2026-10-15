@@ -39,6 +39,17 @@ struct PaletteTests {
             ("headerBackground", Palette.headerBackground, .gray(0.05)),
             ("headerText", Palette.headerText, .rgb(0.62, 0.89, 0.69)),
             ("cardNoteText", Palette.cardNoteText, .gray(0.75)),
+            ("sliderHistogramBackdrop", Palette.sliderHistogramBackdrop, .gray(0.14)),
+            ("sliderHistogramBars", Palette.sliderHistogramBars, .gray(0.55)),
+            ("rangeBandFill", Palette.rangeBandFill, .rgb(0.86, 0.63, 0.20, 0.14)),
+            ("rangeHandle", Palette.rangeHandle, .rgb(0.86, 0.63, 0.20)),
+            ("swipeLine", Palette.swipeLine, .gray(1, 0.9)),
+            ("swipeGripFill", Palette.swipeGripFill, .gray(0.1, 0.85)),
+            ("ringInk", Palette.ringInk, .rgb(0.55, 0.85, 1, 0.95)),
+            ("spokeUnder", Palette.spokeUnder, .gray(0, 0.5)),
+            ("ringUnder", Palette.ringUnder, .gray(0, 0.6)),
+            ("selectionDim", Palette.selectionDim, .rgb(1, 0.83, 0.47, 0.7)),
+            ("colorbarBorder", Palette.colorbarBorder, .gray(1, 0.45)),
             ("iosCaptionText", Palette.iosCaptionText, .gray(0.8)),                   // ViewerView: Color(white: 0.8)
             ("iosReadoutBackdrop", Palette.iosReadoutBackdrop, .gray(0, 0.7)),        // ViewerView: .black.opacity(0.7)
         ]

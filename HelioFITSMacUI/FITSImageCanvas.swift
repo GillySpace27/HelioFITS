@@ -272,8 +272,8 @@ final class FITSImageCanvas: NSView {
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         para.lineBreakMode = .byWordWrapping
-        return [.font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1),
+        return [.font: Theme.font(11),
+                .foregroundColor: Theme.color(Palette.captionInk),
                 .paragraphStyle: para]
     }
 
@@ -649,7 +649,7 @@ final class FITSImageCanvas: NSView {
     // MARK: drawing
 
     override func draw(_ dirty: NSRect) {
-        NSColor(calibratedWhite: 0.07, alpha: 1).setFill()
+        Theme.color(Palette.canvas).setFill()
         bounds.fill()
 
         if showsCaption, !caption.isEmpty {
@@ -680,7 +680,7 @@ final class FITSImageCanvas: NSView {
             // Bottom-LEFT: top-right now belongs to the statistics card, and the
             // top strip already holds the caption.
             chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
-                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+                 font: Theme.mono(12))
         }
         if let t = readout {
             // The readout IS the product for a scientist - it was the smallest type
@@ -690,7 +690,7 @@ final class FITSImageCanvas: NSView {
             // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
             // below the caption strip, so this clears that too.
             chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
-                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+                 font: Theme.mono(13),
                  anchorTop: true)
         }
         // The hint describes the gestures available RIGHT NOW. It also reappears
@@ -701,8 +701,8 @@ final class FITSImageCanvas: NSView {
         // pointer to be over the image.
         if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
             let s = NSAttributedString(string: h, attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
+                .font: Theme.font(11),
+                .foregroundColor: Theme.color(Palette.hintText)])
             var sz = s.size()
             sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
             // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
@@ -713,7 +713,7 @@ final class FITSImageCanvas: NSView {
             let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
                            y: bounds.height - sz.height - toolbarClearance,
                            width: sz.width + 20, height: sz.height + 7)
-            NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
+            Theme.color(Palette.hintBackdrop).setFill()
             NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
             s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
                               width: sz.width, height: sz.height + 2))
@@ -739,7 +739,7 @@ final class FITSImageCanvas: NSView {
         // a full-disk AIA or PUNCH frame is symmetric enough to hide it.
         // A registered compare image is transparent outside its footprint, so lay the
         // background down first and composite over it (opaque images look the same).
-        NSColor(calibratedWhite: 0.07, alpha: 1).setFill()
+        Theme.color(Palette.canvas).setFill()
         contentBox().fill()
         img.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
                  respectFlipped: true, hints: nil)
@@ -752,13 +752,13 @@ final class FITSImageCanvas: NSView {
             over.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
                       respectFlipped: true, hints: nil)
             NSGraphicsContext.current?.restoreGraphicsState()
-            NSColor(calibratedWhite: 1, alpha: 0.9).setFill()
+            Theme.color(Palette.swipeLine).setFill()
             NSRect(x: x - 0.5, y: c.minY, width: 1, height: c.height).fill()
             let grip = NSBezierPath(roundedRect: NSRect(x: x - 5, y: c.midY - 14, width: 10, height: 28),
                                     xRadius: 4, yRadius: 4)
-            NSColor(calibratedWhite: 0.1, alpha: 0.85).setFill()
+            Theme.color(Palette.swipeGripFill).setFill()
             grip.fill()
-            NSColor(calibratedWhite: 1, alpha: 0.9).setStroke()
+            Theme.color(Palette.swipeLine).setStroke()
             grip.lineWidth = 1
             grip.stroke()
         }
@@ -775,7 +775,7 @@ final class FITSImageCanvas: NSView {
             // top, so the circle reads over corona AND over black sky.
             let under = NSBezierPath(ovalIn: rect)
             under.lineWidth = 3.5
-            NSColor(calibratedWhite: 0, alpha: 0.85).setStroke()
+            Theme.color(Palette.overlayUnder).setStroke()
             under.stroke()
 
             let over = NSBezierPath(ovalIn: rect)
@@ -789,12 +789,12 @@ final class FITSImageCanvas: NSView {
            let a = viewPoint(u: s.u0, v: s.v0), let b = viewPoint(u: s.u1, v: s.v1) {
             let r = NSRect(x: min(a.x, b.x), y: min(a.y, b.y),
                            width: abs(b.x - a.x), height: abs(b.y - a.y))
-            NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 0.12).setFill()
+            Theme.color(Palette.selectionFill).setFill()
             r.fill()
             let p = NSBezierPath(rect: r)
             p.lineWidth = 1
             p.setLineDash([4, 3], count: 2, phase: 0)
-            NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 1).setStroke()
+            Theme.color(Palette.selectionStroke).setStroke()
             p.stroke()
         }
 
@@ -806,10 +806,10 @@ final class FITSImageCanvas: NSView {
             cross.move(to: NSPoint(x: c.x - arm, y: c.y)); cross.line(to: NSPoint(x: c.x + arm, y: c.y))
             cross.move(to: NSPoint(x: c.x, y: c.y - arm)); cross.line(to: NSPoint(x: c.x, y: c.y + arm))
             cross.lineWidth = 3.5
-            NSColor(calibratedWhite: 0, alpha: 0.85).setStroke()
+            Theme.color(Palette.overlayUnder).setStroke()
             cross.stroke()
             cross.lineWidth = 1.2
-            NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 1).setStroke()
+            Theme.color(Palette.selectionStroke).setStroke()
             cross.stroke()
         }
         NSGraphicsContext.current?.restoreGraphicsState()
@@ -829,11 +829,11 @@ final class FITSImageCanvas: NSView {
             }
             return p
         }
-        let ink = NSColor(calibratedRed: 0.55, green: 0.85, blue: 1, alpha: 0.95)
+        let ink = Theme.color(Palette.ringInk)
         for sp in r.spokes {
             let p = path(sp.segments)
             p.lineWidth = 2.5
-            NSColor(calibratedWhite: 0, alpha: 0.5).setStroke()
+            Theme.color(Palette.spokeUnder).setStroke()
             p.stroke()
             let q = path(sp.segments)
             q.lineWidth = 0.8
@@ -844,20 +844,20 @@ final class FITSImageCanvas: NSView {
         for ring in r.rings {
             let p = path(ring.segments)
             p.lineWidth = 3.5
-            NSColor(calibratedWhite: 0, alpha: 0.6).setStroke()
+            Theme.color(Palette.ringUnder).setStroke()
             p.stroke()
             let q = path(ring.segments)
             q.lineWidth = 1.2
             ink.setStroke()
             q.stroke()
             if let at = ring.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
-                chip(ring.label, at: v, font: .monospacedSystemFont(ofSize: 10, weight: .regular))
+                chip(ring.label, at: v, font: Theme.mono(10))
             }
         }
         for sp in r.spokes {
             if let at = sp.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
                 chip(String(format: "%.0f\u{00B0}", sp.positionAngleDegrees), at: v,
-                     font: .monospacedSystemFont(ofSize: 9, weight: .regular))
+                     font: Theme.mono(9))
             }
         }
     }
@@ -871,14 +871,14 @@ final class FITSImageCanvas: NSView {
         p.move(to: NSPoint(x: box.minX, y: c.y)); p.line(to: NSPoint(x: box.maxX, y: c.y))
         p.move(to: NSPoint(x: c.x, y: box.minY)); p.line(to: NSPoint(x: c.x, y: box.maxY))
         p.lineWidth = 0.8
-        NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 0.7).setStroke()
+        Theme.color(Palette.selectionDim).setStroke()
         p.stroke()
     }
 
     /// "A" and "B" tags so it is always clear which file is being looked at.
     private func drawCompareBadges() {
         let c = contentBox()
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+        let font = Theme.mono(12, .semibold)
         switch compareMode {
         case .some(.blink):
             chip(blinkShowsSecond ? "B" : "A", at: NSPoint(x: c.maxX - 8, y: c.minY + 8), font: font,
@@ -900,7 +900,7 @@ final class FITSImageCanvas: NSView {
     /// wording), the colormap as a vertical bar with the brightest colour on top,
     /// and tick labels at the positions the stretch puts those data values.
     private func drawColorbar(_ cb: Colorbar) {
-        let ink = NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)
+        let ink = Theme.color(Palette.captionInk)
         let top = contentBox().minY + 8
         let textWidth = colorbarStripWidth - 14
 
@@ -908,7 +908,7 @@ final class FITSImageCanvas: NSView {
         para.lineBreakMode = .byWordWrapping
         let headText = cb.note.isEmpty ? cb.heading : cb.heading + "\n" + cb.note
         let head = NSAttributedString(string: headText, attributes: [
-            .font: NSFont.systemFont(ofSize: 10), .foregroundColor: ink, .paragraphStyle: para])
+            .font: Theme.font(10), .foregroundColor: ink, .paragraphStyle: para])
         let headOpts: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         let headH = ceil(head.boundingRect(with: NSSize(width: textWidth, height: 200), options: headOpts).height) + 4
         head.draw(with: NSRect(x: 7, y: top, width: textWidth, height: headH), options: headOpts)
@@ -924,19 +924,19 @@ final class FITSImageCanvas: NSView {
         for i in 0..<n {
             let v = max(0, min(255, Int((1 - (Double(i) + 0.5) / Double(n)) * 255)))
             if let lut = cb.lut {
-                NSColor(calibratedRed: CGFloat(lut[v * 3]) / 255, green: CGFloat(lut[v * 3 + 1]) / 255,
-                        blue: CGFloat(lut[v * 3 + 2]) / 255, alpha: 1).setFill()
+                Theme.color(.rgb(Double(lut[v * 3]) / 255, Double(lut[v * 3 + 1]) / 255,
+                                 Double(lut[v * 3 + 2]) / 255)).setFill()
             } else {
-                NSColor(calibratedWhite: CGFloat(v) / 255, alpha: 1).setFill()
+                Theme.color(.gray(Double(v) / 255)).setFill()
             }
             let y0 = barTop + barH * CGFloat(i) / CGFloat(n)
             NSRect(x: barX, y: y0, width: barW, height: barH / CGFloat(n) + 0.5).fill()
         }
-        NSColor(calibratedWhite: 1, alpha: 0.45).setStroke()
+        Theme.color(Palette.colorbarBorder).setStroke()
         NSBezierPath(rect: NSRect(x: barX, y: barTop, width: barW, height: barH)).stroke()
 
         // Ticks from the bottom up; a label that would sit on the previous one is skipped.
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        let font = Theme.monoDigit(10)
         var lastLabelY = CGFloat.infinity
         for tick in cb.ticks {
             let y = barBottom - CGFloat(tick.t) * barH
@@ -960,12 +960,12 @@ final class FITSImageCanvas: NSView {
                       rightAligned: Bool = false, anchorTop: Bool = false) {
         let s = NSAttributedString(string: text, attributes: [
             .font: font,
-            .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)])
+            .foregroundColor: Theme.color(Palette.captionInk)])
         let sz = s.size()
         let x = rightAligned ? origin.x - sz.width - 12 : origin.x
         let y = anchorTop ? origin.y : origin.y - sz.height - 6
         let r = NSRect(x: x, y: y, width: sz.width + 12, height: sz.height + 6)
-        NSColor(calibratedWhite: 0, alpha: 0.58).setFill()
+        Theme.color(Palette.chipBackdrop).setFill()
         NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
         s.draw(at: NSPoint(x: r.minX + 6, y: r.minY + 3))
     }

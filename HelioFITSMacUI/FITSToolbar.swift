@@ -108,10 +108,10 @@ final class FITSToolbar {
         // Dark appearance so the sliders/checkbox render with dark-mode contrast
         // on our dark panel rather than washed-out light-mode controls.
         panel.appearance = NSAppearance(named: .darkAqua)
-        panel.layer?.backgroundColor = NSColor(calibratedWhite: 0.09, alpha: 0.97).cgColor
+        panel.layer?.backgroundColor = Theme.color(Palette.panelFill).cgColor
         panel.layer?.cornerRadius = 8
         panel.layer?.borderWidth = 1
-        panel.layer?.borderColor = NSColor(calibratedWhite: 0.25, alpha: 1).cgColor
+        panel.layer?.borderColor = Theme.color(Palette.cardStroke).cgColor
         panel.isHidden = true
 
         func row(_ name: String, _ s: NSSlider, _ lo: Double, _ hi: Double,
@@ -120,24 +120,27 @@ final class FITSToolbar {
             s.target = target; s.action = stretchSel
             s.isContinuous = true
             s.toolTip = tip
+            s.setAccessibilityLabel(name == "Gamma" ? "Gamma" : name + " clip")
             let l = NSTextField(labelWithString: name)
-            l.font = .systemFont(ofSize: 11)
-            l.textColor = NSColor(calibratedWhite: 0.8, alpha: 1)
+            l.font = Theme.font(11)
+            l.textColor = Theme.color(Palette.panelLabel)
             l.setContentHuggingPriority(.required, for: .horizontal)
             let st = NSStackView(views: [l, s])
             st.spacing = 6
             return st
         }
         cLog.target = target; cLog.action = stretchSel
+        cLog.setAccessibilityLabel("Logarithmic scaling")
         cLog.toolTip = "Logarithmic scaling: brings out faint off-limb structure"
         reset.target = target; reset.action = resetSel
         reset.bezelStyle = .rounded
         reset.toolTip = "Back to the default stretch"
 
-        limitsLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        limitsLabel.textColor = NSColor(calibratedWhite: 0.85, alpha: 1)
+        limitsLabel.font = Theme.mono(11)
+        limitsLabel.textColor = Theme.color(Palette.limitsText)
         limitsLabel.lineBreakMode = .byTruncatingTail
         limitsLabel.toolTip = "The data values the display is currently clipped to"
+        limitsLabel.setAccessibilityLabel("Display limits")
 
         let bottom = NSStackView(views: [cLog, reset])
         bottom.spacing = 10
@@ -147,15 +150,15 @@ final class FITSToolbar {
         if let limitsSel {
             func field(_ f: NSTextField, _ name: String, _ tip: String) -> NSStackView {
                 f.target = target; f.action = limitsSel
-                f.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                f.font = Theme.mono(11)
                 f.placeholderString = "auto"
                 f.toolTip = tip
                 f.setAccessibilityLabel(name)
                 f.translatesAutoresizingMaskIntoConstraints = false
                 f.widthAnchor.constraint(equalToConstant: 76).isActive = true
                 let l = NSTextField(labelWithString: name)
-                l.font = .systemFont(ofSize: 11)
-                l.textColor = NSColor(calibratedWhite: 0.8, alpha: 1)
+                l.font = Theme.font(11)
+                l.textColor = Theme.color(Palette.panelLabel)
                 l.setContentHuggingPriority(.required, for: .horizontal)
                 let st = NSStackView(views: [l, f])
                 st.spacing = 4
@@ -350,14 +353,14 @@ final class FITSToolbar {
     private func paint(_ b: NSButton, on: Bool, enabled: Bool) {
         b.isEnabled = enabled
         b.setAccessibilityValue(on ? "on" : "off")   // state is otherwise only a fill colour
-        let bg: NSColor = on ? NSColor(calibratedRed: 0.86, green: 0.63, blue: 0.20, alpha: 0.97)
-                             : NSColor(calibratedWhite: 0.11, alpha: 0.92)
-        let fg: NSColor = on ? .black : (enabled ? .white : NSColor(calibratedWhite: 1, alpha: 0.35))
+        let bg: NSColor = on ? Theme.color(Palette.toggleOn)
+                             : Theme.color(Palette.toggleOff)
+        let fg: NSColor = on ? .black : (enabled ? .white : Theme.color(Palette.toggleDisabledText))
         b.layer?.backgroundColor = bg.withAlphaComponent(enabled ? bg.alphaComponent : 0.55).cgColor
-        b.layer?.borderColor = NSColor(calibratedWhite: 1, alpha: on ? 0.5 : 0.28).cgColor
+        b.layer?.borderColor = Theme.color(on ? Palette.chipBorderOn : Palette.chipBorderOff).cgColor
         b.attributedTitle = NSAttributedString(string: b.title, attributes: [
             .foregroundColor: fg,
-            .font: NSFont.systemFont(ofSize: 13),
+            .font: Theme.font(13),
             .paragraphStyle: {
                 let p = NSMutableParagraphStyle(); p.alignment = .center; return p
             }(),

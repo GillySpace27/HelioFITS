@@ -74,6 +74,19 @@ public enum Palette {
     public static let headerText = RGBA.rgb(0.62, 0.89, 0.69)
     public static let cardNoteText = RGBA.gray(0.75)                   // "no image" card body
 
+    // MARK: other canvas and slider drawing (added in the HF-18 sweep; values copied from the literals)
+    public static let sliderHistogramBackdrop = RGBA.gray(0.14)
+    public static let sliderHistogramBars = RGBA.gray(0.55)
+    public static let rangeBandFill = RGBA.rgb(0.86, 0.63, 0.20, 0.14)
+    public static let rangeHandle = RGBA.rgb(0.86, 0.63, 0.20)
+    public static let swipeLine = RGBA.gray(1, 0.9)                    // divider line and grip outline
+    public static let swipeGripFill = RGBA.gray(0.1, 0.85)
+    public static let ringInk = RGBA.rgb(0.55, 0.85, 1, 0.95)          // plane-of-sky rings and spokes
+    public static let spokeUnder = RGBA.gray(0, 0.5)
+    public static let ringUnder = RGBA.gray(0, 0.6)
+    public static let selectionDim = RGBA.rgb(1, 0.83, 0.47, 0.7)
+    public static let colorbarBorder = RGBA.gray(1, 0.45)
+
     // MARK: iOS viewer (ViewerView.swift)
     public static let iosCaptionText = RGBA.gray(0.8)
     public static let iosReadoutBackdrop = RGBA.gray(0, 0.7)

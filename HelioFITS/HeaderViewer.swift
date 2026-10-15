@@ -257,9 +257,9 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = true
-        tv.backgroundColor = NSColor(calibratedWhite: 0.05, alpha: 1)
-        tv.textColor = NSColor(calibratedRed: 0.62, green: 0.89, blue: 0.69, alpha: 1)
-        tv.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        tv.backgroundColor = Theme.color(Palette.headerBackground)
+        tv.textColor = Theme.color(Palette.headerText)
+        tv.font = Theme.mono(12)
         tv.textContainerInset = NSSize(width: 14, height: 12)
         tv.string = headerText
         c.headerView = tv
@@ -600,7 +600,7 @@ private final class ProvenancePanel: NSViewController {
         tv.isEditable = false
         tv.isSelectable = true
         tv.drawsBackground = false
-        tv.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        tv.font = Theme.mono(11)
         tv.textContainerInset = NSSize(width: 4, height: 4)
         let scroll = NSScrollView()
         scroll.documentView = tv
@@ -610,7 +610,7 @@ private final class ProvenancePanel: NSViewController {
         tv.isVerticallyResizable = true
 
         let title = NSTextField(labelWithString: "Saved PNGs carry this recipe")
-        title.font = .boldSystemFont(ofSize: 12)
+        title.font = Theme.bold(12)
         let copy = NSButton(title: "Copy", target: self, action: #selector(copyRecipe(_:)))
         let burn = NSButton(checkboxWithTitle: "Add a caption strip under saved PNGs",
                             target: self, action: #selector(burnChanged(_:)))
