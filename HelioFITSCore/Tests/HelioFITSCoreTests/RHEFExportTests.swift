@@ -25,4 +25,15 @@ struct RHEFExportTests {
     func emptyModel() {
         #expect(FITSPreviewModel().rhefPNG(fileName: "x.fits", appVersion: "test") == nil)
     }
+
+    @Test("an RHEF movie frame is a real image, and the note carries the stamp")
+    func movieFrame() throws {
+        let m = FITSPreviewModel.load(path: RepoPaths.fixture("synthetic_cube.fits").path, maxSide: 128)
+        #expect(m.pages.count > 1)
+        for i in m.pages.indices { #expect(m.rhefFrame(page: i) != nil) }
+        #expect(m.rhefFrame(page: m.pages.count) == nil)
+        let note = m.rhefMovieNote(fileName: "c.fits", appVersion: "test", count: m.pages.count, fps: 5, folder: false)
+        #expect(note.contains("oRHEF-2.0"))
+        #expect(note.contains("not a calibrated radiance"))
+    }
 }

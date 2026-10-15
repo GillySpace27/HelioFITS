@@ -43,6 +43,7 @@ struct HelioFITSApp: App {
             CommandGroup(after: .newItem) {
                 Divider()
                 Button("Export Movie…") { HeaderWindowController.shared.exportMovie(nil) }
+                Button("Export RHEF Movie…") { HeaderWindowController.shared.exportRHEFMovie(nil) }
                 Button("Show in Finder") { HeaderWindowController.shared.revealInFinder(nil) }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Copy Path") { HeaderWindowController.shared.copyPath(nil) }

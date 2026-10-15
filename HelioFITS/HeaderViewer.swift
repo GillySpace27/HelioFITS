@@ -607,7 +607,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     /// File > Export Movie (HF-14): the playing frames, or the layers of this file, as H.264,
     /// HEVC or an animated PNG with the provenance in the movie's description. Refuses to
     /// overwrite. Frames are a visualization, not a calibrated radiance.
-    @objc func exportMovie(_ sender: Any?) {
+    /// The same movie with every frame run through RHEF (RH-18), stamped and described as such.
+    @objc func exportRHEFMovie(_ sender: Any?) { exportMovie(sender, rhef: true) }
+
+    @objc func exportMovie(_ sender: Any?) { exportMovie(sender, rhef: false) }
+
+    private func exportMovie(_ sender: Any?, rhef: Bool) {
         guard let w = NSApp.keyWindow, let c = ctx[ObjectIdentifier(w)] else { NSSound.beep(); return }
         let count = c.sequence?.count ?? c.model.count
         guard count > 1 else { NSSound.beep(); return }
@@ -624,8 +629,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let diff = c.model.mode == .diff
         let layers = c.model.pages.map { $0.image }
         let fps = c.fps
-        let note = Provenance(model: c.model, fileName: c.url.lastPathComponent,
-                              appVersion: Provenance.appVersion()).text
+        let model = c.model
+        let note = rhef
+            ? model.rhefMovieNote(fileName: c.url.lastPathComponent, appVersion: Provenance.appVersion(),
+                                  count: count, fps: fps, folder: seq != nil)
+            : Provenance(model: c.model, fileName: c.url.lastPathComponent,
+                         appVersion: Provenance.appVersion()).text
             + "\nframes: \(count) at \(fps) per second" + (seq != nil ? " (a folder, in DATE-OBS order)" : " (the layers of one file)")
         panel.beginSheetModal(for: w) { resp in
             guard resp == .OK, let picked = panel.url else { return }
@@ -634,6 +643,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             Task.detached {
                 do {
                     try await MovieExporter.write(count: count, fps: fps, format: format, to: url, description: note) { i in
+                        if rhef {
+                            if let seq { return seq.frames.indices.contains(i) ? model.rhefFrame(file: seq.frames[i].path) : nil }
+                            return model.rhefFrame(page: i)
+                        }
                         if let seq { return diff ? (seq.difference(i) ?? seq.image(i)) : seq.image(i) }
                         return layers.indices.contains(i) ? layers[i] : nil
                     }
