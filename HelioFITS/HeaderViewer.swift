@@ -437,7 +437,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
     /// The exact bytes on screen, named for the HDU they came from.
     private func pngExport(_ c: Ctx) -> (data: Data, filename: String)? {
         guard let img = c.model.image(),
-              let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return nil }
+              var png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return nil }
+        if let stamp = c.model.rhefStamp {   // RH-11: which RHEF made these pixels
+            png = FITSRenderer.pngAddingText(png, keyword: FITSRenderer.rhefPNGKeyword, text: stamp)
+        }
         let base = c.url.deletingPathExtension().lastPathComponent
         var suffix = ""
         if let p = c.model.page, c.model.count > 1 {
