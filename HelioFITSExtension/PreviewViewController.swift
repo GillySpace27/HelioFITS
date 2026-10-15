@@ -57,7 +57,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 700))
         root.wantsLayer = true
         root.appearance = NSAppearance(named: .darkAqua)   // dark-mode controls on a dark preview
-        root.layer?.backgroundColor = NSColor(calibratedWhite: 0.07, alpha: 1).cgColor
+        root.layer?.backgroundColor = Theme.color(Palette.canvas).cgColor
 
         canvas.translatesAutoresizingMaskIntoConstraints = false
         canvas.onScrollStep = { [weak self] d in
@@ -117,10 +117,10 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     private func buildDrawer(in root: NSView) {
         drawer.wantsLayer = true
-        drawer.layer?.backgroundColor = NSColor(calibratedWhite: 0.07, alpha: 0.96).cgColor
+        drawer.layer?.backgroundColor = Theme.color(Palette.statsCardFill).cgColor
         drawer.layer?.cornerRadius = 8
         drawer.layer?.borderWidth = 1
-        drawer.layer?.borderColor = NSColor(calibratedWhite: 0.25, alpha: 1).cgColor
+        drawer.layer?.borderColor = Theme.color(Palette.cardStroke).cgColor
         drawer.isHidden = true
         drawer.translatesAutoresizingMaskIntoConstraints = false
 
@@ -141,8 +141,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         drawerText.isEditable = false
         drawerText.isSelectable = true
         drawerText.drawsBackground = false
-        drawerText.textColor = NSColor(calibratedRed: 0.62, green: 0.89, blue: 0.69, alpha: 1)
-        drawerText.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        drawerText.textColor = Theme.color(Palette.headerText)
+        drawerText.font = Theme.mono(11)
         drawerText.textContainerInset = NSSize(width: 6, height: 6)
         drawerText.isVerticallyResizable = true
         drawerText.isHorizontallyResizable = false
@@ -243,8 +243,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         canvas.image = nil
         canvas.caption = title
         let label = NSTextField(wrappingLabelWithString: body)
-        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.textColor = NSColor(calibratedWhite: 0.75, alpha: 1)
+        label.font = Theme.mono(11)
+        label.textColor = Theme.color(Palette.cardNoteText)
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(label)

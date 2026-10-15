@@ -83,6 +83,15 @@ final class FITSImageCanvas: NSView {
     var onHover: ((Double, Double)?) -> Void = { _ in }     // normalized, or nil
     var onRegion: (((u0: Double, v0: Double, u1: Double, v1: Double)?) -> Void)?
     var onZoomChanged: (() -> Void)?
+
+    /// Keyboard readout cursor (HF-18), in normalized image coordinates so it stays pinned to the
+    /// data under zoom and pan. nil until the first Option-arrow. Not an `on*` callback: it reports
+    /// through onHover and onRegion, which every host already subscribes to.
+    private(set) var keyCursor: ReadoutCursor?
+    /// An extending box asks the host for its statistics after this many seconds of quiet, so a
+    /// held key does not run the full-resolution statistic on every repeat. 0 reports at once.
+    var keyStatsDelay: TimeInterval = 0.12
+    private var keyStatsWork: DispatchWorkItem?
     /// Fired when the compare view changes without a mouse event over the image:
     /// the blink flips, or the swipe divider is dragged. Hosts re-sample the readout.
     var onCompareChanged: (() -> Void)?
@@ -99,8 +108,9 @@ final class FITSImageCanvas: NSView {
     override func accessibilityLabel() -> String? { caption.isEmpty ? "FITS image" : caption }
     override func accessibilityValue() -> Any? { readout }
     override func accessibilityHelp() -> String? {
-        "Up and Down arrows blink between layers. Command plus, minus, and 0 zoom. Command-C copies the pixel readout. "
-            + "Option-Left and Option-Right move a swipe divider."
+        "Up and Down arrows blink between layers. Option plus an arrow moves a readout cursor; Option-Shift plus an arrow measures a box; Escape clears them. "
+            + "With a swipe divider showing, Option-Left and Option-Right move the divider instead. "
+            + "Command plus, minus, and 0 zoom. Command-C copies the pixel readout."
     }
 
     private(set) var zoom: CGFloat = 1              // 1 = fit
@@ -267,8 +277,8 @@ final class FITSImageCanvas: NSView {
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         para.lineBreakMode = .byWordWrapping
-        return [.font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1),
+        return [.font: Theme.font(11),
+                .foregroundColor: Theme.color(Palette.captionInk),
                 .paragraphStyle: para]
     }
 
@@ -349,6 +359,78 @@ final class FITSImageCanvas: NSView {
         needsDisplay = true
     }
 
+    // MARK: keyboard readout cursor (HF-18)
+    //
+    // Option-arrow moves a crosshair and reports through onHover, the path the mouse uses, so
+    // every host's readout works unchanged. Option-Shift-arrow extends a box from where the
+    // crosshair was and reports through onRegion, the path a mouse drag uses. Option-Command-arrow
+    // moves one displayed pixel. Plain arrows still blink layers; Escape clears. The Quick Look
+    // host leaves key handling to Finder, so this is guaranteed in the viewer window only.
+
+    private static func cursorDirection(_ chars: String) -> ReadoutCursor.Direction? {
+        guard let scalar = chars.unicodeScalars.first else { return nil }
+        switch Int(scalar.value) {
+        case NSUpArrowFunctionKey:    return .up
+        case NSDownArrowFunctionKey:  return .down
+        case NSLeftArrowFunctionKey:  return .left
+        case NSRightArrowFunctionKey: return .right
+        default: return nil
+        }
+    }
+
+    private func moveKeyCursor(_ d: ReadoutCursor.Direction, extend: Bool, fine: Bool) {
+        guard let sz = image?.size, sz.width > 0 else { return }
+        var c: ReadoutCursor
+        if let k = keyCursor {
+            c = k
+        } else if let p = lastPointer, let n = normalized(p) {
+            c = ReadoutCursor(u: n.u, v: n.v)
+        } else {
+            c = ReadoutCursor()
+        }
+        let step = ReadoutCursor.step(fine: fine, imageWidth: Double(sz.width))
+        if extend { c.extend(d, step: step) } else { c.move(d, step: step) }
+        keyCursor = c
+        onHover((c.u, c.v))
+        if let b = c.box {
+            selection = (b.u0, b.v0, b.u1, b.v1)
+            reportKeyRegion()
+        } else if selection != nil {
+            selection = nil
+            keyStatsWork?.cancel()
+            onRegion?(nil)
+        }
+        needsDisplay = true
+        NSAccessibility.post(element: self, notification: .valueChanged)
+    }
+
+    private func reportKeyRegion() {
+        keyStatsWork?.cancel()
+        let send = { [weak self] in
+            guard let self, let s = self.selection else { return }
+            self.onRegion?(s)
+        }
+        if keyStatsDelay <= 0 { send(); return }
+        let w = DispatchWorkItem(block: send)
+        keyStatsWork = w
+        DispatchQueue.main.asyncAfter(deadline: .now() + keyStatsDelay, execute: w)
+    }
+
+    /// Escape: drop the crosshair and any box. Returns whether anything was cleared.
+    @discardableResult
+    func clearKeyCursor() -> Bool {
+        guard keyCursor != nil || selection != nil else { return false }
+        keyStatsWork?.cancel()
+        let hadSelection = selection != nil
+        keyCursor = nil
+        selection = nil
+        if hadSelection { onRegion?(nil) }
+        if mouseInside, lastPointer != nil { refreshReadout() } else { onHover(nil) }
+        needsDisplay = true
+        NSAccessibility.post(element: self, notification: .valueChanged)
+        return true
+    }
+
     // MARK: keyboard
     //
     // The preview was mouse-only - no way to blink layers, zoom, or read the
@@ -388,6 +470,13 @@ final class FITSImageCanvas: NSView {
             onCompareChanged?()
             return
         }
+        // HF-18: Option-arrow drives the readout cursor. This test comes BEFORE the plain-arrow
+        // block below, which steps layers on any arrow key.
+        if e.modifierFlags.contains(.option), let dir = Self.cursorDirection(chars) {
+            moveKeyCursor(dir, extend: e.modifierFlags.contains(.shift), fine: e.modifierFlags.contains(.command))
+            return
+        }
+        if e.keyCode == 53, clearKeyCursor() { return }          // Escape
         if pageCount > 1, let scalar = chars.unicodeScalars.first {
             switch Int(scalar.value) {
             case NSUpArrowFunctionKey, NSRightArrowFunctionKey:   onScrollStep?(1);  return
@@ -486,6 +575,7 @@ final class FITSImageCanvas: NSView {
         cmdDown = e.modifierFlags.contains(.command)
         cursorForMode.set()
         lastPointer = canvasPoint(convert(e.locationInWindow, from: nil))
+        if keyCursor != nil { keyCursor = nil; needsDisplay = true }     // the mouse takes the readout back
         if compareMode != nil { needsDisplay = true }          // the linked crosshair follows the pointer
         guard dragStart == nil, panStart == nil else { return }
         onHover(normalized(lastPointer!))
@@ -495,6 +585,7 @@ final class FITSImageCanvas: NSView {
     /// pointer changes without a mouse event: zoom, pan (#13), and blinking to
     /// another HDU, which is the app's primary navigation.
     func refreshReadout() {
+        if let k = keyCursor { onHover((k.u, k.v)); return }      // HF-18: the keyboard cursor owns the readout
         guard mouseInside, let p = lastPointer else { return }
         onHover(normalized(p))
     }
@@ -507,7 +598,7 @@ final class FITSImageCanvas: NSView {
     override func mouseExited(with e: NSEvent) {
         mouseInside = false
         lastPointer = nil
-        onHover(nil)
+        if keyCursor == nil { onHover(nil) }                             // a keyboard cursor keeps its readout
         NSCursor.arrow.set()
     }
 
@@ -572,7 +663,7 @@ final class FITSImageCanvas: NSView {
     // MARK: drawing
 
     override func draw(_ dirty: NSRect) {
-        NSColor(calibratedWhite: 0.07, alpha: 1).setFill()
+        Theme.color(Palette.canvas).setFill()
         bounds.fill()
 
         if showsCaption, !caption.isEmpty {
@@ -603,7 +694,7 @@ final class FITSImageCanvas: NSView {
             // Bottom-LEFT: top-right now belongs to the statistics card, and the
             // top strip already holds the caption.
             chip(String(format: "%.1f×", zoom), at: NSPoint(x: 8, y: bounds.height - 10),
-                 font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+                 font: Theme.mono(12))
         }
         if let t = readout {
             // The readout IS the product for a scientist - it was the smallest type
@@ -613,7 +704,7 @@ final class FITSImageCanvas: NSView {
             // filter menu and the Limb/Diff/Stretch buttons. contentBox() starts
             // below the caption strip, so this clears that too.
             chip(t, at: NSPoint(x: contentBox().minX + 8, y: contentBox().minY + 8),
-                 font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+                 font: Theme.mono(13),
                  anchorTop: true)
         }
         // The hint describes the gestures available RIGHT NOW. It also reappears
@@ -624,8 +715,8 @@ final class FITSImageCanvas: NSView {
         // pointer to be over the image.
         if let h = hintText(), compactMode || Date() < hintDeadline || cmdDown {
             let s = NSAttributedString(string: h, attributes: [
-                .font: NSFont.systemFont(ofSize: 11),
-                .foregroundColor: NSColor(calibratedWhite: 0.92, alpha: 1)])
+                .font: Theme.font(11),
+                .foregroundColor: Theme.color(Palette.hintText)])
             var sz = s.size()
             sz.width = min(sz.width, bounds.width - 32)      // never overflow the pane
             // Sit ABOVE the toolbar row (filter menu + Limb/Diff/Stretch), which
@@ -636,7 +727,7 @@ final class FITSImageCanvas: NSView {
             let r = NSRect(x: (bounds.width - sz.width) / 2 - 10,
                            y: bounds.height - sz.height - toolbarClearance,
                            width: sz.width + 20, height: sz.height + 7)
-            NSColor(calibratedWhite: 0, alpha: 0.72).setFill()
+            Theme.color(Palette.hintBackdrop).setFill()
             NSBezierPath(roundedRect: r, xRadius: 10, yRadius: 10).fill()
             s.draw(in: NSRect(x: r.minX + 10, y: r.minY + 3.5,
                               width: sz.width, height: sz.height + 2))
@@ -662,7 +753,7 @@ final class FITSImageCanvas: NSView {
         // a full-disk AIA or PUNCH frame is symmetric enough to hide it.
         // A registered compare image is transparent outside its footprint, so lay the
         // background down first and composite over it (opaque images look the same).
-        NSColor(calibratedWhite: 0.07, alpha: 1).setFill()
+        Theme.color(Palette.canvas).setFill()
         contentBox().fill()
         img.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
                  respectFlipped: true, hints: nil)
@@ -675,13 +766,13 @@ final class FITSImageCanvas: NSView {
             over.draw(in: box, from: .zero, operation: .sourceOver, fraction: 1,
                       respectFlipped: true, hints: nil)
             NSGraphicsContext.current?.restoreGraphicsState()
-            NSColor(calibratedWhite: 1, alpha: 0.9).setFill()
+            Theme.color(Palette.swipeLine).setFill()
             NSRect(x: x - 0.5, y: c.minY, width: 1, height: c.height).fill()
             let grip = NSBezierPath(roundedRect: NSRect(x: x - 5, y: c.midY - 14, width: 10, height: 28),
                                     xRadius: 4, yRadius: 4)
-            NSColor(calibratedWhite: 0.1, alpha: 0.85).setFill()
+            Theme.color(Palette.swipeGripFill).setFill()
             grip.fill()
-            NSColor(calibratedWhite: 1, alpha: 0.9).setStroke()
+            Theme.color(Palette.swipeLine).setStroke()
             grip.lineWidth = 1
             grip.stroke()
         }
@@ -698,7 +789,7 @@ final class FITSImageCanvas: NSView {
             // top, so the circle reads over corona AND over black sky.
             let under = NSBezierPath(ovalIn: rect)
             under.lineWidth = 3.5
-            NSColor(calibratedWhite: 0, alpha: 0.85).setStroke()
+            Theme.color(Palette.overlayUnder).setStroke()
             under.stroke()
 
             let over = NSBezierPath(ovalIn: rect)
@@ -712,17 +803,29 @@ final class FITSImageCanvas: NSView {
            let a = viewPoint(u: s.u0, v: s.v0), let b = viewPoint(u: s.u1, v: s.v1) {
             let r = NSRect(x: min(a.x, b.x), y: min(a.y, b.y),
                            width: abs(b.x - a.x), height: abs(b.y - a.y))
-            NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 0.12).setFill()
+            Theme.color(Palette.selectionFill).setFill()
             r.fill()
             let p = NSBezierPath(rect: r)
             p.lineWidth = 1
             p.setLineDash([4, 3], count: 2, phase: 0)
-            NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 1).setStroke()
+            Theme.color(Palette.selectionStroke).setStroke()
             p.stroke()
         }
 
         if let r = rings { drawRings(r) }
         drawCrosshair()
+        if let k = keyCursor, let c = viewPoint(u: k.u, v: k.v) {
+            let arm: CGFloat = 9
+            let cross = NSBezierPath()
+            cross.move(to: NSPoint(x: c.x - arm, y: c.y)); cross.line(to: NSPoint(x: c.x + arm, y: c.y))
+            cross.move(to: NSPoint(x: c.x, y: c.y - arm)); cross.line(to: NSPoint(x: c.x, y: c.y + arm))
+            cross.lineWidth = 3.5
+            Theme.color(Palette.overlayUnder).setStroke()
+            cross.stroke()
+            cross.lineWidth = 1.2
+            Theme.color(Palette.selectionStroke).setStroke()
+            cross.stroke()
+        }
         NSGraphicsContext.current?.restoreGraphicsState()
     }
 
@@ -740,11 +843,11 @@ final class FITSImageCanvas: NSView {
             }
             return p
         }
-        let ink = NSColor(calibratedRed: 0.55, green: 0.85, blue: 1, alpha: 0.95)
+        let ink = Theme.color(Palette.ringInk)
         for sp in r.spokes {
             let p = path(sp.segments)
             p.lineWidth = 2.5
-            NSColor(calibratedWhite: 0, alpha: 0.5).setStroke()
+            Theme.color(Palette.spokeUnder).setStroke()
             p.stroke()
             let q = path(sp.segments)
             q.lineWidth = 0.8
@@ -755,20 +858,20 @@ final class FITSImageCanvas: NSView {
         for ring in r.rings {
             let p = path(ring.segments)
             p.lineWidth = 3.5
-            NSColor(calibratedWhite: 0, alpha: 0.6).setStroke()
+            Theme.color(Palette.ringUnder).setStroke()
             p.stroke()
             let q = path(ring.segments)
             q.lineWidth = 1.2
             ink.setStroke()
             q.stroke()
             if let at = ring.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
-                chip(ring.label, at: v, font: .monospacedSystemFont(ofSize: 10, weight: .regular))
+                chip(ring.label, at: v, font: Theme.mono(10))
             }
         }
         for sp in r.spokes {
             if let at = sp.labelAt, let v = viewPoint(u: Double(at.x), v: Double(at.y)) {
                 chip(String(format: "%.0f\u{00B0}", sp.positionAngleDegrees), at: v,
-                     font: .monospacedSystemFont(ofSize: 9, weight: .regular))
+                     font: Theme.mono(9))
             }
         }
     }
@@ -782,14 +885,14 @@ final class FITSImageCanvas: NSView {
         p.move(to: NSPoint(x: box.minX, y: c.y)); p.line(to: NSPoint(x: box.maxX, y: c.y))
         p.move(to: NSPoint(x: c.x, y: box.minY)); p.line(to: NSPoint(x: c.x, y: box.maxY))
         p.lineWidth = 0.8
-        NSColor(calibratedRed: 1, green: 0.83, blue: 0.47, alpha: 0.7).setStroke()
+        Theme.color(Palette.selectionDim).setStroke()
         p.stroke()
     }
 
     /// "A" and "B" tags so it is always clear which file is being looked at.
     private func drawCompareBadges() {
         let c = contentBox()
-        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+        let font = Theme.mono(12, .semibold)
         switch compareMode {
         case .some(.blink):
             chip(blinkShowsSecond ? "B" : "A", at: NSPoint(x: c.maxX - 8, y: c.minY + 8), font: font,
@@ -811,7 +914,7 @@ final class FITSImageCanvas: NSView {
     /// wording), the colormap as a vertical bar with the brightest colour on top,
     /// and tick labels at the positions the stretch puts those data values.
     private func drawColorbar(_ cb: Colorbar) {
-        let ink = NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)
+        let ink = Theme.color(Palette.captionInk)
         let top = contentBox().minY + 8
         let textWidth = colorbarStripWidth - 14
 
@@ -819,7 +922,7 @@ final class FITSImageCanvas: NSView {
         para.lineBreakMode = .byWordWrapping
         let headText = cb.note.isEmpty ? cb.heading : cb.heading + "\n" + cb.note
         let head = NSAttributedString(string: headText, attributes: [
-            .font: NSFont.systemFont(ofSize: 10), .foregroundColor: ink, .paragraphStyle: para])
+            .font: Theme.font(10), .foregroundColor: ink, .paragraphStyle: para])
         let headOpts: NSString.DrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
         let headH = ceil(head.boundingRect(with: NSSize(width: textWidth, height: 200), options: headOpts).height) + 4
         head.draw(with: NSRect(x: 7, y: top, width: textWidth, height: headH), options: headOpts)
@@ -835,19 +938,19 @@ final class FITSImageCanvas: NSView {
         for i in 0..<n {
             let v = max(0, min(255, Int((1 - (Double(i) + 0.5) / Double(n)) * 255)))
             if let lut = cb.lut {
-                NSColor(calibratedRed: CGFloat(lut[v * 3]) / 255, green: CGFloat(lut[v * 3 + 1]) / 255,
-                        blue: CGFloat(lut[v * 3 + 2]) / 255, alpha: 1).setFill()
+                Theme.color(.rgb(Double(lut[v * 3]) / 255, Double(lut[v * 3 + 1]) / 255,
+                                 Double(lut[v * 3 + 2]) / 255)).setFill()
             } else {
-                NSColor(calibratedWhite: CGFloat(v) / 255, alpha: 1).setFill()
+                Theme.color(.gray(Double(v) / 255)).setFill()
             }
             let y0 = barTop + barH * CGFloat(i) / CGFloat(n)
             NSRect(x: barX, y: y0, width: barW, height: barH / CGFloat(n) + 0.5).fill()
         }
-        NSColor(calibratedWhite: 1, alpha: 0.45).setStroke()
+        Theme.color(Palette.colorbarBorder).setStroke()
         NSBezierPath(rect: NSRect(x: barX, y: barTop, width: barW, height: barH)).stroke()
 
         // Ticks from the bottom up; a label that would sit on the previous one is skipped.
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        let font = Theme.monoDigit(10)
         var lastLabelY = CGFloat.infinity
         for tick in cb.ticks {
             let y = barBottom - CGFloat(tick.t) * barH
@@ -871,12 +974,12 @@ final class FITSImageCanvas: NSView {
                       rightAligned: Bool = false, anchorTop: Bool = false) {
         let s = NSAttributedString(string: text, attributes: [
             .font: font,
-            .foregroundColor: NSColor(calibratedRed: 0.91, green: 0.86, blue: 0.72, alpha: 1)])
+            .foregroundColor: Theme.color(Palette.captionInk)])
         let sz = s.size()
         let x = rightAligned ? origin.x - sz.width - 12 : origin.x
         let y = anchorTop ? origin.y : origin.y - sz.height - 6
         let r = NSRect(x: x, y: y, width: sz.width + 12, height: sz.height + 6)
-        NSColor(calibratedWhite: 0, alpha: 0.58).setFill()
+        Theme.color(Palette.chipBackdrop).setFill()
         NSBezierPath(roundedRect: r, xRadius: 5, yRadius: 5).fill()
         s.draw(at: NSPoint(x: r.minX + 6, y: r.minY + 3))
     }
