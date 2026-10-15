@@ -308,7 +308,15 @@ public final class FITSPreviewModel {
         // Gate on canDiff too: image() silently falls back to the plain image on
         // a non-diffable HDU, so an ungated suffix labels it Δ while showing it.
         return p.caption + (mode == .diff && canDiff ? "   ·   Δ − previous HDU" : "")
+            + (rhefShown ? "   ·   " + FITSRenderer.rhefChipText : "")
     }
+
+    /// True when the image on screen is the RHEF-filtered one (not the plain image
+    /// shown while the filter is still rendering). Gates the chip and the stamp (RH-11).
+    public var rhefShown: Bool { filter == .rhef && filterCache[filterKey] != nil }
+
+    /// The RH-11 stamp line for an export of what is on screen; nil when RHEF is not shown.
+    public var rhefStamp: String? { rhefShown ? FITSRenderer.rhefStamp() : nil }
 
     /// The image to draw for the current HDU + mode. A filter, when set, wins
     /// over the plain/stretch/diff mode — it's a distinct way of looking at the
@@ -700,7 +708,8 @@ public final class FITSPreviewModel {
     /// any window and it keeps a big frame from costing seconds).
     public static func rhefValues(buffer f: Buffer, res: FITSRenderer.Result,
                            wcs: FITSRenderer.SolarWCS?,
-                           upsilon: Double = 0.35, upsilonHigh: Double? = nil) -> (w: Int, h: Int, vals: [Float])? {
+                           upsilon: Double = FITSRenderer.rhefUpsilon,
+                           upsilonHigh: Double? = nil) -> (w: Int, h: Int, vals: [Float])? {
         let cap = 1024
         let scale = max(1, (max(f.w, f.h) + cap - 1) / cap)   // full-res px per grid cell
         let gw = f.w / scale, gh = f.h / scale
@@ -872,6 +881,8 @@ public final class FITSPreviewModel {
         # key drops 2 bits of the float32 pattern; GEOM-GRID HelioFITS filters a grid of at
         # most 1024 px a side; DTYPE-IN float32 out. RHEF output is a visualization.
         rhef_data = m.data   # filtered values: per-radius rank in (0, 1]
+        # HelioFITS showed: \(FITSRenderer.rhefStamp())
+        # RHEF output is a visualization, not a calibrated radiance.
 
         """
     }
