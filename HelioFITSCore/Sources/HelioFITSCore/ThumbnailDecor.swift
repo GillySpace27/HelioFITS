@@ -16,7 +16,6 @@ extension FITSRenderer {
     /// "AIA_3 171" from the shim's header summary, or nil when the file names no
     /// instrument or telescope. A non-positive or non-numeric WAVELNTH is left out.
     public static func thumbnailLabel(fromHeader h: String) -> String? {
-        if !h.isEmpty { return nil }   // RED ON PURPOSE: no labels
         guard var name = headerVal(h, "INSTRUME") ?? headerVal(h, "TELESCOP") else { return nil }
         if name.count > 14 { name = String(name.prefix(13)) + "…" }
         if let w = headerVal(h, "WAVELNTH").flatMap(Double.init), w > 0, w.isFinite {
