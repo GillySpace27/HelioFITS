@@ -86,7 +86,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
                             resetSel: #selector(resetStretch), filterSel: #selector(filterChanged),
                             limitsSel: #selector(limitsChanged(_:)), ringsSel: #selector(toggleRings),
-                            headerSel: #selector(toggleHeader))
+                            headerSel: #selector(toggleHeader), swipeSel: #selector(toggleSwipe),
+                            playSel: #selector(togglePlay))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -261,6 +262,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     @objc private func toggleLimb() { if model.toggleLimb() { refresh() } }
     @objc private func toggleDiff() { if model.toggleDiff() { refresh() } }
     @objc private func toggleRings() { if model.toggleRings() { refresh() } }
+    @objc private func toggleSwipe() { if model.toggleBeforeAfter() { refresh() } }
     @objc private func toggleTune() { if model.toggleStretch() { refresh() } }
     @objc private func toggleHeader() {
         tools.headerOn.toggle()
@@ -297,9 +299,47 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         stats.needsDisplay = true
     }
 
+    /// Play (HF-14): step through the layers at 5 per second, looping. Never starts by itself,
+    /// and stops when the preview goes away.
+    private var playTimer: Timer?
+
+    @objc private func togglePlay() {
+        if let t = playTimer {
+            t.invalidate(); playTimer = nil
+        } else if model.count > 1 {
+            canvas.selection = nil
+            stats.isHidden = true
+            let t = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                if !self.model.step(1) { self.model.select(page: 0) }
+                self.refresh()
+            }
+            RunLoop.main.add(t, forMode: .common)
+            playTimer = t
+        }
+        tools.playOn = playTimer != nil
+        tools.sync(model: model)
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        playTimer?.invalidate(); playTimer = nil
+        tools.playOn = false
+    }
+
     private func refresh() {
         model.prefetchFullRes()     // exact readout/statistics for this HDU
         canvas.image = model.image().map(NSImage.init)
+        // Before and after (HF-19): the unfiltered image under the filter, with a divider.
+        if model.beforeAfterShown {
+            canvas.image = model.unfilteredImage().map(NSImage.init)
+            canvas.compareImage = model.image().map(NSImage.init)
+            canvas.compareMode = .swipe
+            canvas.swipeLabels = ("Raw", model.filter.label)
+        } else {
+            canvas.compareMode = nil
+            canvas.compareImage = nil
+        }
         let pins = SharedSettings.pinnedKeywords()
         canvas.caption = model.caption(pinned: pins)
         canvas.limb = compact ? nil : model.limbCircle()

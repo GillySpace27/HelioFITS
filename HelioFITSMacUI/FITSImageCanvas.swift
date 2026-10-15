@@ -59,6 +59,9 @@ final class FITSImageCanvas: NSView {
     var compareMode: FITSPreviewModel.CompareMode? { didSet { updateBlinkTimer(); needsDisplay = true } }
     /// Where the swipe divider sits, as a fraction of the image area's width.
     var swipeFraction: CGFloat = 0.5 { didSet { needsDisplay = true } }
+    /// Tags either side of the swipe divider: "A" and "B" for a compare, "Raw" and
+    /// the filter's name for the before and after swipe (HF-19).
+    var swipeLabels: (left: String, right: String) = ("A", "B") { didSet { needsDisplay = true } }
     /// Blink: which image is up, and whether the timer is running. Blink has an off
     /// switch (`blinkPaused`), and does not start by itself when the system asks for
     /// reduced motion; an option-click on the image flips it by hand in either case.
@@ -105,7 +108,9 @@ final class FITSImageCanvas: NSView {
     override func accessibilityLabel() -> String? { caption.isEmpty ? "FITS image" : caption }
     override func accessibilityValue() -> Any? { readout }
     override func accessibilityHelp() -> String? {
-        "Up and Down arrows blink between layers. Option plus an arrow moves a readout cursor; Option-Shift plus an arrow measures a box; Escape clears them. Command plus, minus, and 0 zoom. Command-C copies the pixel readout."
+        "Up and Down arrows blink between layers. Option plus an arrow moves a readout cursor; Option-Shift plus an arrow measures a box; Escape clears them. "
+            + "With a swipe divider showing, Option-Left and Option-Right move the divider instead. "
+            + "Command plus, minus, and 0 zoom. Command-C copies the pixel readout."
     }
 
     private(set) var zoom: CGFloat = 1              // 1 = fit
@@ -455,6 +460,15 @@ final class FITSImageCanvas: NSView {
                 return
             default: break
             }
+        }
+        // Option-Left and Option-Right move the swipe divider (HF-19), so it is not mouse-only.
+        if compareMode == .swipe, compareImage != nil, e.modifierFlags.contains(.option),
+           let scalar = chars.unicodeScalars.first,
+           Int(scalar.value) == NSLeftArrowFunctionKey || Int(scalar.value) == NSRightArrowFunctionKey {
+            let d: CGFloat = Int(scalar.value) == NSLeftArrowFunctionKey ? -0.05 : 0.05
+            swipeFraction = min(max(swipeFraction + d, 0), 1)
+            onCompareChanged?()
+            return
         }
         // HF-18: Option-arrow drives the readout cursor. This test comes BEFORE the plain-arrow
         // block below, which steps layers on any arrow key.
@@ -885,8 +899,8 @@ final class FITSImageCanvas: NSView {
                  rightAligned: true, anchorTop: true)
         case .some(.swipe):
             let x = swipeDividerX()
-            chip("A", at: NSPoint(x: x - 12, y: c.minY + 8), font: font, rightAligned: true, anchorTop: true)
-            chip("B", at: NSPoint(x: x + 12, y: c.minY + 8), font: font, anchorTop: true)
+            chip(swipeLabels.left, at: NSPoint(x: x - 12, y: c.minY + 8), font: font, rightAligned: true, anchorTop: true)
+            chip(swipeLabels.right, at: NSPoint(x: x + 12, y: c.minY + 8), font: font, anchorTop: true)
         case .some(.sideBySide):
             chip("A", at: NSPoint(x: c.maxX - 8, y: c.minY + 8), font: font, rightAligned: true, anchorTop: true)
             chip("B", at: NSPoint(x: c.maxX + comparePanelShift - 8, y: c.minY + 8),

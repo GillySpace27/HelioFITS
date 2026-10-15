@@ -66,6 +66,7 @@ final class Viewer: ObservableObject, Identifiable {
     deinit {
         if scoped { url.stopAccessingSecurityScopedResource() }
         if compareScoped { compareURL?.stopAccessingSecurityScopedResource() }
+        playTimer?.invalidate()
     }
 
     var name: String { url.lastPathComponent }
@@ -76,11 +77,39 @@ final class Viewer: ObservableObject, Identifiable {
         caption = model.caption(pinned: SharedSettings.pinnedKeywords(in: UserDefaults.standard))
         colorbar = model.colorbar(tickCount: 5)
         rings = model.ringsOn ? model.rings() : nil
-        compareImage = model.compareModel == nil ? nil : model.registeredCompareImage()
+        compareImage = model.canvasCompare()?.image
         objectWillChange.send()
     }
 
     func step(_ d: Int) { if model.step(d) { readout = nil; refresh() } }
+
+    // MARK: play (HF-14)
+
+    /// Layers playing as a loop; never started by the app itself.
+    @Published private(set) var playing = false
+    private var playTimer: Timer?
+    static let playFPS = 5.0
+
+    func togglePlay() {
+        if let t = playTimer {
+            t.invalidate()
+            playTimer = nil
+            playing = false
+            return
+        }
+        guard model.count > 1 else { return }
+        let t = Timer(timeInterval: 1 / Self.playFPS, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if !self.model.step(1) { self.model.select(page: 0) }
+                self.readout = nil
+                self.refresh()
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        playTimer = t
+        playing = true
+    }
     func select(page: Int) { model.select(page: page); readout = nil; refresh() }
 
     func sample(u: Double, v: Double) {
@@ -186,7 +215,9 @@ struct ViewerView: View {
                                compare: viewer.compareImage, swipe: swipe,
                                onSample: { viewer.sample(u: $0, v: $1) },
                                onSwipe: { viewer.step($0) })
-                    if viewer.compareImage != nil { compareStrip }
+                    if viewer.compareImage != nil {
+                        if viewer.model.compareModel == nil { revealStrip } else { compareStrip }
+                    }
                     if let bar = viewer.colorbar {
                         ColorbarStrip(bar: bar).padding(.horizontal, 16).padding(.top, 6)
                     }
@@ -240,6 +271,17 @@ struct ViewerView: View {
         .padding(.horizontal, 16).padding(.top, 6)
     }
 
+    /// Reveal wipe (RH-13): the RHEF image left of the divider, the plain image right of it.
+    private var revealStrip: some View {
+        HStack(spacing: 8) {
+            Text("RHEF").font(.system(.footnote, design: .monospaced).weight(.semibold))
+            Slider(value: $swipe, in: 0...1).accessibilityLabel("Reveal divider between RHEF and the plain image")
+            Text("plain").font(.system(.footnote, design: .monospaced).weight(.semibold))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16).padding(.top, 6)
+    }
+
     @ToolbarContentBuilder
     private var bottomBar: some ToolbarContent {
         let m = viewer.model
@@ -254,15 +296,21 @@ struct ViewerView: View {
                 }
                 Button { viewer.step(1) } label: { Image(systemName: "chevron.right") }
                     .disabled(m.cur >= m.count - 1).accessibilityLabel("Next layer")
+                Button { viewer.togglePlay() } label: {
+                    Image(systemName: viewer.playing ? "pause.fill" : "play.fill")
+                }
+                .accessibilityLabel(viewer.playing ? "Pause layers" : "Play layers as a movie")
             }
             Spacer()
             Menu {
                 Picker("Filter", selection: Binding(get: { m.filter }, set: { if m.setFilter($0) { viewer.refresh() } })) {
-                    Text("No filter").tag(FITSPreviewModel.Filter.none)
-                    Text("RHEF: reveal faint corona").tag(FITSPreviewModel.Filter.rhef)
+                    ForEach(FITSPreviewModel.Filter.allCases, id: \.self) { f in
+                        Text(f.menuTitle).tag(f)
+                    }
                 }
+                Text(FITSPreviewModel.Filter.gridNote)
             } label: {
-                Label(m.filter == .rhef ? "RHEF" : "Filter", systemImage: "camera.filters")
+                Label(m.filter == .none ? "Filter" : m.filter.label, systemImage: "camera.filters")
             }
             Toggle(isOn: Binding(get: { m.limbOn }, set: { if $0 != m.limbOn, m.toggleLimb() { viewer.refresh() } })) {
                 Label("Limb", systemImage: "circle.dashed")
@@ -296,6 +344,13 @@ struct ViewerView: View {
                     ShareLink(item: ProvenancePNG(image: img, name: viewer.name, model: m),
                               preview: SharePreview(viewer.name, image: Image(decorative: img, scale: 1))) {
                         Label("Share Image", systemImage: "photo")
+                    }
+                }
+                if m.count > 1 {
+                    // The layers as a short H.264 movie, made only when it is shared (HF-14).
+                    ShareLink(item: LayerMovie(model: m, name: viewer.name),
+                              preview: SharePreview(viewer.name + " (movie)")) {
+                        Label("Share Movie", systemImage: "film")
                     }
                 }
                 ShareLink(item: viewer.url) { Label("Share FITS File", systemImage: "doc") }
@@ -394,6 +449,32 @@ struct ProvenancePNG: Transferable {
     }
 }
 
+/// This file's layers as an H.264 movie with the provenance in its description (HF-14),
+/// written to a temporary file only when shared. A visualization, not a calibrated radiance.
+struct LayerMovie: Transferable {
+    let model: FITSPreviewModel
+    let name: String
+
+    @MainActor func snapshot() -> (frames: [CGImage], note: String) {
+        let note = Provenance(model: model, fileName: name, appVersion: Provenance.appVersion()).text
+            + "\nframes: \(model.count) at \(Int(Viewer.playFPS)) per second (the layers of one file)"
+        return (model.pages.map { $0.image }, note)
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .mpeg4Movie) { item in
+            let snap = await item.snapshot()
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent((item.name as NSString).deletingPathExtension + ".mp4")
+            try await MovieExporter.write(count: snap.frames.count, fps: Int(Viewer.playFPS), format: .h264,
+                                          to: url, description: snap.note) { snap.frames.indices.contains($0) ? snap.frames[$0] : nil }
+            return SentTransferredFile(url)
+        }
+        .suggestedFileName { item in (item.name as NSString).deletingPathExtension + ".mp4" }
+    }
+}
+
 // MARK: - Stretch
 
 struct StretchPanel: View {
@@ -404,6 +485,9 @@ struct StretchPanel: View {
     @State private var log = false
     @State private var vminText = ""
     @State private var vmaxText = ""
+    @State private var shadows = FITSRenderer.rhefUpsilon
+    @State private var highlights = FITSRenderer.rhefUpsilon
+    @State private var reveal = false
 
     var body: some View {
         let m = viewer.model
@@ -417,6 +501,12 @@ struct StretchPanel: View {
             slider("High", $high, 0...1, String(format: "%.2f %%", StretchScale.highPercent(high)))
             slider("Gamma", $gamma, 0.1...2, String(format: "%.2f", gamma))
             Toggle("Logarithmic", isOn: $log)
+            if m.filter == .rhef {
+                // RHEF (RH-13): re-shape the cached ranks live; the wipe shows the plain image right of the divider.
+                slider("Shadows", $shadows, 0.05...1, String(format: "%.2f", shadows))
+                slider("Highlights", $highlights, 0.05...1, String(format: "%.2f", highlights))
+                Toggle("Reveal plain image (drag the divider)", isOn: $reveal)
+            }
             limitsRow(m)
             if let l = m.displayLimits() {
                 Text("Clipped to \(FITSRenderer.fmtValue(l.lo)) … \(FITSRenderer.fmtValue(l.hi))\(l.unit.isEmpty ? "" : " \(l.unit)")")
@@ -428,8 +518,12 @@ struct StretchPanel: View {
             low = StretchScale.lowPosition(m.stretch.lo)
             high = StretchScale.highPosition(m.stretch.hi)
             gamma = m.stretch.gamma; log = m.stretch.log
+            shadows = m.upsilonLow; highlights = m.upsilonHigh; reveal = m.revealRaw
             syncFields()
         }
+        .onChange(of: shadows) { applyRHEF() }
+        .onChange(of: highlights) { applyRHEF() }
+        .onChange(of: reveal) { applyRHEF() }
         .onChange(of: low) { apply() }
         .onChange(of: high) { apply() }
         .onChange(of: gamma) { apply() }
@@ -443,6 +537,14 @@ struct StretchPanel: View {
             Slider(value: v, in: r)
             Text(value).font(.system(.footnote, design: .monospaced)).frame(width: 72, alignment: .trailing)
         }
+    }
+
+    private func applyRHEF() {
+        let m = viewer.model
+        let shaped = m.setUpsilon(low: shadows, high: highlights)
+        let wipe = reveal != m.revealRaw
+        m.revealRaw = reveal
+        if shaped || wipe { viewer.refresh() }
     }
 
     private func apply() {
@@ -822,5 +924,60 @@ extension Color {
     /// A Palette colour, built the way the old literal was (`Color(white:)` or `Color(red:green:blue:)`).
     init(_ c: Palette.RGBA) {
         if c.isGray { self = Color(white: c.r, opacity: c.a) } else { self = Color(red: c.r, green: c.g, blue: c.b, opacity: c.a) }
+    }
+}
+
+// MARK: folder movie (HF-14)
+
+/// A folder of FITS frames, in DATE-OBS order, scrubbed or played. Nothing plays until Play is pressed.
+struct FolderMovieView: View {
+    let sequence: FITSSequence
+    let name: String
+    let openFrame: (String) -> Void
+    @State private var index = 0
+    @State private var image: CGImage?
+    @State private var playing = false
+    private let tick = Timer.publish(every: 1 / Viewer.playFPS, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if sequence.count == 0 {
+                Text("No FITS files in this folder.").foregroundStyle(.secondary)
+            } else {
+                Group {
+                    if let image { Image(decorative: image, scale: 1).resizable().scaledToFit() }
+                    else { ProgressView() }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Frame \(index + 1) of \(sequence.count)")
+                let f = sequence.frames[index]
+                Text(f.name + (f.dateObs.map { "  " + $0 } ?? "")).font(.caption).foregroundStyle(.secondary)
+                if sequence.count > 1 {
+                    Slider(value: Binding(get: { Double(index) }, set: { index = Int($0.rounded()) }),
+                           in: 0...Double(sequence.count - 1), step: 1)
+                        .accessibilityLabel("Frame")
+                }
+                HStack {
+                    Button(playing ? "Pause" : "Play") { playing.toggle() }.disabled(sequence.count < 2)
+                    Spacer()
+                    Button("Open this frame") { openFrame(f.path) }
+                }
+            }
+        }
+        .padding()
+        .onAppear { load() }
+        .onChange(of: index) { _ in load() }
+        .onReceive(tick) { _ in
+            guard playing, sequence.count > 1 else { return }
+            index = (index + 1) % sequence.count
+        }
+    }
+
+    private func load() {
+        let i = index, seq = sequence
+        DispatchQueue.global(qos: .userInitiated).async {
+            let img = seq.image(i)
+            DispatchQueue.main.async { if index == i { image = img } }
+        }
     }
 }

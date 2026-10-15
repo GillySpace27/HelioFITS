@@ -164,6 +164,15 @@ extension FITSPreviewModel {
             ?? (b.fullResReady ? "no data" : "Loading full-resolution pixels..."))
     }
 
+    /// What the canvas puts under the swipe, blink or side-by-side control: the registered
+    /// compare image with its mode, or, with no compare file, the plain image of the
+    /// reveal wipe (RH-13), always as a swipe. nil when there is neither.
+    public func canvasCompare() -> (image: CGImage, mode: CompareMode)? {
+        if let r = registeredCompareImage(), let m = compareMode { return (r, m) }
+        if compareModel == nil, let raw = revealImage() { return (raw, .swipe) }
+        return nil
+    }
+
     // MARK: registration
 
     /// The compare image resampled onto this page's display grid by helioprojective
