@@ -758,6 +758,79 @@ public enum FITSRenderer {
         return out
     }
 
+    /// Monotonic UInt32 for a float's sort order (the radix trick), as `rhefEqualize` packs it.
+    private static func rhefSortBits(_ v: Float) -> UInt32 {
+        let b = v.bitPattern
+        return (b >> 31) == 1 ? ~b : (b | 0x8000_0000)
+    }
+
+    /// `rhefEqualize` for grids the serial kernel cannot take (RH-15): the same ranking, the same
+    /// tie rule and Upsilon, but a counting sort by annulus and one sort per annulus, run in
+    /// parallel over annuli, with 32-bit pixel indices, so a 4096 x 4096 frame fits. Where both
+    /// can run (fewer than 2^23 pixels) the output is bit-identical to the serial reference, which
+    /// stays the default; a test pins that. Each annulus writes only its own pixels.
+    public static func rhefEqualizeParallel(values: [Float], radii: [Double], maxRadius: Double,
+                                            nbins: Int, upsilon: Double, upsilonHigh: Double? = nil) -> [Float] {
+        let n = values.count
+        var out = [Float](repeating: .nan, count: n)
+        guard n > 0, nbins > 0, maxRadius > 0, n < Int(UInt32.max) else { return out }
+        let binW = maxRadius / Double(nbins)
+        var peak: Float = 0
+        for v in values where v.isFinite { peak = max(peak, abs(v)) }
+        let tol = 1e-9 * peak                                  // same rule as rhefEqualize
+
+        // Counting sort of the finite pixels by annulus: offsets[b]..<offsets[b+1] in `order`.
+        var offsets = [Int](repeating: 0, count: nbins + 1)
+        var binOf = [Int32](repeating: -1, count: n)
+        for i in 0..<n where values[i].isFinite {
+            var b = Int(radii[i] / binW)
+            if b >= nbins { b = nbins - 1 }
+            if b < 0 { continue }
+            binOf[i] = Int32(b)
+            offsets[b + 1] += 1
+        }
+        for b in 0..<nbins { offsets[b + 1] += offsets[b] }
+        var order = [UInt32](repeating: 0, count: offsets[nbins])
+        var cursor = offsets
+        for i in 0..<n where binOf[i] >= 0 {
+            let b = Int(binOf[i])
+            order[cursor[b]] = UInt32(i)
+            cursor[b] += 1
+        }
+
+        let upsHigh = upsilonHigh ?? upsilon
+        out.withUnsafeMutableBufferPointer { o in
+            let outp = o.baseAddress!
+            order.withUnsafeBufferPointer { ord in
+                values.withUnsafeBufferPointer { vals in
+                    DispatchQueue.concurrentPerform(iterations: nbins) { b in
+                        let s = offsets[b], e = offsets[b + 1]
+                        guard s < e else { return }
+                        // Same order as the serial packed key: value (top 30 bits), then index.
+                        var keys = [UInt64](); keys.reserveCapacity(e - s)
+                        for k in s..<e {
+                            let i = Int(ord[k])
+                            keys.append(UInt64(rhefSortBits(vals[i]) >> 2) << 32 | UInt64(i))
+                        }
+                        keys.sort()
+                        let m = Double(e - s)
+                        var g = 0
+                        while g < keys.count {
+                            let v0 = vals[Int(keys[g] & 0xFFFF_FFFF)]
+                            var h = g + 1
+                            while h < keys.count, vals[Int(keys[h] & 0xFFFF_FFFF)] - v0 <= tol { h += 1 }
+                            let pr = (Double(g + 1) + Double(h)) / 2 / m
+                            let y = Float(applyUpsilon(pr, low: upsilon, high: upsHigh))
+                            for r in g..<h { outp[Int(keys[r] & 0xFFFF_FFFF)] = y }
+                            g = h
+                        }
+                    }
+                }
+            }
+        }
+        return out
+    }
+
     /// True when `path` is a readable FITS that has HDUs but NO renderable image
     /// (a table / spectrum / event-list file) — the case where render() throws
     /// yet the file is perfectly valid. fitsshim_image_hdus returns the image-HDU

@@ -138,6 +138,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             DispatchQueue.main.async {
                 guard let self, let win, let c = self.ctx[ObjectIdentifier(win)], c.gen == gen else { return }
                 c.model = m
+                m.rhefCap = SharedSettings.suite?.bool(forKey: SharedSettings.rhefFullResKey) == true ? 1 << 20 : 1024
                 // Off-main renders (full-res buffer, RHEF filter) call this when
                 // they land — repaint so the filtered image actually swaps in.
                 m.onFullRes = { [weak self, weak win] in

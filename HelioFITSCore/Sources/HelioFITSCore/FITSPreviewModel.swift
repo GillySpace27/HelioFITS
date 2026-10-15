@@ -50,6 +50,9 @@ public final class FITSPreviewModel {
             + "the full-resolution filter. Output is a visualization, not a calibrated radiance."
     }
     public var filter: Filter = .none
+    /// Longest side, in pixels, of the grid RHEF runs on (RH-15). 1024 unless a host raises it:
+    /// only the Mac app viewer does, behind the "full resolution" setting, off by default.
+    public var rhefCap = 1024
     /// RHEF Shadows (Upsilon below the 0.5 rank) and Highlights (from 0.5 up), 0.05 to 1
     /// as in HelioFITS Studio. Changing them re-shapes the cached ranks; nothing re-sorts.
     public var upsilonLow = FITSRenderer.rhefUpsilon
@@ -457,12 +460,12 @@ public final class FITSPreviewModel {
               filterCache[key] == nil, !filterLoading.contains(key),
               let p = page, let f = buffer(cur) else { return }
         filterLoading.insert(key)
-        let res = p.res, wcs = p.wcs, which = filter
+        let res = p.res, wcs = p.wcs, which = filter, cap = rhefCap
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let g: (w: Int, h: Int, vals: [Float])?
             switch which {
             // Upsilon 1 is the identity: the RHEF cache holds raw ranks (see filterCache).
-            case .rhef: g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs, upsilon: 1)
+            case .rhef: g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs, upsilon: 1, cap: cap)
             case .mgn:  g = FITSPreviewModel.mgnValues(buffer: f)
             case .wow:  g = FITSPreviewModel.wowValues(buffer: f)
             case .none: g = nil
@@ -833,8 +836,8 @@ public final class FITSPreviewModel {
     public static func rhefValues(buffer f: Buffer, res: FITSRenderer.Result,
                            wcs: FITSRenderer.SolarWCS?,
                            upsilon: Double = FITSRenderer.rhefUpsilon,
-                           upsilonHigh: Double? = nil) -> (w: Int, h: Int, vals: [Float])? {
-        let cap = 1024
+                           upsilonHigh: Double? = nil,
+                           cap: Int = 1024) -> (w: Int, h: Int, vals: [Float])? {
         let scale = max(1, (max(f.w, f.h) + cap - 1) / cap)   // full-res px per grid cell
         let gw = f.w / scale, gh = f.h / scale
         guard gw > 0, gh > 0 else { return nil }
@@ -866,8 +869,13 @@ public final class FITSPreviewModel {
         }
 
         let nbins = max(1, gh / 2)
-        let out = FITSRenderer.rhefEqualize(values: vals, radii: rad, maxRadius: maxR,
-                                            nbins: nbins, upsilon: upsilon, upsilonHigh: upsilonHigh)
+        // Above the 1024 default the grid can pass the serial kernel's 2^23 pixels, so the parallel
+        // kernel (bit-identical where both run, RH-15) takes it. The default path is unchanged.
+        let out = cap > 1024
+            ? FITSRenderer.rhefEqualizeParallel(values: vals, radii: rad, maxRadius: maxR,
+                                                nbins: nbins, upsilon: upsilon, upsilonHigh: upsilonHigh)
+            : FITSRenderer.rhefEqualize(values: vals, radii: rad, maxRadius: maxR,
+                                        nbins: nbins, upsilon: upsilon, upsilonHigh: upsilonHigh)
         return (gw, gh, out)
     }
 
