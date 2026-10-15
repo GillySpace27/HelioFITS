@@ -811,6 +811,55 @@ public final class FITSPreviewModel {
         return cg
     }
 
+    // MARK: what is on screen (HF-16)
+
+    /// What `image()` draws for the current page, as a recipe that Provenance and
+    /// the Python snippet both read, so neither can disagree with the screen.
+    public enum DisplayRecipe {
+        /// RHEF output mapped by the stretch panel: percentiles of the filter
+        /// output, then the log and gamma.
+        case filter(name: String, pLo: Double, pHi: Double, gamma: Double, log: Bool)
+        /// This page minus the previous page, symmetric limits at the 99th
+        /// percentile of |difference|, blue to white to red.
+        case difference(prevHDU: Int, prevPlane: Int)
+        /// Data mapped by a clip (typed when `exact`, else estimated from the
+        /// pLo / pHi percentiles), then log and gamma. `mode` is "plain" or "stretch".
+        case stretch(mode: String, lo: Float, hi: Float, exact: Bool,
+                     pLo: Double, pHi: Double, gamma: Double, log: Bool)
+    }
+
+    /// Mirrors `image()`: the filter output once it is computed; otherwise the
+    /// difference or the live stretch once their pixels are resident; otherwise
+    /// the baked image, with the limits and gamma it was baked with.
+    public func displayRecipe() -> DisplayRecipe? {
+        guard let p = page else { return nil }
+        if filter == .rhef, filterCache[filterKey] != nil {
+            return .filter(name: filter.label, pLo: stretch.lo, pHi: stretch.hi,
+                           gamma: stretch.gamma, log: stretch.log)
+        }
+        if mode == .diff, canDiff, buffer(cur) != nil, buffer(cur - 1) != nil {
+            let prev = pages[cur - 1]
+            return .difference(prevHDU: prev.hdu, prevPlane: prev.plane)
+        }
+        if mode == .stretch, !stretchIsDefault, let f = buffer(cur) {
+            let (lo, hi) = levels(f, p.res)
+            return .stretch(mode: "stretch", lo: lo, hi: hi, exact: limitsAreExact,
+                            pLo: stretch.lo, pHi: stretch.hi, gamma: stretch.gamma, log: stretch.log)
+        }
+        return .stretch(mode: mode == .stretch ? "stretch" : "plain", lo: p.res.lo, hi: p.res.hi,
+                        exact: false, pLo: FITSRenderer.pLow, pHi: FITSRenderer.pHigh,
+                        gamma: Double(p.res.gam), log: false)
+    }
+
+    /// The sunpy / matplotlib colormap name for a HelioFITS table, or nil when
+    /// there is no honest one: the six tables sunpy does not carry (ASPIICS and
+    /// EUI HRI Lyman-alpha, see FITSColormaps.swift). nil key means grey.
+    static func sunpyColormap(_ key: String?) -> String? {
+        guard let key else { return "gray" }
+        guard FITSColormaps.tables[key] != nil, !key.hasPrefix("aspiics"), key != "euihrilya" else { return nil }
+        return key
+    }
+
     /// Paste-ready sunpy snippet for the displayed HDU.
     ///
     /// The keyword is `hdus`, not `hdu`. sunpy's reader takes `hdus=`; an `hdu=`
@@ -839,30 +888,93 @@ public final class FITSPreviewModel {
             import sunpy.map
             import matplotlib.pyplot as plt
             from astropy.io import fits
-            from astropy.visualization import ImageNormalize, PowerStretch, AsymmetricPercentileInterval
-
+            \(Self.displayImports)
             path = \(q)   # edit if you move or share this file
             with fits.open(path) as hdul:
                 hdu = hdul[\(p.hdu)]                 # 3-D cube
                 data = hdu.data[\(p.plane)]            # plane shown in HelioFITS
                 header = hdu.header
             m = sunpy.map.Map((data, header))   # `data` is the displayed plane (numpy array)
-            \(rhefLines)
-            # Coronagraph data spans a huge dynamic range; a plain linear scale
-            # floors the faint structure to background. Match HelioFITS with a
-            # percentile clip + gamma (power) stretch so the corona is visible.
-            norm = ImageNormalize(m.data, interval=AsymmetricPercentileInterval(0.5, 99.5),
-                                  stretch=PowerStretch(0.5))
-            m.plot(norm=norm)
-            plt.show()   # opens a plot window
+            \(rhefLines)\(displayLines(q))
             """
         }
         return """
         import sunpy.map
+        import matplotlib.pyplot as plt
+        \(Self.displayImports)
         m = sunpy.map.Map(\(q), hdus=\(p.hdu))   # edit path if you move or share this file
         data = m.data   # the displayed HDU as stored in the file (numpy array)
-        \(rhefLines)m.peek()  # opens a quick-look plot
+        \(rhefLines)\(displayLines(q))
         """
+    }
+
+    private static let displayImports = """
+        from astropy.visualization import (ImageNormalize, ManualInterval, AsymmetricPercentileInterval,
+                                           PowerStretch, LogStretch, CompositeStretch)
+        """
+
+    /// The lines that draw the map the way HelioFITS shows it now (HF-16): the
+    /// same clip, gamma, log and colormap, or the difference.
+    private func displayLines(_ q: String) -> String {
+        guard let p = page, let recipe = displayRecipe() else { return "m.peek()  # opens a quick-look plot" }
+        let plot: String
+        if let c = Self.sunpyColormap(p.res.cmapKey) {
+            plot = "m.plot(norm=norm, cmap=\"\(c)\")"
+        } else {
+            plot = "m.plot(norm=norm)   # HelioFITS draws this with its own \(p.res.cmapKey ?? "") table, "
+                + "which sunpy does not carry"
+        }
+        func num(_ x: Double) -> String { String(format: "%g", x) }
+        func stretchExpr(_ gamma: Double, _ log: Bool) -> String {
+            log ? "CompositeStretch(LogStretch(9), PowerStretch(\(num(gamma))))" : "PowerStretch(\(num(gamma)))"
+        }
+        /// HelioFITS's log is log10(1 + 9x) on the clipped value, before the gamma.
+        func logNote(_ log: Bool) -> String {
+            log ? "# Log as HelioFITS applies it: LogStretch(9) is log10(1 + 9x), then the power.\n" : ""
+        }
+        // With RHEF selected the filter is what is shown (its output may still be computing).
+        if filter == .rhef {
+            return """
+            # HelioFITS maps the RHEF output with the stretch panel: the \(num(stretch.lo)) and
+            # \(num(stretch.hi)) percentiles of the filtered values, then the stretch.
+            \(logNote(stretch.log))norm = ImageNormalize(m.data,
+                                  interval=AsymmetricPercentileInterval(\(num(stretch.lo)), \(num(stretch.hi))),
+                                  stretch=\(stretchExpr(stretch.gamma, stretch.log)), clip=True)
+            \(plot)
+            plt.show()   # opens a plot window
+            """
+        }
+        switch recipe {
+        case .difference(let prevHDU, let prevPlane):
+            let prev = FITSRenderer.planeCount(path: path, hdu: prevHDU) > 1
+                ? "fits.getdata(\(q), \(prevHDU))[\(prevPlane)]" : "fits.getdata(\(q), \(prevHDU))"
+            return """
+            # Difference, as HelioFITS shows it: this layer minus the previous one (HDU \(prevHDU)),
+            # symmetric limits at the 99th percentile of |difference|, blue negative, red positive.
+            import numpy as np
+            from astropy.io import fits
+            prev = \(prev)
+            diff = sunpy.map.Map(m.data - prev, m.meta)
+            lim = np.nanpercentile(np.abs(diff.data), 99)
+            diff.plot(norm=ImageNormalize(vmin=-lim, vmax=lim, clip=True), cmap="bwr")
+            plt.show()   # opens a plot window
+            """
+        case .stretch(_, let lo, let hi, let exact, let pLo, let pHi, let gamma, let log):
+            let why = exact
+                ? "# The display limits typed in HelioFITS, in data units."
+                : "# The display limits HelioFITS estimated from the \(num(pLo)) and \(num(pHi)) percentiles of a\n"
+                + "# strided sample, in data units. The same rule on every pixel would be\n"
+                + "# AsymmetricPercentileInterval(\(num(pLo)), \(num(pHi)))."
+            return """
+            \(why)
+            \(logNote(log))norm = ImageNormalize(m.data, interval=ManualInterval(\(lo), \(hi)),
+                                  stretch=\(stretchExpr(gamma, log)), clip=True)
+            \(plot)
+            plt.show()   # opens a plot window
+            """
+        case .filter:
+            return "m.peek()  # opens a quick-look plot"
+        }
     }
 
     /// With RHEF on, the lines that reproduce it: sunkit-image's `radial.rhef` is

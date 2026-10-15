@@ -46,6 +46,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         let popup = NSPopUpButton()
         let save = NSButton()
         let copy = NSButton()
+        /// Add the provenance footer strip under saved PNGs (HF-16). Per window, off by default.
+        var burnIn = false
         var split: NSSplitView?           // so the image pane can be sized to the image
         var gen = 0                       // drops superseded background renders
         var scoped = false
@@ -296,8 +298,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         // the image; tooltips and the File menu (with shortcuts) carry the words.
         let reveal = iconButton("folder", "Show in Finder (⇧⌘R)", #selector(revealInFinder(_:)))
         let copyPath = iconButton("link", "Copy the file’s full path (⌥⌘C)", #selector(copyPath(_:)))
+        let info = iconButton("info.circle", "Provenance: what a saved PNG records about this view",
+                              #selector(showProvenance(_:)))
 
-        let right = NSStackView(views: [reveal, copyPath, c.copy, c.save])
+        let right = NSStackView(views: [reveal, copyPath, info, c.copy, c.save])
         right.spacing = 8
         let barStack = NSStackView(views: [c.popup, NSView(), right])
         barStack.spacing = 10
@@ -434,10 +438,22 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.needsDisplay = true
     }
 
-    /// The exact bytes on screen, named for the HDU they came from.
+    /// What the window shows now, as a Provenance recipe (HF-16): file name only.
+    private func provenance(_ c: Ctx) -> Provenance {
+        Provenance(model: c.model, fileName: c.url.lastPathComponent, appVersion: Provenance.appVersion())
+    }
+
+    /// The exact bytes on screen, named for the HDU they came from, with the
+    /// recipe in the PNG's text chunks and, when asked, the footer strip under it.
     private func pngExport(_ c: Ctx) -> (data: Data, filename: String)? {
-        guard let img = c.model.image(),
-              var png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return nil }
+        guard let shown = c.model.image() else { return nil }
+        var prov = provenance(c)
+        var img = shown
+        if c.burnIn, let burned = Provenance.burnIn(shown, footer: prov.footer) {
+            img = burned
+            prov = Provenance(fields: prov.fields + [(key: "burn_in", value: "footer strip added under the image")])
+        }
+        guard var png = try? prov.pngData(img) else { return nil }
         if let stamp = c.model.rhefStamp {   // RH-11: which RHEF made these pixels
             png = FITSRenderer.pngAddingText(png, keyword: FITSRenderer.rhefPNGKeyword, text: stamp)
         }
@@ -461,6 +477,16 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             guard resp == .OK, let url = panel.url else { return }
             try? out.data.write(to: url)
         }
+    }
+
+    /// The Info button: the recipe a saved PNG will carry, with Copy and the burn-in switch.
+    @objc private func showProvenance(_ sender: NSButton) {
+        guard let c = ctx(for: sender), !c.model.isEmpty else { return }
+        let panel = ProvenancePanel(text: provenance(c).text, burnIn: c.burnIn) { [weak c] on in c?.burnIn = on }
+        let pop = NSPopover()
+        pop.behavior = .transient
+        pop.contentViewController = panel
+        pop.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
     }
 
     private func iconButton(_ symbol: String, _ tip: String, _ action: Selector) -> NSButton {
@@ -531,4 +557,66 @@ extension HeaderWindowController {
         win.center()
         c.split?.setPosition(ideal.height, ofDividerAt: 0)
     }
+}
+
+/// The Info popover (HF-16): the recipe as selectable monospaced text, a Copy
+/// button, and the switch that adds the footer strip under saved PNGs.
+private final class ProvenancePanel: NSViewController {
+    private let recipe: String
+    private let burnIn: Bool
+    private let onBurnIn: (Bool) -> Void
+
+    init(text: String, burnIn: Bool, onBurnIn: @escaping (Bool) -> Void) {
+        recipe = text
+        self.burnIn = burnIn
+        self.onBurnIn = onBurnIn
+        super.init(nibName: nil, bundle: nil)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func loadView() {
+        let tv = NSTextView()
+        tv.string = recipe
+        tv.isEditable = false
+        tv.isSelectable = true
+        tv.drawsBackground = false
+        tv.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        tv.textContainerInset = NSSize(width: 4, height: 4)
+        let scroll = NSScrollView()
+        scroll.documentView = tv
+        scroll.hasVerticalScroller = true
+        scroll.drawsBackground = false
+        tv.autoresizingMask = [.width]
+        tv.isVerticallyResizable = true
+
+        let title = NSTextField(labelWithString: "Saved PNGs carry this recipe")
+        title.font = .boldSystemFont(ofSize: 12)
+        let copy = NSButton(title: "Copy", target: self, action: #selector(copyRecipe(_:)))
+        let burn = NSButton(checkboxWithTitle: "Add a caption strip under saved PNGs",
+                            target: self, action: #selector(burnChanged(_:)))
+        burn.state = burnIn ? .on : .off
+        let buttons = NSStackView(views: [burn, NSView(), copy])
+
+        let stack = NSStackView(views: [title, scroll, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        NSLayoutConstraint.activate([
+            scroll.widthAnchor.constraint(equalToConstant: 440),
+            scroll.heightAnchor.constraint(equalToConstant: 240),
+            buttons.widthAnchor.constraint(equalTo: scroll.widthAnchor),
+        ])
+        view = stack
+    }
+
+    @objc private func copyRecipe(_ sender: NSButton) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(recipe, forType: .string)
+        let old = sender.title
+        sender.title = "Copied"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { sender.title = old }
+    }
+
+    @objc private func burnChanged(_ sender: NSButton) { onBurnIn(sender.state == .on) }
 }
