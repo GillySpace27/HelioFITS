@@ -15,7 +15,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP_STORE_URL = "https://apps.apple.com/app/id6790952544"   # APP_ID in release_status.py
 RELEASES_URL = "https://github.com/GillySpace27/HelioFITS/releases"
-EM_DASH = "—"
+EM_DASH = chr(0x2014)
 MAX_WHATS_NEW = 1000   # house limit from the HF-21 task file, not an Apple figure
 
 
