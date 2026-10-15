@@ -24,28 +24,52 @@ struct ContentView: View {
     /// True when the importer is choosing a compare file for the open viewer (HF-15).
     @State private var importForCompare = false
     @State private var viewer: Viewer?
+    /// A folder of frames to play (HF-14); its security scope is kept while it is open.
+    @State private var folder: (url: URL, sequence: FITSSequence)?
     @State private var savedNote: String?
 
     var body: some View {
         NavigationStack {
             Group {
-                if let viewer {
+                if let folder {
+                    FolderMovieView(sequence: folder.sequence, name: folder.url.lastPathComponent,
+                                    openFrame: { path in
+                                        // The folder's security scope stays open: the frame lives inside it.
+                                        self.folder = nil
+                                        viewer = Viewer(url: URL(fileURLWithPath: path))
+                                    })
+                } else if let viewer {
                     ViewerView(viewer: viewer, chooseCompare: { importForCompare = true; importing = true })
                 } else { welcome }
             }
-            .navigationTitle(viewer?.name ?? "HelioFITS")
+            .navigationTitle(folder?.url.lastPathComponent ?? viewer?.name ?? "HelioFITS")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    if viewer != nil { Button("Close") { viewer = nil } }
+                    if viewer != nil || folder != nil {
+                        Button("Close") {
+                            folder?.url.stopAccessingSecurityScopedResource()
+                            folder = nil; viewer = nil
+                        }
+                    }
                     Button { importForCompare = false; importing = true } label: { Label("Open", systemImage: "folder") }
                 }
             }
         }
-        .fileImporter(isPresented: $importing, allowedContentTypes: [.fits]) { result in
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.fits, .folder]) { result in
             defer { importForCompare = false }
             guard case .success(let url) = result else { return }
-            if importForCompare, let viewer { viewer.compare(with: url) } else { viewer = Viewer(url: url) }
+            if url.hasDirectoryPath {
+                // A folder of FITS frames plays as a movie, in DATE-OBS order (HF-14).
+                guard !importForCompare, url.startAccessingSecurityScopedResource() else { return }
+                folder?.url.stopAccessingSecurityScopedResource()
+                viewer = nil
+                folder = (url, FITSSequence(folder: url))
+            } else if importForCompare, let viewer { viewer.compare(with: url) } else {
+                folder?.url.stopAccessingSecurityScopedResource()
+                folder = nil
+                viewer = Viewer(url: url)
+            }
         }
         .onOpenURL { viewer = Viewer(url: $0) }
     }

@@ -86,7 +86,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
                             resetSel: #selector(resetStretch), filterSel: #selector(filterChanged),
                             limitsSel: #selector(limitsChanged(_:)), ringsSel: #selector(toggleRings),
-                            headerSel: #selector(toggleHeader))
+                            headerSel: #selector(toggleHeader), playSel: #selector(togglePlay))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -295,6 +295,34 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         stats.stats = s
         stats.isHidden = false
         stats.needsDisplay = true
+    }
+
+    /// Play (HF-14): step through the layers at 5 per second, looping. Never starts by itself,
+    /// and stops when the preview goes away.
+    private var playTimer: Timer?
+
+    @objc private func togglePlay() {
+        if let t = playTimer {
+            t.invalidate(); playTimer = nil
+        } else if model.count > 1 {
+            canvas.selection = nil
+            stats.isHidden = true
+            let t = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                if !self.model.step(1) { self.model.select(page: 0) }
+                self.refresh()
+            }
+            RunLoop.main.add(t, forMode: .common)
+            playTimer = t
+        }
+        tools.playOn = playTimer != nil
+        tools.sync(model: model)
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        playTimer?.invalidate(); playTimer = nil
+        tools.playOn = false
     }
 
     private func refresh() {
