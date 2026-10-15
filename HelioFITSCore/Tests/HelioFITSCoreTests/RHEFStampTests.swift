@@ -70,9 +70,13 @@ import Foundation
         #expect(!m.caption().contains("RHEF oRHEF-2.0"))
         m.filter = .rhef
         #expect(m.rhefStamp == nil, "the plain image is shown while RHEF renders")
-        for _ in 0..<400 where !m.rhefShown {
+        // RHEF renders from the full-res buffer, which arrives off the main thread; then
+        // image() starts the filter. Yield between polls so the main-queue deliveries run.
+        m.onFullRes = {}
+        m.prefetchFullRes()
+        for _ in 0..<1000 where !m.rhefShown {
             _ = m.image()
-            try await Task.sleep(nanoseconds: 25_000_000)
+            try await Task.sleep(nanoseconds: 10_000_000)
         }
         #expect(m.rhefShown)
         #expect(m.caption().hasSuffix("RHEF oRHEF-2.0 (differs: UPS-MEAN, TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN)"))
