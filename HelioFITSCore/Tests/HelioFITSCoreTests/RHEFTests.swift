@@ -239,4 +239,46 @@ struct RHEFTests {
         #expect(out.count == n * n)
         #expect(out.allSatisfy { $0 > 0 && $0 <= 1 })
     }
+
+    // RH-13: the viewer caches the ranks (Upsilon 1) and applies Shadows and Highlights per pixel.
+
+    @Test("Ranks cached at Upsilon 1 then shaped equal the direct (low, high) filter")
+    func cachedRanksThenShapedEqualDirect() {
+        let vals: [Float] = [100, 80, 60, 40, 20, 10, 90, 70, 50, 30, 15, 5]
+        let radii: [Double] = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 0.6, 1.1, 1.6, 2.1, 2.6, 2.9]
+        let ranks = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 3, nbins: 3, upsilon: 1)
+        // Upsilon 1 is the identity, so these are the plain per-ring percentile ranks.
+        for r in ranks { #expect(r > 0 && r <= 1) }
+        for (lo, hi) in [(0.35, 0.35), (0.2, 0.8), (0.6, 0.4)] {
+            let direct = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 3, nbins: 3,
+                                                   upsilon: lo, upsilonHigh: hi)
+            for (r, d) in zip(ranks, direct) {
+                let shaped = Float(FITSRenderer.applyUpsilon(Double(r), low: lo, high: hi))
+                #expect(abs(shaped - d) < 1e-6, "(\(lo), \(hi)): shaped \(shaped) should match direct \(d)")
+            }
+        }
+    }
+
+    @Test("Shadows and Highlights clamp to 0.05...1 and report a change")
+    @MainActor func upsilonSetterClampsAndReports() {
+        let m = FITSPreviewModel()
+        #expect(m.upsilonLow == FITSRenderer.rhefUpsilon && m.upsilonHigh == FITSRenderer.rhefUpsilon)
+        #expect(m.setUpsilon(low: 0.2) == false, "no repaint is due while RHEF is off")
+        #expect(m.upsilonLow == 0.2)
+        m.filter = .rhef
+        #expect(m.setUpsilon(high: 0.7) == true)
+        #expect(m.setUpsilon(high: 0.7) == false, "same value: nothing to repaint")
+        _ = m.setUpsilon(low: -3, high: 9)
+        #expect(m.upsilonLow == 0.05 && m.upsilonHigh == 1)
+    }
+
+    @Test("No rank and no reveal image without a cached RHEF result")
+    @MainActor func noCacheNoRankNoReveal() {
+        let m = FITSPreviewModel()
+        m.filter = .rhef
+        m.revealRaw = true
+        #expect(m.rhefRank(u: 0.5, v: 0.5) == nil)
+        #expect(m.revealImage() == nil)
+        #expect(m.canvasCompare() == nil)
+    }
 }

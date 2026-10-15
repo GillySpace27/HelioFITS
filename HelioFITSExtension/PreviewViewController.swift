@@ -57,7 +57,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         let root = NSView(frame: NSRect(x: 0, y: 0, width: 700, height: 700))
         root.wantsLayer = true
         root.appearance = NSAppearance(named: .darkAqua)   // dark-mode controls on a dark preview
-        root.layer?.backgroundColor = NSColor(calibratedWhite: 0.07, alpha: 1).cgColor
+        root.layer?.backgroundColor = Theme.color(Palette.canvas).cgColor
 
         canvas.translatesAutoresizingMaskIntoConstraints = false
         canvas.onScrollStep = { [weak self] d in
@@ -86,7 +86,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
                             tuneSel: #selector(toggleTune), stretchSel: #selector(stretchChanged),
                             resetSel: #selector(resetStretch), filterSel: #selector(filterChanged),
                             limitsSel: #selector(limitsChanged(_:)), ringsSel: #selector(toggleRings),
-                            headerSel: #selector(toggleHeader))
+                            headerSel: #selector(toggleHeader), swipeSel: #selector(toggleSwipe),
+                            playSel: #selector(togglePlay))
         toolStack = tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -116,10 +117,10 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     private func buildDrawer(in root: NSView) {
         drawer.wantsLayer = true
-        drawer.layer?.backgroundColor = NSColor(calibratedWhite: 0.07, alpha: 0.96).cgColor
+        drawer.layer?.backgroundColor = Theme.color(Palette.statsCardFill).cgColor
         drawer.layer?.cornerRadius = 8
         drawer.layer?.borderWidth = 1
-        drawer.layer?.borderColor = NSColor(calibratedWhite: 0.25, alpha: 1).cgColor
+        drawer.layer?.borderColor = Theme.color(Palette.cardStroke).cgColor
         drawer.isHidden = true
         drawer.translatesAutoresizingMaskIntoConstraints = false
 
@@ -140,8 +141,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         drawerText.isEditable = false
         drawerText.isSelectable = true
         drawerText.drawsBackground = false
-        drawerText.textColor = NSColor(calibratedRed: 0.62, green: 0.89, blue: 0.69, alpha: 1)
-        drawerText.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        drawerText.textColor = Theme.color(Palette.headerText)
+        drawerText.font = Theme.mono(11)
         drawerText.textContainerInset = NSSize(width: 6, height: 6)
         drawerText.isVerticallyResizable = true
         drawerText.isHorizontallyResizable = false
@@ -242,8 +243,8 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         canvas.image = nil
         canvas.caption = title
         let label = NSTextField(wrappingLabelWithString: body)
-        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        label.textColor = NSColor(calibratedWhite: 0.75, alpha: 1)
+        label.font = Theme.mono(11)
+        label.textColor = Theme.color(Palette.cardNoteText)
         label.alignment = .center
         label.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(label)
@@ -261,6 +262,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
     @objc private func toggleLimb() { if model.toggleLimb() { refresh() } }
     @objc private func toggleDiff() { if model.toggleDiff() { refresh() } }
     @objc private func toggleRings() { if model.toggleRings() { refresh() } }
+    @objc private func toggleSwipe() { if model.toggleBeforeAfter() { refresh() } }
     @objc private func toggleTune() { if model.toggleStretch() { refresh() } }
     @objc private func toggleHeader() {
         tools.headerOn.toggle()
@@ -297,9 +299,47 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
         stats.needsDisplay = true
     }
 
+    /// Play (HF-14): step through the layers at 5 per second, looping. Never starts by itself,
+    /// and stops when the preview goes away.
+    private var playTimer: Timer?
+
+    @objc private func togglePlay() {
+        if let t = playTimer {
+            t.invalidate(); playTimer = nil
+        } else if model.count > 1 {
+            canvas.selection = nil
+            stats.isHidden = true
+            let t = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
+                guard let self else { return }
+                if !self.model.step(1) { self.model.select(page: 0) }
+                self.refresh()
+            }
+            RunLoop.main.add(t, forMode: .common)
+            playTimer = t
+        }
+        tools.playOn = playTimer != nil
+        tools.sync(model: model)
+    }
+
+    override func viewWillDisappear() {
+        super.viewWillDisappear()
+        playTimer?.invalidate(); playTimer = nil
+        tools.playOn = false
+    }
+
     private func refresh() {
         model.prefetchFullRes()     // exact readout/statistics for this HDU
         canvas.image = model.image().map(NSImage.init)
+        // Before and after (HF-19): the unfiltered image under the filter, with a divider.
+        if model.beforeAfterShown {
+            canvas.image = model.unfilteredImage().map(NSImage.init)
+            canvas.compareImage = model.image().map(NSImage.init)
+            canvas.compareMode = .swipe
+            canvas.swipeLabels = ("Raw", model.filter.label)
+        } else {
+            canvas.compareMode = nil
+            canvas.compareImage = nil
+        }
         let pins = SharedSettings.pinnedKeywords()
         canvas.caption = model.caption(pinned: pins)
         canvas.limb = compact ? nil : model.limbCircle()

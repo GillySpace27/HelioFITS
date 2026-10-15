@@ -30,6 +30,17 @@ if [ -d build ]; then
 fi
 rm -rf build && mkdir build
 
+# Resolve the Developer ID identity by team, so the importer is signed with the same one (HF-21).
+SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning | sed -n 's/^.*"\(Developer ID Application:.*(UB45PPC2JS)\)".*$/\1/p' | head -1)}"
+[ -n "$SIGN_ID" ] || { echo "REFUSING: no 'Developer ID Application ... (UB45PPC2JS)' identity in the keychain" >&2; exit 1; }
+export SIGN_ID
+# Fail before the slow archive when the notary service cannot be reached: three tries, 30 s apart.
+for i in 1 2 3; do
+    xcrun notarytool history --keychain-profile "$PROFILE" >/dev/null 2>&1 && break
+    [ "$i" -lt 3 ] || { echo "REFUSING: notarytool cannot reach Apple with profile $PROFILE" >&2; exit 1; }
+    sleep 30
+done
+
 echo "==> Archiving (Developer ID, hardened runtime, secure timestamp)"
 # The PROJECT signs automatically (Apple Distribution + App Store profiles), because
 # that is what the Mac App Store path needs. This script wants the OTHER identity —
@@ -66,7 +77,9 @@ echo "==> Zipping for notarization"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
 echo "==> Submitting to Apple notary (waits for result)"
-xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait
+# Bounded wait (15 min). On a timeout the submission still exists at Apple: look it up with
+# `xcrun notarytool history`; never submit the same zip again.
+xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait --timeout 15m
 
 echo "==> Stapling ticket to the app"
 xcrun stapler staple "$APP"

@@ -33,15 +33,32 @@ public final class FITSPreviewModel {
     /// Enhancement filters applied to the displayed image (not the data — the
     /// readout and statistics always report raw values). RHEF is the Radial
     /// Histogram Equalizing Filter (Gilly & Cranmer 2025, Solar Phys. 300, 174),
-    /// ported from the author's sunkit-image implementation. MGN/WOW are stubs
-    /// for now.
+    /// ported from the author's sunkit-image implementation. MGN (Morgan and
+    /// Druckmueller 2014) and WOW (Auchere et al. 2023) are multi-scale filters run
+    /// on the display grid with their widths divided by the decimation (HF-19,
+    /// MultiscaleFilters.swift).
     public enum Filter: Int, CaseIterable { case none, rhef, mgn, wow
         public var label: String { ["None", "RHEF", "MGN", "WOW"][rawValue] }
+        /// Menu and Picker titles, descriptive so the bare acronym is not the whole
+        /// story where tooltips do not fire (Quick Look, iOS).
+        public var menuTitle: String {
+            ["No filter", "RHEF: reveal faint corona", "MGN: multi-scale contrast", "WOW: wavelet whitening"][rawValue]
+        }
+        /// The display-grid approximation, stated wherever a filter is chosen (HF-19).
+        public static let gridNote = "RHEF, MGN and WOW run on a grid of at most 1024 px a side; "
+            + "MGN and WOW widths are divided by the decimation, so the preview approximates "
+            + "the full-resolution filter. Output is a visualization, not a calibrated radiance."
     }
     public var filter: Filter = .none
     /// Longest side, in pixels, of the grid RHEF runs on (RH-15). 1024 unless a host raises it:
     /// only the Mac app viewer does, behind the "full resolution" setting, off by default.
     public var rhefCap = 1024
+    /// RHEF Shadows (Upsilon below the 0.5 rank) and Highlights (from 0.5 up), 0.05 to 1
+    /// as in HelioFITS Studio. Changing them re-shapes the cached ranks; nothing re-sorts.
+    public var upsilonLow = FITSRenderer.rhefUpsilon
+    public var upsilonHigh = FITSRenderer.rhefUpsilon
+    /// Reveal wipe (RH-13): while RHEF is shown, the plain image right of the divider.
+    public var revealRaw = false
 
     public typealias Buffer = (w: Int, h: Int, pix: [Float])
 
@@ -103,7 +120,12 @@ public final class FITSPreviewModel {
     /// Filter OUTPUT (the equalized values), rendered off-main, keyed
     /// "cur:filter". Values rather than a finished image so the stretch can be
     /// re-applied on top without re-running the expensive equalization (#14).
+    /// For RHEF these are the RANKS (Upsilon 1, the identity), not the shaped output:
+    /// Shadows and Highlights re-shape them per pixel (`shapedFilter`) without
+    /// re-running the sort (RH-13).
     private var filterCache: [String: (w: Int, h: Int, vals: [Float])] = [:]
+    private var shapedCache: (key: String, low: Double, high: Double,
+                              g: (w: Int, h: Int, vals: [Float]))?
     private var filterLoading: Set<String> = []
     /// Whole-image histogram per page — the region box is re-measured on every
     /// drag, but the image behind it does not change.
@@ -312,6 +334,7 @@ public final class FITSPreviewModel {
         // a non-diffable HDU, so an ungated suffix labels it Δ while showing it.
         return p.caption + (mode == .diff && canDiff ? "   ·   Δ − previous HDU" : "")
             + (rhefShown ? "   ·   " + FITSRenderer.rhefChipText : "")
+            + (revealImage() != nil && compareModel == nil ? "   ·   RHEF left of the divider, plain right" : "")
     }
 
     /// The caption plus `KEY=value` for each pinned keyword this HDU has, in pin
@@ -339,7 +362,9 @@ public final class FITSPreviewModel {
     public var rhefShown: Bool { filter == .rhef && filterCache[filterKey] != nil }
 
     /// The RH-11 stamp line for an export of what is on screen; nil when RHEF is not shown.
-    public var rhefStamp: String? { rhefShown ? FITSRenderer.rhefStamp() : nil }
+    public var rhefStamp: String? {
+        rhefShown ? FITSRenderer.rhefStamp(upsilon: (upsilonLow, upsilonHigh)) : nil
+    }
 
     /// The image to draw for the current HDU + mode. A filter, when set, wins
     /// over the plain/stretch/diff mode — it's a distinct way of looking at the
@@ -351,9 +376,16 @@ public final class FITSPreviewModel {
         guard let p = page else { return nil }
         if filter != .none {
             // The filter supplies the values; the stretch maps them to the ramp.
-            if let g = filterCache[filterKey] { return filteredImage(g) ?? p.image }
+            if let g = shapedFilter() { return filteredImage(g) ?? p.image }
             requestFilter()
         }
+        return unfilteredImage()
+    }
+
+    /// What the current mode draws with no filter: the "before" of the before and
+    /// after swipe (HF-19), and what `image()` shows while a filter is computing.
+    public func unfilteredImage() -> CGImage? {
+        guard let p = page else { return nil }
         switch mode {
         case .plain:   return p.image
         case .stretch: return stretched() ?? p.image
@@ -363,18 +395,81 @@ public final class FITSPreviewModel {
 
     private var filterKey: String { "\(cur):\(filter.rawValue)" }
 
+    /// The cached ranks with Shadows and Highlights applied, kept until either moves.
+    private func shapedFilter() -> (w: Int, h: Int, vals: [Float])? {
+        let key = filterKey
+        guard let r = filterCache[key] else { return nil }
+        // Shadows and Highlights are RHEF's Upsilon; MGN and WOW values pass through.
+        if filter != .rhef { return r }
+        if let c = shapedCache, c.key == key, c.low == upsilonLow, c.high == upsilonHigh { return c.g }
+        var v = r.vals
+        for i in v.indices where v[i].isFinite {
+            v[i] = Float(FITSRenderer.applyUpsilon(Double(v[i]), low: upsilonLow, high: upsilonHigh))
+        }
+        let g = (w: r.w, h: r.h, vals: v)
+        shapedCache = (key, upsilonLow, upsilonHigh, g)
+        return g
+    }
+
+    /// Move Shadows and/or Highlights (clamped to 0.05...1). True when the host must repaint.
+    @discardableResult
+    public func setUpsilon(low: Double? = nil, high: Double? = nil) -> Bool {
+        let l = min(1, max(0.05, low ?? upsilonLow)), h = min(1, max(0.05, high ?? upsilonHigh))
+        guard l != upsilonLow || h != upsilonHigh else { return false }
+        upsilonLow = l; upsilonHigh = h
+        return filter == .rhef
+    }
+
+    /// The cached rank (0 to 1, before Shadows and Highlights) of the pixel at (u, v),
+    /// each 0...1 from the top-left; nil unless RHEF is shown there with a finite value.
+    public func rhefRank(u: Double, v: Double) -> Float? {
+        guard filter == .rhef, let g = filterCache[filterKey], g.w > 0, g.h > 0 else { return nil }
+        let x = min(g.w - 1, max(0, Int(u * Double(g.w))))
+        let y = min(g.h - 1, max(0, Int(v * Double(g.h))))
+        let r = g.vals[y * g.w + x]
+        return r.isFinite ? r : nil
+    }
+
+    /// The plain image for the reveal wipe; nil unless it is on and RHEF is what is shown.
+    public func revealImage() -> CGImage? { revealRaw && rhefShown ? page?.image : nil }
+
+    // MARK: before and after (HF-19)
+
+    /// The unfiltered image left of a divider and the filtered one right of it.
+    /// Kept across filter changes; it only shows while a filter is on.
+    public private(set) var beforeAfter = false
+
+    /// Turn the before and after swipe on or off. False (nothing changed) with no filter.
+    @discardableResult
+    public func toggleBeforeAfter() -> Bool {
+        guard filter != .none else { return false }
+        beforeAfter.toggle()
+        return true
+    }
+
+    /// True when the host should draw `unfilteredImage()` under `image()` with a
+    /// divider: the swipe is on and the filtered image is ready.
+    public var beforeAfterShown: Bool { beforeAfter && filter != .none && filterCache[filterKey] != nil }
+
     /// Kick off the current filter's render on a background queue, snapshotting
     /// everything it needs on the main thread first so the worker touches no
     /// shared mutable state. The result is cached and a redraw requested.
     private func requestFilter() {
         let key = filterKey
-        guard filter == .rhef,                       // only RHEF for now
+        guard filter != .none,
               filterCache[key] == nil, !filterLoading.contains(key),
               let p = page, let f = buffer(cur) else { return }
         filterLoading.insert(key)
-        let res = p.res, wcs = p.wcs, cap = rhefCap
+        let res = p.res, wcs = p.wcs, which = filter, cap = rhefCap
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs, cap: cap)
+            let g: (w: Int, h: Int, vals: [Float])?
+            switch which {
+            // Upsilon 1 is the identity: the RHEF cache holds raw ranks (see filterCache).
+            case .rhef: g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs, upsilon: 1, cap: cap)
+            case .mgn:  g = FITSPreviewModel.mgnValues(buffer: f)
+            case .wow:  g = FITSPreviewModel.wowValues(buffer: f)
+            case .none: g = nil
+            }
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.filterLoading.remove(key)
@@ -405,6 +500,8 @@ public final class FITSPreviewModel {
                 t += String(format: "   r = %.2f R☉", (tx * tx + ty * ty).squareRoot() / w.rsun)
             }
         }
+        // RHEF: where this pixel ranks among the pixels at its radius (RH-13).
+        if let k = rhefRank(u: u, v: v) { t += String(format: "\nRHEF rank %.2f in its ring", k) }
         return t
     }
 
@@ -558,7 +655,7 @@ public final class FITSPreviewModel {
         guard let p = page else { return nil }
         if filter != .none {
             // image() draws the filter output first, whatever the mode is.
-            guard let g = filterCache[filterKey] else { return nil }
+            guard let g = shapedFilter() else { return nil }
             let (lo, hi) = filterLevels(g.vals)
             return Colorbar.make(lut: p.lut, lo: lo, hi: hi, gamma: Float(stretch.gamma),
                                  log: stretch.log, unit: "", exact: false,
@@ -685,7 +782,14 @@ public final class FITSPreviewModel {
         guard canDiff, let p = page, let a = buffer(cur), let b = buffer(cur - 1),
               a.w == b.w, a.h == b.h else { return nil }
         let r = p.res
-        let ow = r.width, oh = r.height, k = r.factor
+        return Self.differenceImage(a, b, ow: r.width, oh: r.height, k: r.factor)
+    }
+
+    /// `a` minus `b` at full resolution, decimated by `k` to ow x oh, diverging
+    /// blue/white/red clipped at the 99th percentile of |difference|. Shared by
+    /// `difference()` and FITSSequence's running difference across files (HF-14).
+    static func differenceImage(_ a: Buffer, _ b: Buffer, ow: Int, oh: Int, k: Int) -> CGImage? {
+        guard a.w == b.w, a.h == b.h, ow > 0, oh > 0 else { return nil }
 
         var diff = [Float](repeating: 0, count: ow * oh)
         var mags: [Float] = []
@@ -775,6 +879,23 @@ public final class FITSPreviewModel {
         return (gw, gh, out)
     }
 
+    /// MGN on the display grid (HF-19): a block mean of the full-resolution buffer,
+    /// at most `cap` a side, with the native widths divided by the decimation.
+    /// Pure; safe off the main thread.
+    public static func mgnValues(buffer f: Buffer, cap: Int = 1024) -> (w: Int, h: Int, vals: [Float])? {
+        guard let g = MultiscaleFilters.grid(f, cap: cap) else { return nil }
+        let s = MultiscaleFilters.gridSigmas(MultiscaleFilters.mgnSigmas, scale: g.scale)
+        return (g.w, g.h, MultiscaleFilters.mgn(values: g.vals, w: g.w, h: g.h, sigmas: s))
+    }
+
+    /// WOW on the display grid (HF-19), with the starlet scales finer than a grid
+    /// cell dropped. Pure; safe off the main thread.
+    public static func wowValues(buffer f: Buffer, cap: Int = 1024) -> (w: Int, h: Int, vals: [Float])? {
+        guard let g = MultiscaleFilters.grid(f, cap: cap) else { return nil }
+        let n = MultiscaleFilters.gridScales(MultiscaleFilters.wowScales, scale: g.scale)
+        return (g.w, g.h, MultiscaleFilters.wow(values: g.vals, w: g.w, h: g.h, scales: n))
+    }
+
     /// Clip limits for a filter's output.
     ///
     /// Percentiles OF THE FILTER OUTPUT, so "0.5–99.5%" keeps meaning the same
@@ -861,7 +982,7 @@ public final class FITSPreviewModel {
     /// the baked image, with the limits and gamma it was baked with.
     public func displayRecipe() -> DisplayRecipe? {
         guard let p = page else { return nil }
-        if filter == .rhef, filterCache[filterKey] != nil {
+        if filter != .none, filterCache[filterKey] != nil {
             return .filter(name: filter.label, pLo: stretch.lo, pHi: stretch.hi,
                            gamma: stretch.gamma, log: stretch.log)
         }
@@ -923,7 +1044,7 @@ public final class FITSPreviewModel {
                 data = hdu.data[\(p.plane)]            # plane shown in HelioFITS
                 header = hdu.header
             m = sunpy.map.Map((data, header))   # `data` is the displayed plane (numpy array)
-            \(rhefLines)\(displayLines(q))
+            \(rhefLines)\(multiscaleLines)\(displayLines(q))
             """
         }
         return """
@@ -932,7 +1053,7 @@ public final class FITSPreviewModel {
         \(Self.displayImports)
         m = sunpy.map.Map(\(q), hdus=\(p.hdu))   # edit path if you move or share this file
         data = m.data   # the displayed HDU as stored in the file (numpy array)
-        \(rhefLines)\(displayLines(q))
+        \(rhefLines)\(multiscaleLines)\(displayLines(q))
         """
     }
 
@@ -960,10 +1081,10 @@ public final class FITSPreviewModel {
         func logNote(_ log: Bool) -> String {
             log ? "# Log as HelioFITS applies it: LogStretch(9) is log10(1 + 9x), then the power.\n" : ""
         }
-        // With RHEF selected the filter is what is shown (its output may still be computing).
-        if filter == .rhef {
+        // With a filter selected the filter is what is shown (its output may still be computing).
+        if filter != .none {
             return """
-            # HelioFITS maps the RHEF output with the stretch panel: the \(num(stretch.lo)) and
+            # HelioFITS maps the \(filter.label) output with the stretch panel: the \(num(stretch.lo)) and
             # \(num(stretch.hi)) percentiles of the filtered values, then the stretch.
             \(logNote(stretch.log))norm = ImageNormalize(m.data,
                                   interval=AsymmetricPercentileInterval(\(num(stretch.lo)), \(num(stretch.hi))),
@@ -1015,15 +1136,66 @@ public final class FITSPreviewModel {
         guard filter == .rhef else { return "" }
         return """
         from sunkit_image.radial import rhef   # needs sunkit-image with radial.rhef (0.7.0 has it)
-        m = rhef(m, upsilon=0.35)   # the RHEF filter shown in HelioFITS
+        m = rhef(m, upsilon=\(upsilonLow == upsilonHigh ? String(format: "%g", upsilonLow) : String(format: "(%g, %g)", upsilonLow, upsilonHigh)))   # the RHEF filter shown in HelioFITS (a pair is Shadows, Highlights)
         # Known differences from the on-screen filter (fastRHEF conventions, oRHEF-2.0):
         # TIES-TOL ties within 1e-9 of the frame's peak share a rank; KEY-QUANT the sort
         # key drops 2 bits of the float32 pattern; GEOM-GRID HelioFITS filters a grid of at
         # most 1024 px a side; DTYPE-IN float32 out. RHEF output is a visualization.
         rhef_data = m.data   # filtered values: per-radius rank in (0, 1]
-        # HelioFITS showed: \(FITSRenderer.rhefStamp())
+        # HelioFITS showed: \(FITSRenderer.rhefStamp(upsilon: (upsilonLow, upsilonHigh)))
         # RHEF output is a visualization, not a calibrated radiance.
 
         """
+    }
+
+    /// With MGN or WOW on, the lines that reproduce it at full resolution (HF-19).
+    /// MGN calls sunkit-image's `enhance.mgn`, whose defaults HelioFITS uses. WOW is
+    /// HelioFITS's own reading of Auchere et al. 2023, written out in numpy so the
+    /// snippet computes what the screen shows; it is not the authors' watroo package.
+    /// HelioFITS runs both on a grid of at most 1024 px a side with the widths
+    /// divided by the decimation. Empty for any other filter.
+    private var multiscaleLines: String {
+        switch filter {
+        case .mgn:
+            return """
+            import numpy as np
+            from sunkit_image.enhance import mgn   # Morgan and Druckmueller 2014, sunkit-image defaults
+            m = sunpy.map.Map(mgn(np.array(m.data, dtype=float)), m.meta)   # the MGN filter shown in HelioFITS
+            # HelioFITS filters a block-mean grid of at most 1024 px a side, with the Gaussian
+            # widths divided by the decimation; this runs at full resolution.
+            # MGN output is a visualization, not a calibrated radiance.
+
+            """
+        case .wow:
+            return """
+            import numpy as np
+            def _b3(a, step):   # B3-spline a trous smoothing, edges replicated
+                k = np.array([1, 4, 6, 4, 1]) / 16
+                for ax in (1, 0):
+                    p = np.pad(a, [(2 * step, 2 * step) if i == ax else (0, 0) for i in (0, 1)], mode="edge")
+                    a = sum(kv * np.take(p, range(i * step, i * step + a.shape[ax]), axis=ax) for i, kv in enumerate(k))
+                return a
+            def wow(d, scales=\(MultiscaleFilters.wowScales)):   # HelioFITS's WOW (after Auchere et al. 2023), not watroo
+                d = np.where(np.isfinite(d), d, np.nanmean(d)).astype(float)
+                out, c = np.zeros_like(d), d
+                for j in range(scales):
+                    nxt = _b3(c, 2 ** j)
+                    w = c - nxt
+                    p = w * w
+                    for i in range(j + 1):
+                        p = _b3(p, 2 ** i)
+                    rms = np.sqrt(p)
+                    out += np.divide(w, rms, out=np.zeros_like(w), where=rms > 0)
+                    c = nxt
+                return out
+            m = sunpy.map.Map(wow(m.data), m.meta)   # the WOW filter shown in HelioFITS
+            # HelioFITS filters a block-mean grid of at most 1024 px a side and drops the
+            # scales finer than a grid cell; this runs at full resolution.
+            # WOW output is a visualization, not a calibrated radiance.
+
+            """
+        default:
+            return ""
+        }
     }
 }

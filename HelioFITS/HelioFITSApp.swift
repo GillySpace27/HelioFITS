@@ -42,6 +42,7 @@ struct HelioFITSApp: App {
             // own "Copy as Pathname", so the shortcut is already known.
             CommandGroup(after: .newItem) {
                 Divider()
+                Button("Export Movie…") { HeaderWindowController.shared.exportMovie(nil) }
                 Button("Show in Finder") { HeaderWindowController.shared.revealInFinder(nil) }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                 Button("Copy Path") { HeaderWindowController.shared.copyPath(nil) }

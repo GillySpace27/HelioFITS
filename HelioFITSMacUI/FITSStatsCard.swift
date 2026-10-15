@@ -37,22 +37,22 @@ final class FITSStatsCard: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
     override func draw(_ dirty: NSRect) {
-        NSColor(calibratedWhite: 0.07, alpha: 0.96).setFill()
+        Theme.color(Palette.statsCardFill).setFill()
         let bg = NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8)
         bg.fill()
-        NSColor(calibratedWhite: 0.25, alpha: 1).setStroke()
+        Theme.color(Palette.cardStroke).setStroke()
         bg.stroke()
 
         let block = histH + axisH + pad
         NSAttributedString(string: text, attributes: [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
-            .foregroundColor: NSColor(calibratedRed: 0.88, green: 0.97, blue: 0.93, alpha: 1),
+            .font: Theme.mono(12),
+            .foregroundColor: Theme.color(Palette.statsText),
         ]).draw(in: NSRect(x: pad, y: 6, width: bounds.width - 2 * pad,
                            height: bounds.height - block - 6))
 
         guard let s = stats, !s.region.isEmpty else { return }
         let hr = NSRect(x: pad, y: bounds.height - block, width: bounds.width - 2 * pad, height: histH)
-        NSColor(calibratedWhite: 0.04, alpha: 1).setFill()
+        Theme.color(Palette.histogramWell).setFill()
         NSBezierPath(roundedRect: hr, xRadius: 3, yRadius: 3).fill()
 
         // One vertical scale for both, so the region reads as a fraction of the
@@ -71,8 +71,8 @@ final class FITSStatsCard: NSView {
                        width: max(1, bw - 1), height: h).fill()
             }
         }
-        bars(wl, NSColor(calibratedWhite: 0.42, alpha: 1))
-        bars(rl, NSColor(calibratedRed: 0.5, green: 0.72, blue: 0.54, alpha: 0.95))
+        bars(wl, Theme.color(Palette.histogramWhole))
+        bars(rl, Theme.color(Palette.histogramBar))
 
         // Where the display is currently clipped, drawn ON the distribution:
         // the useful question when choosing a stretch is how much of the data
@@ -83,7 +83,7 @@ final class FITSStatsCard: NSView {
             guard t >= -0.02, t <= 1.02 else { return nil }
             return hr.minX + CGFloat(min(max(t, 0), 1)) * hr.width
         }
-        NSColor(calibratedRed: 1, green: 0.78, blue: 0.35, alpha: 0.9).setStroke()
+        Theme.color(Palette.clipMarker).setStroke()
         for v in [s.clipLo, s.clipHi].compactMap({ $0 }) {
             guard let x = xFor(v) else { continue }
             let p = NSBezierPath()
@@ -94,8 +94,8 @@ final class FITSStatsCard: NSView {
         }
 
         // Abscissa: the axis was unlabelled, which is what made this a vibe.
-        let f = NSFont.monospacedSystemFont(ofSize: 9, weight: .regular)
-        let grey = NSColor(calibratedWhite: 0.62, alpha: 1)
+        let f = Theme.mono(9)
+        let grey = Theme.color(Palette.axisLabel)
         func label(_ t: String, rightAlignedAt x: CGFloat) {
             let a = NSAttributedString(string: t, attributes: [.font: f, .foregroundColor: grey])
             a.draw(at: NSPoint(x: x - a.size().width, y: hr.maxY + 1))

@@ -25,7 +25,7 @@ fi
 rm -rf "$BUILD"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources/English.lproj"
 
-clang -bundle -arch arm64 -isysroot "$SDK" -mmacosx-version-min=12.0 -O2 -Wall \
+clang -bundle -arch arm64 -arch x86_64 -isysroot "$SDK" -mmacosx-version-min=12.0 -O2 -Wall \
     -o "$BUNDLE/Contents/MacOS/FITSMetadataImporter" \
     "$SRC/main.c" "$SRC/fits_header.c" \
     -framework CoreFoundation -framework CoreServices

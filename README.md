@@ -81,6 +81,15 @@ gives you scroll‑to‑blink; press space there for the full controls.)
   equalization ([Gilly & Cranmer 2025](https://doi.org/10.1007/s11207-025-02578-x))
   that flattens the steep coronal falloff to reveal faint off‑limb structure at
   every height. None of it touches the file.
+- Pick **MGN** (multi‑scale Gaussian normalization, Morgan & Druckmüller 2014, with
+  sunkit‑image's default widths) or **WOW** (wavelet whitening after Auchère et al.
+  2023, in HelioFITS's own reading; not checked against the authors' `watroo` package)
+  to bring out structure at every scale. **Swipe** puts the unfiltered image left of a
+  divider and the filter right of it; drag it, or press **⌥←/⌥→**.
+  Every filter runs on a grid of at most 1024 px a side; MGN and WOW divide their
+  widths by that decimation, so the preview approximates the full‑resolution filter.
+  Filter output is a visualization, not a calibrated radiance; the readout and the
+  statistics always report the file's raw values. Copy Python reproduces each filter.
 - **⌥‑scroll** (or **⌘ +/−/0**) to zoom.
 
 The coordinate math is computed the same way astropy and sunpy do it, and verified
@@ -106,6 +115,11 @@ Double‑click a FITS file to open the built‑in viewer: the interactive image 
 the complete FITS header beneath. From here you can **export any HDU to PNG** for a
 slide or a paper, or **copy a ready‑to‑run sunpy snippet** that loads exactly the
 HDU you're looking at — a one‑click bridge back to Python.
+
+**Play** runs a file's layers as a looping movie. Open a **folder** (File ▸ Open…)
+and its FITS files become one: frames in DATE‑OBS order, a scrubber, a frame rate,
+and Diff as a running difference between neighbouring files, taken at full
+resolution. Nothing plays until you press Play.
 
 ---
 
