@@ -24,6 +24,10 @@ final class FITSToolbar {
     let header = NSButton()
     private let hasHeaderChip: Bool
     var headerOn = false
+    /// Optional Play chip (HF-14): steps through the file's layers, starting only when pressed.
+    let play = NSButton()
+    private let hasPlayChip: Bool
+    var playOn = false
     let filterMenu = NSPopUpButton(frame: .zero, pullsDown: false)
     let panel = NSView()
     let sLo = NSSlider(), sHi = NSSlider(), sG = NSSlider()
@@ -45,10 +49,11 @@ final class FITSToolbar {
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
          tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector,
          limitsSel: Selector? = nil, ringsSel: Selector? = nil, compareSel: Selector? = nil,
-         headerSel: Selector? = nil, swipeSel: Selector? = nil) {
+         headerSel: Selector? = nil, swipeSel: Selector? = nil, playSel: Selector? = nil) {
         self.hasSwipeChip = swipeSel != nil
         self.hasRingsChip = ringsSel != nil
         self.hasHeaderChip = headerSel != nil
+        self.hasPlayChip = playSel != nil
         self.hasCompareChip = compareSel != nil
         self.limitsSel = limitsSel
         self.limitsTarget = target
@@ -90,6 +95,10 @@ final class FITSToolbar {
         if let headerSel {
             mk(header, "Header", "Show this layer's FITS header: pinned keywords first, then quick groups", headerSel)
             header.setAccessibilityLabel("Show the FITS header")
+        }
+        if let playSel {
+            mk(play, "Play", "Play this file's layers as a loop. It never starts by itself; press again to stop.", playSel)
+            play.setAccessibilityLabel("Play the layers as a movie")
         }
         limb.setAccessibilityLabel("Show solar limb")
         diff.setAccessibilityLabel("Running difference with previous layer")
@@ -292,6 +301,7 @@ final class FITSToolbar {
         if hasRingsChip { views.append(rings) }
         views += [diff, tune]
         if hasHeaderChip { views.append(header) }
+        if hasPlayChip { views.append(play) }
         if hasCompareChip { views.append(compare) }
         let s = NSStackView(views: views)
         s.spacing = 6
@@ -396,6 +406,10 @@ final class FITSToolbar {
         if hasCompareChip { paint(compare, on: model.compareModel != nil, enabled: true) }
         if hasSwipeChip { paint(swipe, on: model.beforeAfter && model.filter != .none, enabled: model.filter != .none) }
         if hasHeaderChip { paint(header, on: headerOn, enabled: true) }
+        if hasPlayChip {
+            play.title = playOn ? "Pause" : "Play"
+            paint(play, on: playOn, enabled: model.count > 1)
+        }
         // The stretch composes with a filter rather than being clobbered by it
         // (#14): RHEF sets the ordering, the stretch maps that to the ramp.
         paint(tune, on: model.mode == .stretch, enabled: true)

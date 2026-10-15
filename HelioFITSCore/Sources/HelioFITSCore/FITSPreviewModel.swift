@@ -724,7 +724,14 @@ public final class FITSPreviewModel {
         guard canDiff, let p = page, let a = buffer(cur), let b = buffer(cur - 1),
               a.w == b.w, a.h == b.h else { return nil }
         let r = p.res
-        let ow = r.width, oh = r.height, k = r.factor
+        return Self.differenceImage(a, b, ow: r.width, oh: r.height, k: r.factor)
+    }
+
+    /// `a` minus `b` at full resolution, decimated by `k` to ow x oh, diverging
+    /// blue/white/red clipped at the 99th percentile of |difference|. Shared by
+    /// `difference()` and FITSSequence's running difference across files (HF-14).
+    static func differenceImage(_ a: Buffer, _ b: Buffer, ow: Int, oh: Int, k: Int) -> CGImage? {
+        guard a.w == b.w, a.h == b.h, ow > 0, oh > 0 else { return nil }
 
         var diff = [Float](repeating: 0, count: ow * oh)
         var mags: [Float] = []
