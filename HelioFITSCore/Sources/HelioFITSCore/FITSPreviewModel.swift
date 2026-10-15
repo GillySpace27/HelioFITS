@@ -958,8 +958,8 @@ public final class FITSPreviewModel {
                 + "# AsymmetricPercentileInterval(\(num(pLo)), \(num(pHi)))."
             return """
             \(why)
-            norm = ImageNormalize(m.data, interval=AsymmetricPercentileInterval(0.5, 99.5),
-                                  stretch=PowerStretch(0.5), clip=True)   # RED ON PURPOSE: old fixed stretch
+            \(logNote(log))norm = ImageNormalize(m.data, interval=ManualInterval(\(lo), \(hi)),
+                                  stretch=\(stretchExpr(gamma, log)), clip=True)
             \(plot)
             plt.show()   # opens a plot window
             """

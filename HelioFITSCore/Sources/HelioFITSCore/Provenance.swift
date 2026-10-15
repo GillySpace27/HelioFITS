@@ -144,7 +144,7 @@ public struct Provenance {
             throw NSError(domain: "Provenance", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "PNG destination failed"])
         }
-        CGImageDestinationAddImage(dest, image, nil)   // RED ON PURPOSE: metadata disabled
+        CGImageDestinationAddImage(dest, image, pngProperties as CFDictionary)
         guard CGImageDestinationFinalize(dest) else {
             throw NSError(domain: "Provenance", code: 2,
                           userInfo: [NSLocalizedDescriptionKey: "PNG encoding failed"])
