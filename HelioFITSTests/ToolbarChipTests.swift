@@ -54,4 +54,22 @@ struct ToolbarChipTests {
         tools.sync(model: m)
         #expect(tools.compare.accessibilityValue() as? String == "on")
     }
+
+    @Test("Header chip (HF-13): present only with a selector, beside Stretch, lit while the drawer is open")
+    func headerChip() {
+        let d = Dummy()
+        let s = #selector(Dummy.noop(_:))
+        let tools = FITSToolbar(target: d, limbSel: s, diffSel: s, tuneSel: s, stretchSel: s,
+                                resetSel: s, filterSel: s, headerSel: s)
+        let views = tools.stack.arrangedSubviews
+        #expect(views.count == 5)
+        #expect(views.last === tools.header)
+        #expect(!toolbar(d, rings: false, compare: false).stack.arrangedSubviews.contains { $0 is NSButton && ($0 as! NSButton).title == "Header" })
+        let m = FITSPreviewModel()
+        tools.sync(model: m)
+        #expect(tools.header.accessibilityValue() as? String == "off")
+        tools.headerOn = true
+        tools.sync(model: m)
+        #expect(tools.header.accessibilityValue() as? String == "on")
+    }
 }

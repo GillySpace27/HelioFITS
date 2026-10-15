@@ -311,6 +311,26 @@ public final class FITSPreviewModel {
             + (rhefShown ? "   ·   " + FITSRenderer.rhefChipText : "")
     }
 
+    /// The caption plus `KEY=value` for each pinned keyword this HDU has, in pin
+    /// order (HF-13). Hosts pass the pins (app group on the Mac, standard defaults
+    /// on iOS); `FITSRenderer.caption`, which iOS QuickRender also uses, is untouched.
+    public func caption(pinned: [String]) -> String {
+        let base = caption()
+        guard !pinned.isEmpty, let cards = headerCards() else { return base }
+        let extra = pinned.compactMap { k in FITSRenderer.cardVal(cards, k).map { "\(k)=\($0)" } }
+        return extra.isEmpty ? base : ([base] + extra).joined(separator: "  ·  ")
+    }
+
+    /// The current HDU's raw header cards, read once per HDU and kept.
+    public func headerCards() -> String? {
+        guard let p = page else { return nil }
+        if let c = cardsByHDU[p.hdu] { return c }
+        let c = FITSRenderer.cards(path: path, hdu: p.hdu)
+        cardsByHDU[p.hdu] = c
+        return c
+    }
+    private var cardsByHDU: [Int: String] = [:]
+
     /// True when the image on screen is the RHEF-filtered one (not the plain image
     /// shown while the filter is still rendering). Gates the chip and the stamp (RH-11).
     public var rhefShown: Bool { filter == .rhef && filterCache[filterKey] != nil }
