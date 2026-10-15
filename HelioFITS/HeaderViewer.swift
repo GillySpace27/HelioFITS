@@ -453,7 +453,10 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
             img = burned
             prov = Provenance(fields: prov.fields + [(key: "burn_in", value: "footer strip added under the image")])
         }
-        guard let png = try? prov.pngData(img) else { return nil }
+        guard var png = try? prov.pngData(img) else { return nil }
+        if let stamp = c.model.rhefStamp {   // RH-11: which RHEF made these pixels
+            png = FITSRenderer.pngAddingText(png, keyword: FITSRenderer.rhefPNGKeyword, text: stamp)
+        }
         let base = c.url.deletingPathExtension().lastPathComponent
         var suffix = ""
         if let p = c.model.page, c.model.count > 1 {

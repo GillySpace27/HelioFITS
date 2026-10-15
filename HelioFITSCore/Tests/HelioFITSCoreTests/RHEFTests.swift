@@ -123,4 +123,40 @@ struct RHEFTests {
                     "annulus \(bin): \(values.count) zeros map to \(Set(values).count) different outputs; tied values must share one rank (#34)")
         }
     }
+
+    // MARK: oRHEF-2.0 Upsilon (RH-12)
+    //
+    // Expected values: fastRHEF `orhef.core.apply_upsilon` (split at 0.5, a (low, high)
+    // pair) on p = 1/10 ... 10/10, read from that function on 2026-10-15, cast to float32.
+
+    @Test("applyUpsilon matches fastRHEF apply_upsilon, symmetric and as a (0.6, 0.4) pair")
+    func applyUpsilonMatchesReference() {
+        let sym: [Double] = [0.284663, 0.362820, 0.418141, 0.462436, 0.500000,
+                             0.537564, 0.581859, 0.637180, 0.715337, 1.000000]
+        let pair: [Double] = [0.190365, 0.288540, 0.368011, 0.437345, 0.500000,
+                              0.542695, 0.592403, 0.653428, 0.737347, 1.000000]
+        for k in 1...10 {
+            let p = Double(k) / 10
+            #expect(abs(FITSRenderer.applyUpsilon(p, low: 0.35, high: 0.35) - sym[k - 1]) < 1e-6, "p=\(p)")
+            #expect(abs(FITSRenderer.applyUpsilon(p, low: 0.6, high: 0.4) - pair[k - 1]) < 1e-6, "p=\(p)")
+        }
+    }
+
+    @Test("rhefEqualize takes an Upsilon pair: low below the 0.5 split, high from it up")
+    func upsilonPair() {
+        let vals: [Float] = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        let radii = [Double](repeating: 0, count: 10)
+        let expected: [Float] = [0.190365, 0.288540, 0.368011, 0.437345, 0.500000,
+                                 0.542695, 0.592403, 0.653428, 0.737347, 1.000000]
+        let out = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 1, nbins: 1,
+                                            upsilon: 0.6, upsilonHigh: 0.4)
+        for (o, e) in zip(out, expected) {
+            #expect(abs(o - e) < 1e-5, "pair output \(o) should match fastRHEF \(e)")
+        }
+        // No upsilonHigh means a symmetric curve, exactly the one-upsilon call.
+        let a = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 1, nbins: 1, upsilon: 0.35)
+        let b = FITSRenderer.rhefEqualize(values: vals, radii: radii, maxRadius: 1, nbins: 1,
+                                          upsilon: 0.35, upsilonHigh: 0.35)
+        #expect(a == b)
+    }
 }
