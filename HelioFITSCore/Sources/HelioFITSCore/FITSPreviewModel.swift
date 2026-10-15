@@ -310,6 +310,27 @@ public final class FITSPreviewModel {
         return p.caption + (mode == .diff && canDiff ? "   ·   Δ − previous HDU" : "")
     }
 
+    /// The caption plus `KEY=value` for each pinned keyword this HDU has, in pin
+    /// order (HF-13). Hosts pass the pins (app group on the Mac, standard defaults
+    /// on iOS); `FITSRenderer.caption`, which iOS QuickRender also uses, is untouched.
+    public func caption(pinned: [String]) -> String {
+        let base = caption()
+        guard !pinned.isEmpty, let cards = headerCards() else { return base }
+        let extra: [String] = []   // RED ON PURPOSE: pins ignored
+        _ = cards
+        return extra.isEmpty ? base : ([base] + extra).joined(separator: "  ·  ")
+    }
+
+    /// The current HDU's raw header cards, read once per HDU and kept.
+    public func headerCards() -> String? {
+        guard let p = page else { return nil }
+        if let c = cardsByHDU[p.hdu] { return c }
+        let c = FITSRenderer.cards(path: path, hdu: p.hdu)
+        cardsByHDU[p.hdu] = c
+        return c
+    }
+    private var cardsByHDU: [Int: String] = [:]
+
     /// The image to draw for the current HDU + mode. A filter, when set, wins
     /// over the plain/stretch/diff mode — it's a distinct way of looking at the
     /// same HDU. Filters are EXPENSIVE (RHEF is seconds on a big frame), so they
