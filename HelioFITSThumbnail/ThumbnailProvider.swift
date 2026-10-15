@@ -19,8 +19,15 @@ class ThumbnailProvider: QLThumbnailProvider {
         log.info("thumbnail: \(request.fileURL.lastPathComponent, privacy: .public) @ \(px)px")
         do {
             // ponytail: nearest-multiple-of-2 decimation, not exact resize — QL scales the rest.
-            let r = try FITSRenderer.render(path: request.fileURL.path, maxSide: max(px, 64))
-            let img = r.image
+            let path = request.fileURL.path
+            let r = try FITSRenderer.render(path: path, maxSide: max(px, 64))
+            // HF-20: the opt-in RHEF cover replaces the plain image only for a page
+            // with a solar limb; otherwise rhefCover is nil and the plain one stays.
+            let cover = SharedSettings.suite?.bool(forKey: SharedSettings.rhefCoversKey) == true
+                ? FITSPreviewModel.rhefCover(path: path, maxSide: max(px, 64)) : nil
+            let img = cover ?? r.image
+            let label = FITSRenderer.thumbnailLabel(fromHeader: r.header)
+            let pages = FITSRenderer.pageCount(path: path)
             let scale = min(request.maximumSize.width / CGFloat(img.width),
                             request.maximumSize.height / CGFloat(img.height))
             let size = CGSize(width: CGFloat(img.width) * scale,
@@ -31,6 +38,7 @@ class ThumbnailProvider: QLThumbnailProvider {
                 // paint only the bottom-left quarter.
                 ctx.draw(img, in: CGRect(x: 0, y: 0,
                                          width: CGFloat(ctx.width), height: CGFloat(ctx.height)))
+                FITSRenderer.decorateThumbnail(ctx, label: label, pages: pages)
                 return true
             }, nil)
         } catch {

@@ -13,6 +13,9 @@ public enum SharedSettings {
     /// it; the Quick Look extension only reads it. iOS keeps the same key in its own
     /// standard defaults (no app group there).
     public static let pinnedKeywordsKey = "pinnedKeywords"   // [String]
+    /// Opt-in RHEF cover on Finder thumbnails of files with a solar limb (HF-20). Off
+    /// when absent. Slower per icon, so the Mac app offers Refresh Icons after a change.
+    public static let rhefCoversKey = "rhefCovers"           // Bool
     public static var suite: UserDefaults? { UserDefaults(suiteName: suiteName) }
 
     /// The pinned keywords, cleaned (see `keywords(from:)`).
