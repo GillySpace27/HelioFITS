@@ -114,6 +114,10 @@ def _selftest():
     # HF-21: a call that could not answer is UNCHECKED, never "not done".
     assert asc_unchecked(None, "needs credentials") == "needs credentials"
     assert asc_unchecked({"data": []}, "x") is None, "an empty answer is a real answer"
+    ch = channels({"released": False, "submitted": False, "gh_release": True,
+                   "_unchecked": {"released": "ASC did not answer"}})
+    assert ch[0].startswith("App Store (official): UNCHECKED: ASC did not answer"), ch
+    assert ch[1].endswith("published"), ch
     assert gh_verdict(0, "") == (True, None)
     assert gh_verdict(1, "release not found") == (False, None)
     ok, why = gh_verdict(1, "error connecting to api.github.com")
@@ -205,6 +209,20 @@ def gh_verdict(returncode, stderr):
     if "not found" in (stderr or "").lower():
         return False, None
     return False, "gh could not answer: " + ((stderr or "").strip().splitlines() or ["no message"])[-1][:120]
+
+def channels(state):
+    """HF-21: one line per channel, from the checked state. App Store is the default channel;
+    the direct-download zip is a fallback (RELEASING.md "Which channels to cut")."""
+    unc = state.get("_unchecked", {})
+
+    def verdict(key, yes, no):
+        return "UNCHECKED: " + unc[key] if key in unc else (yes if state.get(key) else no)
+    return [
+        "App Store (official): " + verdict("released", "on sale", "not on sale")
+        + "; submitted: " + verdict("submitted", "yes", "no"),
+        "Direct zip (fallback): GitHub release " + verdict("gh_release", "published", "not published"),
+    ]
+
 
 def check_live(version, build):
     tag = f"v{version}-build.{build}"
@@ -399,6 +417,7 @@ if __name__ == "__main__":
                    help="append this release to the HelioSoftware feed in $SITE (default ~/vscode/Website), only if App Store Connect says READY_FOR_SALE")
     p.add_argument("--platform", default="MAC_OS", choices=["MAC_OS", "IOS"],
                    help="App Store platform of the version record to follow (default MAC_OS)")
+    p.add_argument("--channels", action="store_true", help="also print the state of each distribution channel")
     p.add_argument("--selftest", action="store_true", help="run the screenshot-verdict asserts and exit")
     p.add_argument("--emit", action="store_true",
                    help="also write a timestamped snapshot to ~/.claude/runbooks/state/ "
@@ -423,6 +442,8 @@ if __name__ == "__main__":
     for k, v in derive_local(args.version, changelog_text, live_state.get("tag")).items():
         done_flags[k] = done_flags.get(k, False) or v
     print(render(args.version, args.build, done_flags, live_state))
+    if args.channels:
+        print("\n".join(channels(live_state)))
 
     if args.emit:
         combined = {**done_flags, **live_state}

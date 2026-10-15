@@ -73,5 +73,85 @@ class Notes(unittest.TestCase):
             self.assertEqual(rn.main(["1.4.0", "--check-whats-new"], root=d), 0)
 
 
+rspec = importlib.util.spec_from_file_location("release", os.path.join(HERE, "release.py"))
+rel = importlib.util.module_from_spec(rspec)
+rspec.loader.exec_module(rel)
+
+
+class Release(unittest.TestCase):
+    def app(self, d, ver="1.4.0", build="10", spotlight=False):
+        import plistlib
+        a = os.path.join(d, "HelioFITS.app", "Contents")
+        os.makedirs(os.path.join(a, "MacOS"))
+        plistlib.dump({"CFBundleShortVersionString": ver, "CFBundleVersion": build, "CFBundleExecutable": "HelioFITS"},
+                      open(os.path.join(a, "Info.plist"), "wb"))
+        open(os.path.join(a, "MacOS", "HelioFITS"), "w").write("x")
+        if spotlight:
+            os.makedirs(os.path.join(a, "Library", "Spotlight", "FITSMetadataImporter.mdimporter"))
+        return os.path.join(d, "HelioFITS.app")
+
+    def test_good_app_passes(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(rel.verify_app(self.app(d), "1.4.0", "10", archs=lambda p: {"arm64", "x86_64"}), ([], []))
+
+    def test_each_defect_is_reported(self):
+        with tempfile.TemporaryDirectory() as d:
+            probs, _ = rel.verify_app(self.app(d, ver="1.3.0", spotlight=True), "1.4.0", "10",
+                                      archs=lambda p: {"arm64"})
+            joined = " | ".join(probs)
+            for word in ("importer", "Config/Version.xcconfig", "architectures"):
+                self.assertIn(word, joined)
+
+    def test_unreadable_archs_are_unchecked_not_ok_or_failed(self):
+        with tempfile.TemporaryDirectory() as d:
+            app = self.app(d)
+            self.assertEqual(rel.verify_app(app, "1.4.0", "10", archs=lambda p: None)[0], [])
+            self.assertTrue(rel.verify_app(app, "1.4.0", "10", archs=lambda p: None)[1])
+
+    def test_store_archive_command_has_no_developer_id_override(self):
+        cmd = " ".join(rel.archive_cmd("1.4.0", "10"))
+        self.assertNotIn("Developer ID", cmd)
+        self.assertNotIn("DIRECT_DOWNLOAD", cmd)
+
+    def test_gated_steps_refuse_without_the_typed_text(self):
+        for step in ("upload", "submit", "release"):
+            with self.assertRaises(SystemExit) as c:
+                rel.main([step, "--confirm", f"{step} 1.4.0 build 9"])
+            self.assertEqual(c.exception.code, 3, step)
+
+    def test_submit_stops_after_the_gate(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.environ[gates.LOG_ENV] = os.path.join(d, "log.tsv")
+            try:
+                v, b = rel.xcconfig()
+                self.assertEqual(rel.main(["submit", "--confirm", f"submit {v} build {b}"]), 4)
+            finally:
+                del os.environ[gates.LOG_ENV]
+
+    def test_export_options_plist(self):
+        import plistlib
+        o = plistlib.load(open(rel.EXPORT_OPTIONS, "rb"))
+        self.assertEqual((o["method"], o["destination"], o["teamID"], o["signingStyle"]),
+                         ("app-store-connect", "upload", "UB45PPC2JS", "automatic"))
+
+    def test_credentials_are_read_as_text_without_opening_the_key(self):
+        kid, iss, key = rel.asc_credentials()
+        self.assertTrue(key.endswith(f"AuthKey_{kid}.p8"))
+
+    def test_provenance_marks_what_it_cannot_read(self):
+        import json
+        with tempfile.TemporaryDirectory() as d:
+            env = dict(os.environ, PROV_BUILD_DIR=d, PROV_APP=os.path.join(d, "none.app"))
+            r = subprocess.run(["bash", os.path.join(HERE, "provenance.sh"), "9.9.9", "1"], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            doc = json.load(open(os.path.join(d, "HelioFITS-9.9.9-b1.provenance.json")))
+            self.assertEqual(doc["tag"], "v9.9.9-build.1")
+            self.assertEqual(doc["notarization_id"], "UNCHECKED")
+            self.assertTrue(doc["macho_sha256"].startswith("UNCHECKED"))
+            self.assertIn("cfitsio_version", doc["cfitsio_stamp"])
+            again = subprocess.run(["bash", os.path.join(HERE, "provenance.sh"), "9.9.9", "1"], capture_output=True, text=True, env=env)
+            self.assertNotEqual(again.returncode, 0, "must refuse to overwrite")
+
+
 if __name__ == "__main__":
     unittest.main()
