@@ -29,7 +29,31 @@ public enum MultiscaleFilters {
     /// 1e-15 (as sunkit-image does for the former); non-finite inputs come out NaN.
     public static func mgn(values: [Float], w: Int, h: Int, sigmas: [Double] = mgnSigmas,
                            k: Double = mgnK, gamma: Double = mgnGamma, hMix: Double = mgnH) -> [Float] {
-        [Float](repeating: 0, count: w * h)   // stub: shows MGNTests failing (HF-19)
+        let n = w * h
+        guard n > 0, values.count == n, !sigmas.isEmpty else { return [] }
+        var d = [Double](repeating: 1e-15, count: n)
+        for i in 0..<n where values[i].isFinite && values[i] > 0 { d[i] = Double(values[i]) }
+        var acc = [Double](repeating: 0, count: n)
+        for s in sigmas {
+            let g = gaussKernel(sigma: s)
+            let mean = blur(d, w: w, h: h, kernel: g)
+            var diff = [Double](repeating: 0, count: n), sq = [Double](repeating: 0, count: n)
+            for i in 0..<n { diff[i] = d[i] - mean[i]; sq[i] = diff[i] * diff[i] }
+            let varLocal = blur(sq, w: w, h: h, kernel: g)
+            for i in 0..<n {
+                let sd = varLocal[i].squareRoot()
+                acc[i] += atan(k * (sd > 0 ? diff[i] / sd : 0))
+            }
+        }
+        let lo = d.min() ?? 0, hi = d.max() ?? 0
+        let span = hi > lo ? hi - lo : 1
+        var out = [Float](repeating: 0, count: n)
+        for i in 0..<n {
+            let cg = Foundation.pow((d[i] - lo) / span, 1 / gamma)
+            let v = hMix * cg + (1 - hMix) * acc[i] / Double(sigmas.count)
+            out[i] = values[i].isFinite ? Float(min(1, max(0, v))) : .nan
+        }
+        return out
     }
 
     /// The MGN widths that still mean something on a grid decimated by `scale`:
@@ -54,7 +78,27 @@ public enum MultiscaleFilters {
     /// not checked (scripts/make_filter_fixtures.py). Non-finite inputs enter as the
     /// mean of the finite ones and come out NaN.
     public static func wow(values: [Float], w: Int, h: Int, scales: Int = wowScales) -> [Float] {
-        [Float](repeating: 0, count: w * h)   // stub: shows WOWTests failing (HF-19)
+        let n = w * h
+        guard n > 0, values.count == n, scales > 0 else { return [] }
+        var sum = 0.0, cnt = 0
+        for v in values where v.isFinite { sum += Double(v); cnt += 1 }
+        let fill = cnt > 0 ? sum / Double(cnt) : 0
+        var c = values.map { $0.isFinite ? Double($0) : fill }
+        var acc = [Double](repeating: 0, count: n)
+        for j in 0..<scales {
+            let next = blur(c, w: w, h: h, kernel: b3, step: 1 << j)
+            var detail = [Double](repeating: 0, count: n), p = [Double](repeating: 0, count: n)
+            for i in 0..<n { detail[i] = c[i] - next[i]; p[i] = detail[i] * detail[i] }
+            for i in 0...j { p = blur(p, w: w, h: h, kernel: b3, step: 1 << i) }
+            for i in 0..<n {
+                let rms = p[i].squareRoot()
+                if rms > 0 { acc[i] += detail[i] / rms }
+            }
+            c = next
+        }
+        var out = [Float](repeating: 0, count: n)
+        for i in 0..<n { out[i] = values[i].isFinite ? Float(acc[i]) : .nan }
+        return out
     }
 
     /// Starlet scales on a grid decimated by `scale`: the native scales minus the
