@@ -21,7 +21,7 @@ extension FITSRenderer {
     public static let rhefConventionID = "oRHEF-2.0"
     public static let rhefImplementationID = "heliofits-swift"
     /// Where this port differs from oRHEF-2.0 (ids from the spec's deviation table).
-    public static let rhefDeviations = ["UPS-MEAN", "TIES-TOL", "KEY-QUANT", "GEOM-GRID", "DTYPE-IN"]
+    public static let rhefDeviations = ["TIES-TOL", "KEY-QUANT", "GEOM-GRID", "DTYPE-IN"]
     /// The Upsilon the viewer applies (both sides), as `FITSPreviewModel.rhefValues` uses it.
     public static let rhefUpsilon = 0.35
     /// PNG tEXt keyword that carries the stamp.
@@ -41,7 +41,7 @@ extension FITSRenderer {
         return "RHEF \(rhefConventionID) via \(rhefImplementationID) \(version); upsilon=\(ups); deviations=\(devs)"
     }
 
-    /// The on-screen chip: "RHEF oRHEF-2.0 (differs: UPS-MEAN, ...)", or just the
+    /// The on-screen chip: "RHEF oRHEF-2.0 (differs: TIES-TOL, ...)", or just the
     /// convention when nothing differs.
     public static var rhefChipText: String {
         rhefDeviations.isEmpty ? "RHEF \(rhefConventionID)"

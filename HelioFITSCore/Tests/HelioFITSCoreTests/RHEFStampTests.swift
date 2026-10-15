@@ -19,7 +19,7 @@ import Foundation
     func stampFormat() {
         let s = FITSRenderer.rhefStamp(version: "1.2.3")
         #expect(s == "RHEF oRHEF-2.0 via heliofits-swift 1.2.3; upsilon=0.35,0.35; "
-                   + "deviations=UPS-MEAN,TIES-TOL,KEY-QUANT,GEOM-GRID,DTYPE-IN")
+                   + "deviations=TIES-TOL,KEY-QUANT,GEOM-GRID,DTYPE-IN")
         #expect(Self.matches(s))
         #expect(Self.matches(FITSRenderer.rhefStamp(upsilon: nil)))
         #expect(FITSRenderer.rhefStamp(upsilon: (0.2, 0.65), version: "x").contains("; upsilon=0.2,0.65;"))
@@ -79,7 +79,7 @@ import Foundation
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         #expect(m.rhefShown)
-        #expect(m.caption().hasSuffix("RHEF oRHEF-2.0 (differs: UPS-MEAN, TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN)"))
+        #expect(m.caption().hasSuffix("RHEF oRHEF-2.0 (differs: TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN)"))
         let stamp = try #require(m.rhefStamp)
         #expect(Self.matches(stamp))
         #expect(m.pythonSnippet(path: p).contains("# HelioFITS showed: RHEF oRHEF-2.0 via heliofits-swift "))

@@ -662,11 +662,19 @@ public enum FITSRenderer {
         return parts.joined(separator: "  ·  ")
     }
 
-    // RHEF-CONVENTION: oRHEF-2.0; deviations: UPS-MEAN, TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN
+    /// The oRHEF-2.0 Upsilon curve: a double-sided gamma split at 0.5, `low` below
+    /// the split and `high` from it up. Continuous at the split (both halves give 0.5
+    /// there). Same formula as fastRHEF `orhef.core.apply_upsilon` with a (low, high) pair.
+    public static func applyUpsilon(_ p: Double, low: Double, high: Double) -> Double {
+        p < 0.5 ? pow(2 * p, low) / 2 : 1 - pow(2 - 2 * p, high) / 2
+    }
+
+    // RHEF-CONVENTION: oRHEF-2.0; deviations: TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN
     /// The core of the Radial Histogram Equalizing Filter (Gilly & Cranmer 2025,
     /// Solar Phys. 300, 174): bin pixels into equally-spaced radial annuli, rank
     /// each annulus's finite values to a percentile in (0,1], then apply the
-    /// `upsilon` double-sided gamma about the bin's mean rank. Ported from the
+    /// `upsilon` double-sided gamma split at 0.5 (`applyUpsilon`; `upsilonHigh`, when
+    /// given, is the exponent from 0.5 up, as in an oRHEF (low, high) pair). Ported from the
     /// author's sunkit-image `radial.rhef` with its default ranking,
     /// `method="scipy"`: `rankdata(method="average")`, so tied values share the
     /// mean of the ranks they span. The ordinal ranking this used to port
@@ -686,7 +694,7 @@ public enum FITSRenderer {
     /// callers pass the largest radius on the grid. Pure and deterministic: pinned in
     /// the test suite against a sunkit-image reference.
     public static func rhefEqualize(values: [Float], radii: [Double], maxRadius: Double,
-                             nbins: Int, upsilon: Double) -> [Float] {
+                             nbins: Int, upsilon: Double, upsilonHigh: Double? = nil) -> [Float] {
         let n = values.count
         var out = [Float](repeating: .nan, count: n)
         guard n > 0, nbins > 0, maxRadius > 0, n < (1 << 23) else { return out }
@@ -719,15 +727,18 @@ public enum FITSRenderer {
         keys.sort()
 
         let idxMask: UInt64 = (1 << 23) - 1
+        let upsHigh = upsilonHigh ?? upsilon
         var start = 0
         while start < keys.count {
             let bin = keys[start] >> 53
             var end = start + 1
             while end < keys.count, keys[end] >> 53 == bin { end += 1 }
             let m = Double(end - start)
-            // Average ranks sum to the same total as ordinal ones, so their mean
-            // is still exactly (m+1)/(2m). upsilon splits about that mean.
-            let mean = (m + 1) / (2 * m)
+            // Upsilon splits at 0.5 (oRHEF-2.0, RH-12). It used to split at the bin's
+            // mean rank, (m+1)/(2m). Ranks here are multiples of 1/(2m), so the only
+            // rank in [0.5, mean) is 0.5 itself, where both halves give 0.5: the two
+            // splits give bit-identical output (checked on the golden bundle's
+            // equal-width cases and 300 random tie-heavy bins, RH-12 PR).
             // Walk runs of tied values (within `tol` of the run's first, which is
             // its smallest: keys are sorted by value); every member gets the run's
             // mean rank.
@@ -738,8 +749,7 @@ public enum FITSRenderer {
                 while h < end, values[Int(keys[h] & idxMask)] - v0 <= tol { h += 1 }
                 // ordinal ranks g-start+1 … h-start; their mean
                 let pr = (Double(g - start + 1) + Double(h - start)) / 2 / m
-                let y = Float(pr < mean ? pow(2 * pr, upsilon) / 2
-                                        : 1 - pow(2 - 2 * pr, upsilon) / 2)
+                let y = Float(applyUpsilon(pr, low: upsilon, high: upsHigh))
                 for r in g..<h { out[Int(keys[r] & idxMask)] = y }
                 g = h
             }
