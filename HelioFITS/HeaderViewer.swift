@@ -575,6 +575,46 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         return ctx[ObjectIdentifier(w)]?.shownURL
     }
 
+    /// File > Export Movie (HF-14): the playing frames, or the layers of this file, as H.264,
+    /// HEVC or an animated PNG with the provenance in the movie's description. Refuses to
+    /// overwrite. Frames are a visualization, not a calibrated radiance.
+    @objc func exportMovie(_ sender: Any?) {
+        guard let w = NSApp.keyWindow, let c = ctx[ObjectIdentifier(w)] else { NSSound.beep(); return }
+        let count = c.sequence?.count ?? c.model.count
+        guard count > 1 else { NSSound.beep(); return }
+        stopPlaying(c)
+        let formats: [(String, MovieExporter.Format)] = [("H.264 movie", .h264), ("HEVC movie", .hevc),
+                                                          ("Animated PNG", .apng)]
+        let pop = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 170, height: 26), pullsDown: false)
+        pop.addItems(withTitles: formats.map { $0.0 })
+        let panel = NSSavePanel()
+        panel.accessoryView = pop
+        panel.message = "Frames are a visualization, not a calibrated radiance. Choose a name that does not exist yet."
+        panel.nameFieldStringValue = c.url.deletingPathExtension().lastPathComponent
+        let seq = c.sequence
+        let diff = c.model.mode == .diff
+        let layers = c.model.pages.map { $0.image }
+        let fps = c.fps
+        let note = Provenance(model: c.model, fileName: c.url.lastPathComponent,
+                              appVersion: Provenance.appVersion()).text
+            + "\nframes: \(count) at \(fps) per second" + (seq != nil ? " (a folder, in DATE-OBS order)" : " (the layers of one file)")
+        panel.beginSheetModal(for: w) { resp in
+            guard resp == .OK, let picked = panel.url else { return }
+            let format = formats[pop.indexOfSelectedItem].1
+            let url = picked.deletingPathExtension().appendingPathExtension(format.fileExtension)
+            Task.detached {
+                do {
+                    try await MovieExporter.write(count: count, fps: fps, format: format, to: url, description: note) { i in
+                        if let seq { return diff ? (seq.difference(i) ?? seq.image(i)) : seq.image(i) }
+                        return layers.indices.contains(i) ? layers[i] : nil
+                    }
+                } catch {
+                    await MainActor.run { NSAlert(error: error).beginSheetModal(for: w) }
+                }
+            }
+        }
+    }
+
     @objc func revealInFinder(_ sender: Any?) {
         guard let url = fileURL(for: sender) else { return }
         NSWorkspace.shared.activateFileViewerSelecting([url])

@@ -331,6 +331,13 @@ struct ViewerView: View {
                         Label("Share Image", systemImage: "photo")
                     }
                 }
+                if m.count > 1 {
+                    // The layers as a short H.264 movie, made only when it is shared (HF-14).
+                    ShareLink(item: LayerMovie(model: m, name: viewer.name),
+                              preview: SharePreview(viewer.name + " (movie)")) {
+                        Label("Share Movie", systemImage: "film")
+                    }
+                }
                 ShareLink(item: viewer.url) { Label("Share FITS File", systemImage: "doc") }
                 Button {
                     UIPasteboard.general.string = m.pythonSnippet(path: viewer.url.path)
@@ -424,6 +431,32 @@ struct ProvenancePNG: Transferable {
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(exportedContentType: .png) { item in try await item.pngData() }
             .suggestedFileName { item in (item.name as NSString).deletingPathExtension + ".png" }
+    }
+}
+
+/// This file's layers as an H.264 movie with the provenance in its description (HF-14),
+/// written to a temporary file only when shared. A visualization, not a calibrated radiance.
+struct LayerMovie: Transferable {
+    let model: FITSPreviewModel
+    let name: String
+
+    @MainActor func snapshot() -> (frames: [CGImage], note: String) {
+        let note = Provenance(model: model, fileName: name, appVersion: Provenance.appVersion()).text
+            + "\nframes: \(model.count) at \(Int(Viewer.playFPS)) per second (the layers of one file)"
+        return (model.pages.map { $0.image }, note)
+    }
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .mpeg4Movie) { item in
+            let snap = await item.snapshot()
+            let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let url = dir.appendingPathComponent((item.name as NSString).deletingPathExtension + ".mp4")
+            try await MovieExporter.write(count: snap.frames.count, fps: Int(Viewer.playFPS), format: .h264,
+                                          to: url, description: snap.note) { snap.frames.indices.contains($0) ? snap.frames[$0] : nil }
+            return SentTransferredFile(url)
+        }
+        .suggestedFileName { item in (item.name as NSString).deletingPathExtension + ".mp4" }
     }
 }
 
@@ -847,4 +880,59 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     }
     func gestureRecognizer(_ g: UIGestureRecognizer,
                            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+}
+
+// MARK: folder movie (HF-14)
+
+/// A folder of FITS frames, in DATE-OBS order, scrubbed or played. Nothing plays until Play is pressed.
+struct FolderMovieView: View {
+    let sequence: FITSSequence
+    let name: String
+    let openFrame: (String) -> Void
+    @State private var index = 0
+    @State private var image: CGImage?
+    @State private var playing = false
+    private let tick = Timer.publish(every: 1 / Viewer.playFPS, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        VStack(spacing: 12) {
+            if sequence.count == 0 {
+                Text("No FITS files in this folder.").foregroundStyle(.secondary)
+            } else {
+                Group {
+                    if let image { Image(decorative: image, scale: 1).resizable().scaledToFit() }
+                    else { ProgressView() }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Frame \(index + 1) of \(sequence.count)")
+                let f = sequence.frames[index]
+                Text(f.name + (f.dateObs.map { "  " + $0 } ?? "")).font(.caption).foregroundStyle(.secondary)
+                if sequence.count > 1 {
+                    Slider(value: Binding(get: { Double(index) }, set: { index = Int($0.rounded()) }),
+                           in: 0...Double(sequence.count - 1), step: 1)
+                        .accessibilityLabel("Frame")
+                }
+                HStack {
+                    Button(playing ? "Pause" : "Play") { playing.toggle() }.disabled(sequence.count < 2)
+                    Spacer()
+                    Button("Open this frame") { openFrame(f.path) }
+                }
+            }
+        }
+        .padding()
+        .onAppear { load() }
+        .onChange(of: index) { _ in load() }
+        .onReceive(tick) { _ in
+            guard playing, sequence.count > 1 else { return }
+            index = (index + 1) % sequence.count
+        }
+    }
+
+    private func load() {
+        let i = index, seq = sequence
+        DispatchQueue.global(qos: .userInitiated).async {
+            let img = seq.image(i)
+            DispatchQueue.main.async { if index == i { image = img } }
+        }
+    }
 }
