@@ -45,7 +45,8 @@ struct RHEFConformanceTests {
     static let impl = "heliofits-swift"
     static let convention = "oRHEF-2.0"
     /// The deviations of the heliofits-swift row in fastRHEF conventions/implementations.json.
-    static let declared: Set<String> = ["UPS-MEAN", "TIES-TOL", "KEY-QUANT", "GEOM-GRID", "DTYPE-IN"]
+    /// UPS-MEAN left with RH-12 (split at 0.5); the fastRHEF row follows in that repo.
+    static let declared: Set<String> = ["TIES-TOL", "KEY-QUANT", "GEOM-GRID", "DTYPE-IN"]
 
     @Test("rhefEqualize matches the golden bundle on its equal-width cases",
           .enabled(if: Golden.present || Golden.mode == "enforce"))
@@ -72,15 +73,14 @@ struct RHEFConformanceTests {
             let expected = try floats(caseDir.appendingPathComponent("expected_\(Self.convention).f32"), count: n)
             let ups = try #require(p["upsilon"])
             let pair = ups == "none" ? [1.0, 1.0] : ups.split(separator: ",").compactMap { Double($0) }
-            try #require(pair.count == 2 && pair[0] == pair[1],
-                         "\(name): rhefEqualize takes one upsilon, the case has \(ups)")
+            try #require(pair.count == 2, "\(name): upsilon must be one (low, high) pair, the case has \(ups)")
             let maxRadius = try #require(p["max_radius"].flatMap { Double($0) })
             let nbins = try #require(p["nbins"].flatMap { Int($0) })
             let tol = try #require(p["tol_f32"].flatMap { Double($0) })
             let sensitive = Set((p["sensitive_to"] ?? "none").split(separator: ",").map(String.init))
 
             let out = FITSRenderer.rhefEqualize(values: values, radii: radii, maxRadius: maxRadius,
-                                                nbins: nbins, upsilon: pair[0])
+                                                nbins: nbins, upsilon: pair[0], upsilonHigh: pair[1])
             let diff = maxAbsDiff(out, expected)
             let within = !diff.isNaN && diff <= tol
             let result = within ? "PASS"

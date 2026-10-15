@@ -16,6 +16,16 @@ All notable changes to HelioFITS are recorded here. Format follows
   is unchanged (no limit). Takes effect after `build-universal.sh` rebuilds the xcframework.
   See SECURITY.md.
 
+### Changed
+
+- **RHEF follows RHEF 2.0's Upsilon split at 0.5.** The filter split its
+  double-sided gamma at each annulus's mean rank; it now splits at 0.5, as the
+  oRHEF-2.0 convention does, and accepts a (low, high) Upsilon pair. No image
+  changes: ranks here are multiples of 1/(2m), so the only rank between 0.5 and the
+  mean is 0.5 itself, where both halves meet (checked bit for bit on the RHEF golden
+  bundle and on random tie-heavy data). Copy Python now names the deviations
+  HelioFITS still declares (TIES-TOL, KEY-QUANT, GEOM-GRID, DTYPE-IN).
+
 ### Fixed
 
 - **RHEF drew horizontal stripes over flat regions.** PUNCH L3 fills its
