@@ -274,7 +274,8 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                               filterSel: #selector(filterChanged(_:)),
                               limitsSel: #selector(limitsChanged(_:)),
                               ringsSel: #selector(toggleRings(_:)), compareSel: #selector(compareClicked(_:)),
-                              swipeSel: #selector(toggleSwipe(_:)))
+                              swipeSel: #selector(toggleSwipe(_:)),
+                              upsilonSel: #selector(upsilonChanged(_:)))
         let toolStack = c.tools.stack
         toolStack.translatesAutoresizingMaskIntoConstraints = false
         c.tools.panel.translatesAutoresizingMaskIntoConstraints = false
@@ -470,6 +471,17 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         if c.model.mode == .stretch { refresh(c) }
     }
 
+    /// Shadows, Highlights or the reveal checkbox moved (RH-13): re-shape the cached ranks.
+    @objc private func upsilonChanged(_ s: NSControl) {
+        guard let c = ctx(for: s) else { return }
+        let u = c.tools.readUpsilon()
+        let reveal = c.tools.cReveal.state == .on
+        let shaped = c.model.setUpsilon(low: u.low, high: u.high)
+        let wipe = reveal != c.model.revealRaw
+        c.model.revealRaw = reveal
+        if shaped || wipe { refresh(c) }
+    }
+
     @objc private func resetStretch(_ s: NSButton) {
         guard let c = ctx(for: s) else { return }
         if c.tools.applyReset(to: c.model) { refresh(c) }
@@ -490,10 +502,12 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.canvas.rings = c.model.ringsOn ? c.model.rings() : nil
         // Compare: the second image already lined up on this one's grid. Image first,
         // then mode, so the canvas never sees a mode with nothing to show.
-        c.canvas.compareImage = c.model.registeredCompareImage().map(NSImage.init)
-        c.canvas.compareMode = c.canvas.compareImage == nil ? nil : c.model.compareMode
-        // Before and after (HF-19): with no compare file, the unfiltered image under the filter.
-        if c.canvas.compareImage == nil, c.model.beforeAfterShown {
+        let cmp = c.model.canvasCompare()
+        c.canvas.compareImage = cmp.map { NSImage($0.image) }
+        c.canvas.compareMode = cmp?.mode
+        // Before and after (HF-19): with no compare file or reveal wipe, the unfiltered
+        // image under the filter.
+        if cmp == nil, c.model.beforeAfterShown {
             c.canvas.image = c.model.unfilteredImage().map(NSImage.init)
             c.canvas.compareImage = c.model.image().map(NSImage.init)
             c.canvas.compareMode = .swipe

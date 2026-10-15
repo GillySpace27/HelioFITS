@@ -41,6 +41,11 @@ final class FITSToolbar {
     let histogram = FITSHistogramView(frame: .zero)
     private let limitsSel: Selector?
     private weak var limitsTarget: AnyObject?
+    /// RHEF Shadows, Highlights and the reveal wipe (RH-13): present only when the host
+    /// passes `upsilonSel`; shown in the stretch panel while the RHEF filter is on.
+    let sShadows = NSSlider(), sHighlights = NSSlider()
+    let cReveal = NSButton(checkboxWithTitle: "Reveal plain image", target: nil, action: nil)
+    private var rhefRows: [NSView] = []
 
     /// - Parameter target: receives the actions; must implement the selectors.
     /// - Parameter limitsSel: fired when vmin/vmax are typed or a histogram handle
@@ -49,7 +54,8 @@ final class FITSToolbar {
     init(target: AnyObject, limbSel: Selector, diffSel: Selector,
          tuneSel: Selector, stretchSel: Selector, resetSel: Selector, filterSel: Selector,
          limitsSel: Selector? = nil, ringsSel: Selector? = nil, compareSel: Selector? = nil,
-         headerSel: Selector? = nil, swipeSel: Selector? = nil, playSel: Selector? = nil) {
+         headerSel: Selector? = nil, swipeSel: Selector? = nil, playSel: Selector? = nil,
+         upsilonSel: Selector? = nil) {
         self.hasSwipeChip = swipeSel != nil
         self.hasRingsChip = ringsSel != nil
         self.hasHeaderChip = headerSel != nil
@@ -199,13 +205,37 @@ final class FITSToolbar {
             }
             limitViews = [histogram, fields]
         }
+        if let upsilonSel {
+            func urow(_ name: String, _ s: NSSlider, _ tip: String) -> NSStackView {
+                s.minValue = 0.05; s.maxValue = 1; s.doubleValue = FITSRenderer.rhefUpsilon
+                s.target = target; s.action = upsilonSel
+                s.isContinuous = true
+                s.toolTip = tip
+                s.setAccessibilityLabel(name)
+                let l = NSTextField(labelWithString: name)
+                l.font = .systemFont(ofSize: 11)
+                l.textColor = NSColor(calibratedWhite: 0.8, alpha: 1)
+                l.setContentHuggingPriority(.required, for: .horizontal)
+                let st = NSStackView(views: [l, s])
+                st.spacing = 6
+                return st
+            }
+            cReveal.target = target; cReveal.action = upsilonSel
+            cReveal.toolTip = "Drag the divider: the RHEF image on its left, the plain image on its right"
+            rhefRows = [
+                urow("Shadows", sShadows, "RHEF Upsilon below the middle rank. Lower brightens faint structure"),
+                urow("Highlights", sHighlights, "RHEF Upsilon from the middle rank up. Lower flattens the brightest structure"),
+                cReveal,
+            ]
+            rhefRows.forEach { $0.isHidden = true }
+        }
         let stack = NSStackView(views: [
             row("Low", sLo, 0, 1, Self.posLow(FITSRenderer.pLow),
                 "Clip the darkest pixels to black. Logarithmic, reaching the median: fine control near 0%"),
             row("High", sHi, 0, 1, Self.posHigh(FITSRenderer.pHigh),
                 "Clip the brightest pixels to white. Logarithmic: fine control near 100%, where a solar image's tail lives"),
             row("Gamma", sG, 0.1, 2, 0.5, "Below 1 brightens faint structure; above 1 darkens it"),
-        ] + limitViews + [
+        ] + rhefRows + limitViews + [
             limitsLabel,
             bottom,
         ])
@@ -334,6 +364,12 @@ final class FITSToolbar {
          sG.doubleValue, cLog.state == .on)
     }
 
+    /// The Shadows and Highlights sliders; the defaults when the host has none.
+    func readUpsilon() -> (low: Double, high: Double) {
+        rhefRows.isEmpty ? (FITSRenderer.rhefUpsilon, FITSRenderer.rhefUpsilon)
+                         : (sShadows.doubleValue, sHighlights.doubleValue)
+    }
+
     func readFilter() -> FITSPreviewModel.Filter {
         FITSPreviewModel.Filter(rawValue: filterMenu.indexOfSelectedItem) ?? .none
     }
@@ -417,6 +453,12 @@ final class FITSToolbar {
             ? "Adjust the brightness stretch (percentile clip, gamma, log)"
             : "Adjust the stretch applied on top of the \(model.filter.label) filter"
         panel.isHidden = (model.mode != .stretch)
+        if !rhefRows.isEmpty {
+            rhefRows.forEach { $0.isHidden = model.filter != .rhef }
+            sShadows.doubleValue = model.upsilonLow
+            sHighlights.doubleValue = model.upsilonHigh
+            cReveal.state = model.revealRaw ? .on : .off
+        }
         if let l = model.displayLimits() {
             let u = l.unit.isEmpty ? "" : " " + l.unit
             limitsLabel.stringValue = "min \(FITSRenderer.fmtValue(l.lo))\(u)\nmax \(FITSRenderer.fmtValue(l.hi))\(u)"

@@ -50,6 +50,12 @@ public final class FITSPreviewModel {
             + "the full-resolution filter. Output is a visualization, not a calibrated radiance."
     }
     public var filter: Filter = .none
+    /// RHEF Shadows (Upsilon below the 0.5 rank) and Highlights (from 0.5 up), 0.05 to 1
+    /// as in HelioFITS Studio. Changing them re-shapes the cached ranks; nothing re-sorts.
+    public var upsilonLow = FITSRenderer.rhefUpsilon
+    public var upsilonHigh = FITSRenderer.rhefUpsilon
+    /// Reveal wipe (RH-13): while RHEF is shown, the plain image right of the divider.
+    public var revealRaw = false
 
     public typealias Buffer = (w: Int, h: Int, pix: [Float])
 
@@ -111,7 +117,12 @@ public final class FITSPreviewModel {
     /// Filter OUTPUT (the equalized values), rendered off-main, keyed
     /// "cur:filter". Values rather than a finished image so the stretch can be
     /// re-applied on top without re-running the expensive equalization (#14).
+    /// For RHEF these are the RANKS (Upsilon 1, the identity), not the shaped output:
+    /// Shadows and Highlights re-shape them per pixel (`shapedFilter`) without
+    /// re-running the sort (RH-13).
     private var filterCache: [String: (w: Int, h: Int, vals: [Float])] = [:]
+    private var shapedCache: (key: String, low: Double, high: Double,
+                              g: (w: Int, h: Int, vals: [Float]))?
     private var filterLoading: Set<String> = []
     /// Whole-image histogram per page — the region box is re-measured on every
     /// drag, but the image behind it does not change.
@@ -320,6 +331,7 @@ public final class FITSPreviewModel {
         // a non-diffable HDU, so an ungated suffix labels it Δ while showing it.
         return p.caption + (mode == .diff && canDiff ? "   ·   Δ − previous HDU" : "")
             + (rhefShown ? "   ·   " + FITSRenderer.rhefChipText : "")
+            + (revealImage() != nil && compareModel == nil ? "   ·   RHEF left of the divider, plain right" : "")
     }
 
     /// The caption plus `KEY=value` for each pinned keyword this HDU has, in pin
@@ -347,7 +359,9 @@ public final class FITSPreviewModel {
     public var rhefShown: Bool { filter == .rhef && filterCache[filterKey] != nil }
 
     /// The RH-11 stamp line for an export of what is on screen; nil when RHEF is not shown.
-    public var rhefStamp: String? { rhefShown ? FITSRenderer.rhefStamp() : nil }
+    public var rhefStamp: String? {
+        rhefShown ? FITSRenderer.rhefStamp(upsilon: (upsilonLow, upsilonHigh)) : nil
+    }
 
     /// The image to draw for the current HDU + mode. A filter, when set, wins
     /// over the plain/stretch/diff mode — it's a distinct way of looking at the
@@ -359,7 +373,7 @@ public final class FITSPreviewModel {
         guard let p = page else { return nil }
         if filter != .none {
             // The filter supplies the values; the stretch maps them to the ramp.
-            if let g = filterCache[filterKey] { return filteredImage(g) ?? p.image }
+            if let g = shapedFilter() { return filteredImage(g) ?? p.image }
             requestFilter()
         }
         return unfilteredImage()
@@ -377,6 +391,44 @@ public final class FITSPreviewModel {
     }
 
     private var filterKey: String { "\(cur):\(filter.rawValue)" }
+
+    /// The cached ranks with Shadows and Highlights applied, kept until either moves.
+    private func shapedFilter() -> (w: Int, h: Int, vals: [Float])? {
+        let key = filterKey
+        guard let r = filterCache[key] else { return nil }
+        // Shadows and Highlights are RHEF's Upsilon; MGN and WOW values pass through.
+        if filter != .rhef { return r }
+        if let c = shapedCache, c.key == key, c.low == upsilonLow, c.high == upsilonHigh { return c.g }
+        var v = r.vals
+        for i in v.indices where v[i].isFinite {
+            v[i] = Float(FITSRenderer.applyUpsilon(Double(v[i]), low: upsilonLow, high: upsilonHigh))
+        }
+        let g = (w: r.w, h: r.h, vals: v)
+        shapedCache = (key, upsilonLow, upsilonHigh, g)
+        return g
+    }
+
+    /// Move Shadows and/or Highlights (clamped to 0.05...1). True when the host must repaint.
+    @discardableResult
+    public func setUpsilon(low: Double? = nil, high: Double? = nil) -> Bool {
+        let l = min(1, max(0.05, low ?? upsilonLow)), h = min(1, max(0.05, high ?? upsilonHigh))
+        guard l != upsilonLow || h != upsilonHigh else { return false }
+        upsilonLow = l; upsilonHigh = h
+        return filter == .rhef
+    }
+
+    /// The cached rank (0 to 1, before Shadows and Highlights) of the pixel at (u, v),
+    /// each 0...1 from the top-left; nil unless RHEF is shown there with a finite value.
+    public func rhefRank(u: Double, v: Double) -> Float? {
+        guard filter == .rhef, let g = filterCache[filterKey], g.w > 0, g.h > 0 else { return nil }
+        let x = min(g.w - 1, max(0, Int(u * Double(g.w))))
+        let y = min(g.h - 1, max(0, Int(v * Double(g.h))))
+        let r = g.vals[y * g.w + x]
+        return r.isFinite ? r : nil
+    }
+
+    /// The plain image for the reveal wipe; nil unless it is on and RHEF is what is shown.
+    public func revealImage() -> CGImage? { revealRaw && rhefShown ? page?.image : nil }
 
     // MARK: before and after (HF-19)
 
@@ -409,7 +461,8 @@ public final class FITSPreviewModel {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let g: (w: Int, h: Int, vals: [Float])?
             switch which {
-            case .rhef: g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs)
+            // Upsilon 1 is the identity: the RHEF cache holds raw ranks (see filterCache).
+            case .rhef: g = FITSPreviewModel.rhefValues(buffer: f, res: res, wcs: wcs, upsilon: 1)
             case .mgn:  g = FITSPreviewModel.mgnValues(buffer: f)
             case .wow:  g = FITSPreviewModel.wowValues(buffer: f)
             case .none: g = nil
@@ -444,6 +497,8 @@ public final class FITSPreviewModel {
                 t += String(format: "   r = %.2f R☉", (tx * tx + ty * ty).squareRoot() / w.rsun)
             }
         }
+        // RHEF: where this pixel ranks among the pixels at its radius (RH-13).
+        if let k = rhefRank(u: u, v: v) { t += String(format: "\nRHEF rank %.2f in its ring", k) }
         return t
     }
 
@@ -597,7 +652,7 @@ public final class FITSPreviewModel {
         guard let p = page else { return nil }
         if filter != .none {
             // image() draws the filter output first, whatever the mode is.
-            guard let g = filterCache[filterKey] else { return nil }
+            guard let g = shapedFilter() else { return nil }
             let (lo, hi) = filterLevels(g.vals)
             return Colorbar.make(lut: p.lut, lo: lo, hi: hi, gamma: Float(stretch.gamma),
                                  log: stretch.log, unit: "", exact: false,
@@ -1073,13 +1128,13 @@ public final class FITSPreviewModel {
         guard filter == .rhef else { return "" }
         return """
         from sunkit_image.radial import rhef   # needs sunkit-image with radial.rhef (0.7.0 has it)
-        m = rhef(m, upsilon=0.35)   # the RHEF filter shown in HelioFITS
+        m = rhef(m, upsilon=\(upsilonLow == upsilonHigh ? String(format: "%g", upsilonLow) : String(format: "(%g, %g)", upsilonLow, upsilonHigh)))   # the RHEF filter shown in HelioFITS (a pair is Shadows, Highlights)
         # Known differences from the on-screen filter (fastRHEF conventions, oRHEF-2.0):
         # TIES-TOL ties within 1e-9 of the frame's peak share a rank; KEY-QUANT the sort
         # key drops 2 bits of the float32 pattern; GEOM-GRID HelioFITS filters a grid of at
         # most 1024 px a side; DTYPE-IN float32 out. RHEF output is a visualization.
         rhef_data = m.data   # filtered values: per-radius rank in (0, 1]
-        # HelioFITS showed: \(FITSRenderer.rhefStamp())
+        # HelioFITS showed: \(FITSRenderer.rhefStamp(upsilon: (upsilonLow, upsilonHigh)))
         # RHEF output is a visualization, not a calibrated radiance.
 
         """

@@ -77,7 +77,7 @@ final class Viewer: ObservableObject, Identifiable {
         caption = model.caption(pinned: SharedSettings.pinnedKeywords(in: UserDefaults.standard))
         colorbar = model.colorbar(tickCount: 5)
         rings = model.ringsOn ? model.rings() : nil
-        compareImage = model.compareModel == nil ? nil : model.registeredCompareImage()
+        compareImage = model.canvasCompare()?.image
         objectWillChange.send()
     }
 
@@ -215,7 +215,9 @@ struct ViewerView: View {
                                compare: viewer.compareImage, swipe: swipe,
                                onSample: { viewer.sample(u: $0, v: $1) },
                                onSwipe: { viewer.step($0) })
-                    if viewer.compareImage != nil { compareStrip }
+                    if viewer.compareImage != nil {
+                        if viewer.model.compareModel == nil { revealStrip } else { compareStrip }
+                    }
                     if let bar = viewer.colorbar {
                         ColorbarStrip(bar: bar).padding(.horizontal, 16).padding(.top, 6)
                     }
@@ -264,6 +266,17 @@ struct ViewerView: View {
             }
             Text("B: \(viewer.compareName ?? ""), \(link). Solar rotation between the two times is not compensated.")
                 .font(.caption2).foregroundStyle(Color(white: 0.8))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16).padding(.top, 6)
+    }
+
+    /// Reveal wipe (RH-13): the RHEF image left of the divider, the plain image right of it.
+    private var revealStrip: some View {
+        HStack(spacing: 8) {
+            Text("RHEF").font(.system(.footnote, design: .monospaced).weight(.semibold))
+            Slider(value: $swipe, in: 0...1).accessibilityLabel("Reveal divider between RHEF and the plain image")
+            Text("plain").font(.system(.footnote, design: .monospaced).weight(.semibold))
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 16).padding(.top, 6)
@@ -472,6 +485,9 @@ struct StretchPanel: View {
     @State private var log = false
     @State private var vminText = ""
     @State private var vmaxText = ""
+    @State private var shadows = FITSRenderer.rhefUpsilon
+    @State private var highlights = FITSRenderer.rhefUpsilon
+    @State private var reveal = false
 
     var body: some View {
         let m = viewer.model
@@ -485,6 +501,12 @@ struct StretchPanel: View {
             slider("High", $high, 0...1, String(format: "%.2f %%", StretchScale.highPercent(high)))
             slider("Gamma", $gamma, 0.1...2, String(format: "%.2f", gamma))
             Toggle("Logarithmic", isOn: $log)
+            if m.filter == .rhef {
+                // RHEF (RH-13): re-shape the cached ranks live; the wipe shows the plain image right of the divider.
+                slider("Shadows", $shadows, 0.05...1, String(format: "%.2f", shadows))
+                slider("Highlights", $highlights, 0.05...1, String(format: "%.2f", highlights))
+                Toggle("Reveal plain image (drag the divider)", isOn: $reveal)
+            }
             limitsRow(m)
             if let l = m.displayLimits() {
                 Text("Clipped to \(FITSRenderer.fmtValue(l.lo)) … \(FITSRenderer.fmtValue(l.hi))\(l.unit.isEmpty ? "" : " \(l.unit)")")
@@ -496,8 +518,12 @@ struct StretchPanel: View {
             low = StretchScale.lowPosition(m.stretch.lo)
             high = StretchScale.highPosition(m.stretch.hi)
             gamma = m.stretch.gamma; log = m.stretch.log
+            shadows = m.upsilonLow; highlights = m.upsilonHigh; reveal = m.revealRaw
             syncFields()
         }
+        .onChange(of: shadows) { applyRHEF() }
+        .onChange(of: highlights) { applyRHEF() }
+        .onChange(of: reveal) { applyRHEF() }
         .onChange(of: low) { apply() }
         .onChange(of: high) { apply() }
         .onChange(of: gamma) { apply() }
@@ -511,6 +537,14 @@ struct StretchPanel: View {
             Slider(value: v, in: r)
             Text(value).font(.system(.footnote, design: .monospaced)).frame(width: 72, alignment: .trailing)
         }
+    }
+
+    private func applyRHEF() {
+        let m = viewer.model
+        let shaped = m.setUpsilon(low: shadows, high: highlights)
+        let wipe = reveal != m.revealRaw
+        m.revealRaw = reveal
+        if shaped || wipe { viewer.refresh() }
     }
 
     private func apply() {
