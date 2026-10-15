@@ -107,6 +107,11 @@ the complete FITS header beneath. From here you can **export any HDU to PNG** fo
 slide or a paper, or **copy a ready‑to‑run sunpy snippet** that loads exactly the
 HDU you're looking at — a one‑click bridge back to Python.
 
+**Play** runs a file's layers as a looping movie. Open a **folder** (File ▸ Open…)
+and its FITS files become one: frames in DATE‑OBS order, a scrubber, a frame rate,
+and Diff as a running difference between neighbouring files, taken at full
+resolution. Nothing plays until you press Play.
+
 ---
 
 ## Install

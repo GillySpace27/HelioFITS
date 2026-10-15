@@ -66,6 +66,7 @@ final class Viewer: ObservableObject, Identifiable {
     deinit {
         if scoped { url.stopAccessingSecurityScopedResource() }
         if compareScoped { compareURL?.stopAccessingSecurityScopedResource() }
+        playTimer?.invalidate()
     }
 
     var name: String { url.lastPathComponent }
@@ -81,6 +82,34 @@ final class Viewer: ObservableObject, Identifiable {
     }
 
     func step(_ d: Int) { if model.step(d) { readout = nil; refresh() } }
+
+    // MARK: play (HF-14)
+
+    /// Layers playing as a loop; never started by the app itself.
+    @Published private(set) var playing = false
+    private var playTimer: Timer?
+    static let playFPS = 5.0
+
+    func togglePlay() {
+        if let t = playTimer {
+            t.invalidate()
+            playTimer = nil
+            playing = false
+            return
+        }
+        guard model.count > 1 else { return }
+        let t = Timer(timeInterval: 1 / Self.playFPS, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                if !self.model.step(1) { self.model.select(page: 0) }
+                self.readout = nil
+                self.refresh()
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        playTimer = t
+        playing = true
+    }
     func select(page: Int) { model.select(page: page); readout = nil; refresh() }
 
     func sample(u: Double, v: Double) {
@@ -254,6 +283,10 @@ struct ViewerView: View {
                 }
                 Button { viewer.step(1) } label: { Image(systemName: "chevron.right") }
                     .disabled(m.cur >= m.count - 1).accessibilityLabel("Next layer")
+                Button { viewer.togglePlay() } label: {
+                    Image(systemName: viewer.playing ? "pause.fill" : "play.fill")
+                }
+                .accessibilityLabel(viewer.playing ? "Pause layers" : "Play layers as a movie")
             }
             Spacer()
             Menu {
