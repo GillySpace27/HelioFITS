@@ -10,6 +10,16 @@ generator and a Spotlight importer — its job is teaching Finder a file type.
 
 ---
 
+## Name (30 char max)
+
+```
+HelioFITS
+```
+
+> The live App Store name. The site calls the plugin HelioFITS Peek (2026-10-13);
+> the listing keeps HelioFITS until Gilly decides to rename it. Change it here,
+> then run `store_sync.py` (see the ship-heliofits skill).
+
 ## Subtitle (30 char max)
 
 ```
