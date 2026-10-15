@@ -159,4 +159,84 @@ struct RHEFTests {
                                           upsilon: 0.35, upsilonHigh: 0.35)
         #expect(a == b)
     }
+
+    // RH-15: the parallel kernel that lifts the 1024 grid cap in the viewer (behind a setting).
+
+    /// A tie-heavy frame: a radial falloff quantized to few levels, plus a constant corner.
+    private func tieFrame(_ n: Int) -> (values: [Float], radii: [Double], maxR: Double) {
+        var v = [Float](); var r = [Double](); var maxR = 1e-9
+        let c = Double(n) / 2
+        for y in 0..<n {
+            for x in 0..<n {
+                let d = ((Double(x) - c) * (Double(x) - c) + (Double(y) - c) * (Double(y) - c)).squareRoot()
+                maxR = max(maxR, d)
+                r.append(d)
+                let level = (exp(-d / 20) * 12).rounded() / 12 + Double((x * 7 + y * 13) % 5) * 0.001
+                v.append(x < 4 && y < 4 ? 0 : Float(level))
+            }
+        }
+        return (v, r, maxR)
+    }
+
+    @Test("Parallel kernel is bit-identical to the serial reference, ties and all")
+    func parallelMatchesSerial() {
+        let f = tieFrame(96)
+        for (lo, hi) in [(0.35, nil), (0.2, 0.8)] as [(Double, Double?)] {
+            let a = FITSRenderer.rhefEqualize(values: f.values, radii: f.radii, maxRadius: f.maxR,
+                                              nbins: 48, upsilon: lo, upsilonHigh: hi)
+            let b = FITSRenderer.rhefEqualizeParallel(values: f.values, radii: f.radii, maxRadius: f.maxR,
+                                                      nbins: 48, upsilon: lo, upsilonHigh: hi)
+            #expect(a.count == b.count)
+            var diffs = 0
+            for i in a.indices where !(a[i].isNaN && b[i].isNaN) && a[i] != b[i] { diffs += 1 }
+            #expect(diffs == 0, "\(diffs) of \(a.count) pixels differ for (\(lo), \(String(describing: hi)))")
+        }
+    }
+
+    @Test("Non-finite pixels stay NaN in the parallel kernel")
+    func parallelKeepsNaN() {
+        var f = tieFrame(32)
+        f.values[100] = .nan
+        let b = FITSRenderer.rhefEqualizeParallel(values: f.values, radii: f.radii, maxRadius: f.maxR,
+                                                  nbins: 16, upsilon: 0.35)
+        #expect(b[100].isNaN)
+        #expect(b[500].isFinite)
+    }
+
+    @Test("rhefValues with a raised cap equals the default when the frame is under the cap")
+    func capRaisedSameOnSmallFrame() throws {
+        let n = 64
+        let f = tieFrame(n)
+        let buf: FITSPreviewModel.Buffer = (w: n, h: n, pix: f.values)
+        let blank = try FITSRenderer.makeImage(gray: [UInt8](repeating: 0, count: n * n), width: n, height: n)
+        let res = FITSRenderer.Result(image: blank, header: "", width: n, height: n, natW: n, natH: n,
+                                      factor: 1, lo: 0, hi: 1, gam: 0.5, cmapKey: nil)
+        let a = try #require(FITSPreviewModel.rhefValues(buffer: buf, res: res, wcs: nil))
+        let b = try #require(FITSPreviewModel.rhefValues(buffer: buf, res: res, wcs: nil, cap: 1 << 20))
+        #expect(a.w == b.w && a.h == b.h)
+        #expect(zip(a.vals, b.vals).allSatisfy { $0 == $1 || ($0.isNaN && $1.isNaN) })
+    }
+
+    @Test("A frame past the serial kernel's 2^23 pixels ranks fully and every rank is in (0, 1]")
+    func parallelTakesALargeFrame() {
+        let n = 2900                                   // 8.41 million pixels, over 1 << 23
+        var v = [Float](repeating: 0, count: n * n)
+        var r = [Double](repeating: 0, count: n * n)
+        let c = Double(n) / 2
+        var maxR = 1e-9
+        for y in 0..<n {
+            for x in 0..<n {
+                let d = ((Double(x) - c) * (Double(x) - c) + (Double(y) - c) * (Double(y) - c)).squareRoot()
+                maxR = max(maxR, d)
+                r[y * n + x] = d
+                v[y * n + x] = Float(exp(-d / 300)) + Float((x * 31 + y * 17) % 97) * 1e-4
+            }
+        }
+        #expect(n * n > (1 << 23))
+        let serial = FITSRenderer.rhefEqualize(values: v, radii: r, maxRadius: maxR, nbins: 1450, upsilon: 0.35)
+        #expect(serial.allSatisfy { $0.isNaN }, "the serial kernel is expected to refuse this size")
+        let out = FITSRenderer.rhefEqualizeParallel(values: v, radii: r, maxRadius: maxR, nbins: 1450, upsilon: 0.35)
+        #expect(out.count == n * n)
+        #expect(out.allSatisfy { $0 > 0 && $0 <= 1 })
+    }
 }

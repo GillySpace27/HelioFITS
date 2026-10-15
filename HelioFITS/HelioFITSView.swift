@@ -189,6 +189,7 @@ struct SettingsView: View {
     @State private var status = ""
     @State private var pins = ""
     @State private var rhefCovers = false
+    @State private var rhefFullRes = false
 
     var body: some View {
         Form {
@@ -242,6 +243,17 @@ struct SettingsView: View {
             }
 
             Section {
+                Toggle("Run RHEF at full resolution in the viewer", isOn: Binding(
+                    get: { rhefFullRes },
+                    set: { rhefFullRes = $0; saveFullRes() }))
+            } header: {
+                Text("RHEF")
+            } footer: {
+                Text("Off by default: RHEF runs on a grid of at most 1024 pixels a side. On, it runs on every pixel of the viewer's frame: slower, and a 4096 pixel frame needs a few hundred megabytes while it runs. Takes effect for files opened afterwards. Previews and thumbnails always use the smaller grid. A visualization, not a calibrated radiance.")
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
                 Toggle("Show RHEF covers on thumbnails of files with a solar limb", isOn: Binding(
                     get: { rhefCovers },
                     set: { rhefCovers = $0; saveCovers() }))
@@ -284,6 +296,13 @@ struct SettingsView: View {
         dirRules = (d.dictionary(forKey: SharedSettings.dirHDUKey) as? [String: Int]) ?? [:]
         pins = SharedSettings.pinnedKeywords(in: d).joined(separator: ", ")
         rhefCovers = d.bool(forKey: SharedSettings.rhefCoversKey)
+        rhefFullRes = d.bool(forKey: SharedSettings.rhefFullResKey)
+    }
+
+    private func saveFullRes() {
+        guard let d = PreviewSettings.suite else { return }
+        d.set(rhefFullRes, forKey: SharedSettings.rhefFullResKey)
+        status = "Saved. The viewer uses it for files opened from now on."
     }
 
     private func saveCovers() {

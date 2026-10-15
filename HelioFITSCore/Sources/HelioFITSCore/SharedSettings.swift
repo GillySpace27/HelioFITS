@@ -16,6 +16,9 @@ public enum SharedSettings {
     /// Opt-in RHEF cover on Finder thumbnails of files with a solar limb (HF-20). Off
     /// when absent. Slower per icon, so the Mac app offers Refresh Icons after a change.
     public static let rhefCoversKey = "rhefCovers"           // Bool
+    /// Opt-in full-resolution RHEF in the Mac viewer (RH-15). Off when absent: the grid stays at
+    /// 1024 pixels a side, Gilly's default. Previews and thumbnails never read it.
+    public static let rhefFullResKey = "rhefFullRes"         // Bool
     public static var suite: UserDefaults? { UserDefaults(suiteName: suiteName) }
 
     /// The pinned keywords, cleaned (see `keywords(from:)`).
