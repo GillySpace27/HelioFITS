@@ -8,10 +8,13 @@
 //      pinch / double-tap     zoom (double-tap toggles 1× ↔ 3× about the finger)
 //      press and drag         pixel readout: value, Tx/Ty, r/R☉
 //      swipe left / right     step between layers (at 1×, where panning is idle)
+//      Compare menu           a second file under a swipe divider, lined up by
+//                             helioprojective coordinates (HF-15)
 //
 
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 import HelioFITSCore
 
 // MARK: - State
@@ -31,6 +34,15 @@ final class Viewer: ObservableObject, Identifiable {
     @Published var rings: SolarRings?
     @Published var loading = true
     @Published var failed = false
+    /// Compare (HF-15): the second file registered onto this page's grid by
+    /// helioprojective coordinates, shown right of the swipe divider; nil when not comparing.
+    @Published var compareImage: CGImage?
+    /// Why a compare file was refused (title, text); the screen shows it as an alert.
+    @Published var compareProblem: (title: String, text: String)?
+    @Published var compareLoading = false
+    private var compareURL: URL?
+    private var compareScoped = false
+    private var lastSample: (u: Double, v: Double)?
 
     init(url: URL) {
         self.url = url
@@ -51,7 +63,10 @@ final class Viewer: ObservableObject, Identifiable {
         }
     }
 
-    deinit { if scoped { url.stopAccessingSecurityScopedResource() } }
+    deinit {
+        if scoped { url.stopAccessingSecurityScopedResource() }
+        if compareScoped { compareURL?.stopAccessingSecurityScopedResource() }
+    }
 
     var name: String { url.lastPathComponent }
 
@@ -61,6 +76,7 @@ final class Viewer: ObservableObject, Identifiable {
         caption = model.caption()
         colorbar = model.colorbar(tickCount: 5)
         rings = model.ringsOn ? model.rings() : nil
+        compareImage = model.compareModel == nil ? nil : model.registeredCompareImage()
         objectWillChange.send()
     }
 
@@ -68,8 +84,70 @@ final class Viewer: ObservableObject, Identifiable {
     func select(page: Int) { model.select(page: page); readout = nil; refresh() }
 
     func sample(u: Double, v: Double) {
-        readout = model.readout(u: u, v: v)
+        lastSample = (u, v)
+        let a = model.readout(u: u, v: v)
             ?? (model.fullResReady ? nil : "Loading full-resolution pixels…")
+        // While comparing, the second line is the other file at the same place on the Sun.
+        let lines = [a, model.compareReadout(u: u, v: v)].compactMap { $0 }
+        readout = lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    // MARK: compare (HF-15)
+
+    /// The compare file's name, while there is one.
+    var compareName: String? { model.compareModel.map { URL(fileURLWithPath: $0.path).lastPathComponent } }
+
+    /// Load a second file and keep it only when the two can honestly be linked
+    /// (the same rule as the Mac viewer's FITSCompareController).
+    func compare(with other: URL) {
+        let scopedNow = other.startAccessingSecurityScopedResource()
+        compareLoading = true
+        let path = other.path
+        Task.detached(priority: .userInitiated) {
+            let b = FITSPreviewModel.load(path: path, maxSide: 2048)
+            await MainActor.run { self.attachCompare(b, url: other, scoped: scopedNow) }
+        }
+    }
+
+    private func attachCompare(_ b: FITSPreviewModel, url other: URL, scoped: Bool) {
+        compareLoading = false
+        func release() { if scoped { other.stopAccessingSecurityScopedResource() } }
+        guard !b.isEmpty else {
+            release()
+            compareProblem = ("No image in that file", "\(other.lastPathComponent) has no image to compare.")
+            return
+        }
+        let before = (model.compareModel, model.compareMode)
+        model.setCompare(model: b, mode: .swipe)
+        let link = model.compareLinkStatus() ?? .noWCS
+        guard link.isLinked else {
+            model.setCompare(model: before.0, mode: before.1)
+            release()
+            let why = link.summary
+            compareProblem = ("These two files cannot be linked",
+                              String(why.prefix(1)).uppercased() + String(why.dropFirst()) + ".")
+            return
+        }
+        if compareScoped { compareURL?.stopAccessingSecurityScopedResource() }
+        compareURL = other
+        compareScoped = scoped
+        b.onFullRes = { [weak self] in self?.resample() }
+        refresh()
+        resample()
+    }
+
+    func stopComparing() {
+        model.setCompare(model: nil, mode: nil)
+        if compareScoped { compareURL?.stopAccessingSecurityScopedResource() }
+        compareURL = nil
+        compareScoped = false
+        refresh()
+        resample()
+    }
+
+    /// Re-read the readout at the last touched point, when one is showing.
+    private func resample() {
+        if readout != nil, let s = lastSample { sample(u: s.u, v: s.v) }
     }
 
     /// Limb circle as fractions of the image: centre (u, v) from the top-left,
@@ -85,8 +163,13 @@ final class Viewer: ObservableObject, Identifiable {
 
 struct ViewerView: View {
     @ObservedObject var viewer: Viewer
+    /// Asks the host to show its file importer for the compare file. The host owns the
+    /// one importer, because two .fileImporter modifiers in one hierarchy can conflict.
+    var chooseCompare: () -> Void = {}
     @State private var showStretch = false
     @State private var copied = false
+    /// Where the swipe divider sits, as a fraction of the image width.
+    @State private var swipe = 0.5
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -99,8 +182,10 @@ struct ViewerView: View {
             } else {
                 VStack(spacing: 0) {
                     ZoomCanvas(image: viewer.image, limb: viewer.limb, rings: viewer.rings,
+                               compare: viewer.compareImage, swipe: swipe,
                                onSample: { viewer.sample(u: $0, v: $1) },
                                onSwipe: { viewer.step($0) })
+                    if viewer.compareImage != nil { compareStrip }
                     if let bar = viewer.colorbar {
                         ColorbarStrip(bar: bar).padding(.horizontal, 16).padding(.top, 6)
                     }
@@ -125,6 +210,30 @@ struct ViewerView: View {
         .sheet(isPresented: $showStretch) {
             StretchPanel(viewer: viewer).presentationDetents([.height(430), .large])
         }
+        .alert(viewer.compareProblem?.title ?? "",
+               isPresented: Binding(get: { viewer.compareProblem != nil },
+                                    set: { if !$0 { viewer.compareProblem = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewer.compareProblem?.text ?? "")
+        }
+    }
+
+    /// Swipe compare (HF-15): A left of the divider, B right of it, both on A's grid.
+    /// A slider moves the divider, so panning and zooming the image stay as they are.
+    private var compareStrip: some View {
+        let link = viewer.model.compareLinkStatus()?.summary ?? ""
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 8) {
+                Text("A").font(.system(.footnote, design: .monospaced).weight(.semibold))
+                Slider(value: $swipe, in: 0...1).accessibilityLabel("Swipe divider between A and B")
+                Text("B").font(.system(.footnote, design: .monospaced).weight(.semibold))
+            }
+            Text("B: \(viewer.compareName ?? ""), \(link). Solar rotation between the two times is not compensated.")
+                .font(.caption2).foregroundStyle(Color(white: 0.8))
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 16).padding(.top, 6)
     }
 
     @ToolbarContentBuilder
@@ -165,6 +274,17 @@ struct ViewerView: View {
             }
             .disabled(!m.canDiff)
             Button { showStretch = true } label: { Label("Stretch", systemImage: "slider.horizontal.3") }
+            Menu {
+                Button { chooseCompare() } label: {
+                    Label("Compare With File…", systemImage: "doc.on.doc")
+                }
+                if m.compareModel != nil {
+                    Button { viewer.stopComparing() } label: { Label("Stop Comparing", systemImage: "xmark") }
+                }
+            } label: {
+                Label("Compare", systemImage: "square.split.2x1")
+            }
+            .disabled(m.page?.wcs == nil || viewer.compareLoading)
             Menu {
                 if let img = viewer.image {
                     ShareLink(item: Image(decorative: img, scale: 1),
@@ -378,6 +498,8 @@ struct ZoomCanvas: UIViewRepresentable {
     let image: CGImage?
     let limb: (u: Double, v: Double, r: Double)?
     let rings: SolarRings?
+    let compare: CGImage?
+    let swipe: Double
     let onSample: (Double, Double) -> Void
     let onSwipe: (Int) -> Void
 
@@ -392,6 +514,8 @@ struct ZoomCanvas: UIViewRepresentable {
         if v.imageView.image?.cgImage !== image { v.imageView.image = image.map { UIImage(cgImage: $0) } }
         v.limb = limb
         v.rings = rings
+        if v.compareView.image?.cgImage !== compare { v.compareView.image = compare.map { UIImage(cgImage: $0) } }
+        v.swipe = swipe
     }
 }
 
@@ -404,6 +528,14 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
     /// Plane-of-sky rings and spokes (HF-15), drawn like the limb: dark line under a coloured one.
     var rings: SolarRings? { didSet { layoutRings() } }
     private let ringsUnder = CAShapeLayer(), ringsOver = CAShapeLayer()
+    /// Ring (k R_sun) and spoke (position angle) labels; counter-scaled so they keep their size when zoomed.
+    private let ringLabels = CALayer()
+    /// Swipe compare (HF-15): the registered second image over the first, masked to the
+    /// right of the divider. A subview of imageView, so it zooms and pans with it.
+    let compareView = UIImageView()
+    private let compareMask = CALayer()
+    private let swipeLine = CAShapeLayer()
+    var swipe: Double = 0.5 { didSet { layoutCompare() } }
 
     init() {
         super.init(frame: .zero)
@@ -415,6 +547,12 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
         imageView.isUserInteractionEnabled = true
         imageView.accessibilityLabel = "FITS image"
         addSubview(imageView)
+        // Under the limb and ring layers, over the first image.
+        compareView.contentMode = .scaleAspectFit
+        compareView.isUserInteractionEnabled = false
+        compareMask.backgroundColor = UIColor.black.cgColor
+        compareView.layer.mask = compareMask
+        imageView.insertSubview(compareView, at: 0)
         // A dark solid line under a white dash, so the limb reads on corona and on sky.
         for (l, w, c, dash) in [(limbUnder, 3.5, UIColor.black.withAlphaComponent(0.85), nil),
                                 (limbOver, 1.2, UIColor.white, [6, 5] as [NSNumber]?)] {
@@ -426,6 +564,11 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
             l.fillColor = nil; l.strokeColor = c.cgColor; l.lineWidth = w
             imageView.layer.addSublayer(l)
         }
+        imageView.layer.addSublayer(ringLabels)
+        swipeLine.fillColor = nil
+        swipeLine.strokeColor = UIColor.white.withAlphaComponent(0.9).cgColor
+        swipeLine.lineWidth = 1.5
+        imageView.layer.addSublayer(swipeLine)
 
         let press = UILongPressGestureRecognizer(target: self, action: #selector(pressed(_:)))
         press.minimumPressDuration = 0.15
@@ -450,6 +593,7 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
             contentSize = bounds.size
             layoutLimb()
             layoutRings()
+            layoutCompare()
         }
     }
 
@@ -459,6 +603,11 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
         // Keep the limb line a constant on-screen width while zooming.
         limbUnder.lineWidth = 3.5 / zoomScale; limbOver.lineWidth = 1.2 / zoomScale
         ringsUnder.lineWidth = 3.0 / zoomScale; ringsOver.lineWidth = 1.1 / zoomScale
+        swipeLine.lineWidth = 1.5 / zoomScale
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        let k = CATransform3DMakeScale(1 / zoomScale, 1 / zoomScale, 1)
+        for l in ringLabels.sublayers ?? [] { l.transform = k }
+        CATransaction.commit()
     }
 
     /// The rect the aspect-fitted image occupies, in imageView coordinates.
@@ -481,7 +630,11 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
 
     /// Rings and spokes as one path in imageView coordinates (normalized u, v scaled by the image rect).
     private func layoutRings() {
-        guard let rs = rings, imageRect.width > 0 else { ringsUnder.path = nil; ringsOver.path = nil; return }
+        guard let rs = rings, imageRect.width > 0 else {
+            ringsUnder.path = nil; ringsOver.path = nil
+            ringLabels.sublayers?.forEach { $0.removeFromSuperlayer() }
+            return
+        }
         let r = imageRect
         func pt(_ p: CGPoint) -> CGPoint { CGPoint(x: r.minX + p.x * r.width, y: r.minY + p.y * r.height) }
         let path = CGMutablePath()
@@ -493,6 +646,57 @@ final class CanvasScrollView: UIScrollView, UIScrollViewDelegate, UIGestureRecog
             }
         }
         ringsUnder.path = path; ringsOver.path = path
+
+        // Labels, as on the Mac canvas: "k R☉" on each ring, the position angle at each spoke's outer end.
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        ringLabels.sublayers?.forEach { $0.removeFromSuperlayer() }
+        for ring in rs.rings {
+            if let at = ring.labelAt { ringLabels.addSublayer(labelLayer(ring.label, at: pt(at), size: 10)) }
+        }
+        for sp in rs.spokes {
+            if let at = sp.labelAt {
+                ringLabels.addSublayer(labelLayer(String(format: "%.0f\u{00B0}", sp.positionAngleDegrees),
+                                                  at: pt(at), size: 9))
+            }
+        }
+        CATransaction.commit()
+    }
+
+    /// A small dark chip with white monospaced text, centred on `p`, sized for the current zoom.
+    private func labelLayer(_ text: String, at p: CGPoint, size: CGFloat) -> CATextLayer {
+        let font = UIFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let s = (text as NSString).size(withAttributes: [.font: font])
+        let t = CATextLayer()
+        t.string = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: UIColor.white])
+        t.alignmentMode = .center
+        t.bounds = CGRect(x: 0, y: 0, width: ceil(s.width) + 6, height: ceil(s.height) + 2)
+        t.position = p
+        t.backgroundColor = UIColor.black.withAlphaComponent(0.6).cgColor
+        t.cornerRadius = 3
+        t.contentsScale = traitCollection.displayScale
+        t.transform = CATransform3DMakeScale(1 / zoomScale, 1 / zoomScale, 1)
+        return t
+    }
+
+    /// Place the compare image, its mask (right of the divider) and the divider line.
+    private func layoutCompare() {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        compareView.frame = imageView.bounds
+        guard compareView.image != nil, imageRect.width > 0 else {
+            compareView.isHidden = true
+            swipeLine.path = nil
+            return
+        }
+        compareView.isHidden = false
+        let r = imageRect
+        let x = r.minX + CGFloat(min(max(swipe, 0), 1)) * r.width
+        compareMask.frame = CGRect(x: x, y: 0, width: max(0, imageView.bounds.maxX - x),
+                                   height: imageView.bounds.height)
+        let line = CGMutablePath()
+        line.move(to: CGPoint(x: x, y: r.minY))
+        line.addLine(to: CGPoint(x: x, y: r.maxY))
+        swipeLine.path = line
     }
 
     @objc private func pressed(_ g: UILongPressGestureRecognizer) {

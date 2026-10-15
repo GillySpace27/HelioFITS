@@ -21,25 +21,31 @@ struct HelioFITSApp: App {
 
 struct ContentView: View {
     @State private var importing = false
+    /// True when the importer is choosing a compare file for the open viewer (HF-15).
+    @State private var importForCompare = false
     @State private var viewer: Viewer?
     @State private var savedNote: String?
 
     var body: some View {
         NavigationStack {
             Group {
-                if let viewer { ViewerView(viewer: viewer) } else { welcome }
+                if let viewer {
+                    ViewerView(viewer: viewer, chooseCompare: { importForCompare = true; importing = true })
+                } else { welcome }
             }
             .navigationTitle(viewer?.name ?? "HelioFITS")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     if viewer != nil { Button("Close") { viewer = nil } }
-                    Button { importing = true } label: { Label("Open", systemImage: "folder") }
+                    Button { importForCompare = false; importing = true } label: { Label("Open", systemImage: "folder") }
                 }
             }
         }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.fits]) { result in
-            if case .success(let url) = result { viewer = Viewer(url: url) }
+            defer { importForCompare = false }
+            guard case .success(let url) = result else { return }
+            if importForCompare, let viewer { viewer.compare(with: url) } else { viewer = Viewer(url: url) }
         }
         .onOpenURL { viewer = Viewer(url: $0) }
     }
@@ -50,7 +56,7 @@ struct ContentView: View {
             Text("In the Files app, FITS files now show the real solar image as their thumbnail, in the right instrument colormap. Tap one to preview it.")
             Text("Put files in On My \(UIDevice.current.localizedModel) ▸ HelioFITS, or anywhere Files can reach, including iCloud Drive.")
                 .foregroundStyle(.secondary)
-            Button { importing = true } label: {
+            Button { importForCompare = false; importing = true } label: {
                 Label("Open a FITS File…", systemImage: "doc.text.magnifyingglass")
             }
             .buttonStyle(.borderedProminent)
