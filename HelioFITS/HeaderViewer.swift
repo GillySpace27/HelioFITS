@@ -45,6 +45,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         var onCompareRefresh: () -> Void = {}
         let popup = NSPopUpButton()
         let save = NSButton()
+        let saveRHEF = NSButton()
         let copy = NSButton()
         /// Add the provenance footer strip under saved PNGs (HF-16). Per window, off by default.
         var burnIn = false
@@ -107,6 +108,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
                 c.tools.adoptStretch(m.stretch)   // panel opens on the baked mapping
                 self.populatePopup(c, headerText: text)
                 c.save.isEnabled = !m.isEmpty
+                c.saveRHEF.isEnabled = !m.isEmpty
                 c.copy.isEnabled = !m.isEmpty
                 c.canvas.pageCount = m.count
                 self.refresh(c)
@@ -290,6 +292,13 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         c.save.isEnabled = false
         c.save.toolTip = "Export the displayed HDU as a colour-mapped PNG: the image as you see it"
 
+        c.saveRHEF.title = "Save RHEF PNG…"
+        c.saveRHEF.bezelStyle = .rounded
+        c.saveRHEF.target = self
+        c.saveRHEF.action = #selector(saveRHEFPNG(_:))
+        c.saveRHEF.isEnabled = false
+        c.saveRHEF.toolTip = "Export this image through RHEF (Gilly & Cranmer 2025) as a PNG with its recipe and RHEF stamp, whatever filter is showing. A visualization, not a calibrated radiance."
+
         c.copy.title = "Copy Python"
         c.copy.bezelStyle = .rounded
         c.copy.target = self
@@ -306,7 +315,7 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
 
         let pin = iconButton("pin", "Pin the keyword on the selected header line: it then shows in the caption here and in Quick Look. Click again to unpin.",
                              #selector(pinKeyword(_:)))
-        let right = NSStackView(views: [reveal, copyPath, info, pin, c.copy, c.save])
+        let right = NSStackView(views: [reveal, copyPath, info, pin, c.copy, c.saveRHEF, c.save])
         right.spacing = 8
         let barStack = NSStackView(views: [c.popup, NSView(), right])
         barStack.spacing = 10
@@ -481,6 +490,26 @@ final class HeaderWindowController: NSObject, NSWindowDelegate {
         panel.beginSheetModal(for: win) { resp in
             guard resp == .OK, let url = panel.url else { return }
             try? out.data.write(to: url)
+        }
+    }
+
+    /// Save RHEF PNG (RH-18): ask where first, then run the filter off the main thread.
+    @objc private func saveRHEFPNG(_ sender: NSButton) {
+        guard let win = sender.window, let c = ctx(for: sender), !c.model.isEmpty else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = c.url.deletingPathExtension().lastPathComponent + "_rhef.png"
+        let model = c.model, name = c.url.lastPathComponent, version = Provenance.appVersion()
+        panel.beginSheetModal(for: win) { resp in
+            guard resp == .OK, let url = panel.url else { return }
+            sender.isEnabled = false
+            DispatchQueue.global(qos: .userInitiated).async {
+                let data = model.rhefPNG(fileName: name, appVersion: version)
+                DispatchQueue.main.async {
+                    sender.isEnabled = true
+                    guard let data, (try? data.write(to: url)) != nil else { NSSound.beep(); return }
+                }
+            }
         }
     }
 
