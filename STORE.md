@@ -6,7 +6,7 @@ unrelated "Helio Fit" fitness app exist). Do NOT ship as "FITS Quick Look"
 (confusable with QuickFits; Apple may reject "Quick Look" in an app name).
 
 Primary category: **Utilities**. It is a Quick Look extension, a thumbnail
-generator and a Spotlight importer — its job is teaching Finder a file type.
+generator; its job is teaching Finder a file type. (The Mac App Store build has no Spotlight importer.)
 
 ---
 
@@ -74,9 +74,9 @@ filters. Overlay a running difference. Pin which HDU a folder should show —
 first, last, or a specific one — and every preview, thumbnail and icon follows.
 Rice-compressed and .fz files work natively.
 
-METADATA IN THE FINDER
+METADATA AT A GLANCE
 Telescope, instrument, wavelength, observation date, exposure, dimensions and
-HDU count appear in Get Info, and are Spotlight-searchable.
+HDU count appear in the viewer's header pane and in the Quick Look preview.
 
 BACK TO PYTHON IN ONE CLICK
 Copy a sunpy snippet that loads exactly the HDU you are looking at. Export any
@@ -111,8 +111,7 @@ First release.
 ## App Review notes
 
 ```
-HelioFITS is a Quick Look preview extension, thumbnail extension and Spotlight
-importer for FITS (Flexible Image Transport System) files — the standard data
+HelioFITS is a Quick Look preview extension and thumbnail extension for FITS (Flexible Image Transport System) files, the standard data
 format in astronomy.
 
 To see it work, open any .fits file in Finder and press Space, or double-click it
@@ -133,7 +132,7 @@ Suggested set, in order:
 1. Quick Look preview of an AIA or PUNCH frame with the coordinate readout visible
 2. Finder gallery/icon view — a folder of FITS files with colored thumbnails
 3. The viewer window with the header beneath and the stretch panel open
-4. Get Info showing the Spotlight metadata rows
+4. The viewer's header pane showing the metadata rows
 
 ---
 
