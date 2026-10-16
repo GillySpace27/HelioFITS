@@ -1,7 +1,2 @@
 # Store claims that mention the Spotlight importer, which the Mac App Store build does not contain
 # (CLAUDE.md "Must-nots"). Listed so scripts/store_sync.py lint stays green while they stay visible;
-# rewriting STORE.md is Gilly's call (a store listing change). Remove a line when its claim is fixed.
-description|Spotlight
-description|Get Info
-review_notes|Spotlight
-review_notes|importer

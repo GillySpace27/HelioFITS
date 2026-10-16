@@ -72,11 +72,11 @@ class Lint(unittest.TestCase):
         f, _ = self.run_lint(GOOD.replace("FITS,solar", "FITS, solar"))
         self.assertTrue(any("keywords" in x for x in f))
 
-    def test_real_store_md_passes_with_known_claims(self):
+    def test_real_store_md_has_no_spotlight_claims(self):
         with open(ss.STORE, encoding="utf-8") as fh:
             f, n = ss.lint(ss.parse(fh.read()), ss.known_claims())
         self.assertEqual(f, [])
-        self.assertTrue(n, "the known Spotlight claims should still be visible as notes")
+        self.assertEqual(n, [], "STORE.md claims no Spotlight importer; none may be listed as KNOWN")
 
 
 if __name__ == "__main__":
