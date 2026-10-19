@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: >-
+  If you use HelioFITS in your research, please cite the version you used
+  (each release has its own Zenodo DOI). If you use the RHEF filter, please
+  also cite Gilly and Cranmer (2025).
+type: software
+title: HelioFITS
+abstract: >-
+  HelioFITS teaches macOS Finder and Quick Look to read solar FITS files. A
+  thumbnail extension renders each file in the colormap its header calls for,
+  a Quick Look extension gives an interactive preview with pixel values,
+  helioprojective coordinates, region statistics and multi-HDU blink
+  comparison, and a Spotlight importer makes header fields searchable. A
+  viewer app shows the full header, exports PNG and copies a sunpy snippet
+  that loads the HDU on screen.
+authors:
+  - given-names: Chris R.
+    family-names: Gilly
+    orcid: "https://orcid.org/0000-0003-0021-9056"
+    affiliation: NorthWest Research Associates
+repository-code: "https://github.com/GillySpace27/HelioFITS"
+url: "https://gilly.space/heliofits/"
+license: BSD-2-Clause
+keywords:
+  - solar physics
+  - heliophysics
+  - FITS
+  - Quick Look
+  - macOS
+  - visualization
+references:
+  - type: article
+    title: "Visualization of High Dynamic Range Solar Imagery and the Radial Histogram Equalizing Filter"
+    authors:
+      - family-names: Gilly
+        given-names: C. R.
+      - family-names: Cranmer
+        given-names: S. R.
+    journal: Solar Physics
+    volume: 300
+    start: 174
+    year: 2025
+    doi: 10.1007/s11207-025-02578-x
