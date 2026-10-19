@@ -253,6 +253,14 @@ HelioFITS collects nothing and has **no network entitlement** — the macOS sand
 denies it all internet access, so nothing can leave your Mac. No accounts, no
 analytics, no telemetry. See [PRIVACY.md](PRIVACY.md).
 
+## Citing
+
+If HelioFITS helps your research, please cite the version you used. Each release
+is archived on Zenodo with its own DOI; [CITATION.cff](CITATION.cff) has the
+details, and GitHub's "Cite this repository" button turns it into APA or BibTeX.
+If you used the RHEF filter, please also cite Gilly & Cranmer (2025),
+*Solar Physics* 300, 174, https://doi.org/10.1007/s11207-025-02578-x.
+
 ## License & credits
 
 [BSD 2‑Clause](LICENSE). Vendors [CFITSIO](https://heasarc.gsfc.nasa.gov/fitsio/)
