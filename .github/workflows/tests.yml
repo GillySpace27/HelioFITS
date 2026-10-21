@@ -127,6 +127,8 @@ jobs:
         run: xcodebuild -version && swift --version
       - name: Test the core package (headless, no app launch)
         run: swift test --package-path HelioFITSCore
+      - name: Build the root package (Heliad depends on it by URL)
+        run: swift build --product HelioFITSCore
 
   ios:
     needs: check
