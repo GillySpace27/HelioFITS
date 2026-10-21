@@ -1,7 +1,7 @@
 {
-  "title": "HelioFITS",
+  "title": "HelioFITS Peek",
   "upload_type": "software",
-  "description": "HelioFITS teaches macOS Finder and Quick Look to read solar FITS files. A thumbnail extension renders each file in the colormap its header calls for, a Quick Look extension gives an interactive preview with pixel values, helioprojective coordinates, region statistics and multi-HDU blink comparison, and a Spotlight importer makes header fields searchable. A viewer app shows the full header, exports PNG and copies a sunpy snippet that loads the HDU on screen. It vendors CFITSIO (NASA HEASARC) under its own licence.",
+  "description": "HelioFITS Peek teaches macOS Finder and Quick Look to read solar FITS files. A thumbnail extension renders each file in the colormap its header calls for, a Quick Look extension gives an interactive preview with pixel values, helioprojective coordinates, region statistics and multi-HDU blink comparison, and a Spotlight importer makes header fields searchable. A viewer app shows the full header, exports PNG and copies a sunpy snippet that loads the HDU on screen. It vendors CFITSIO (NASA HEASARC) under its own licence.",
   "creators": [
     {
       "name": "Gilly, Chris R.",
