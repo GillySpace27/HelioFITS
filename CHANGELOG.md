@@ -6,6 +6,43 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-24
+
+### Added
+
+- **A header drawer in Quick Look.** A Header chip opens the current layer's header
+  beside the preview and follows the layer as you scroll. One-click groups (All, Time,
+  Instrument, WCS, Exposure) narrow it, and pinned keywords (pinned in the viewer or in
+  Settings) come first and also show in the caption. iPhone and iPad get a Header sheet
+  (#2, #66).
+- **Filters: RHEF, MGN and WOW.** The viewer and Quick Look offer None, RHEF, MGN and
+  WOW, with an optional swipe that shows the unfiltered image beside the filtered one.
+  The readout keeps reporting the raw data (#4, #69).
+- **RHEF controls.** Shadows and Highlights sliders reshape the RHEF image live, a
+  Reveal control wipes back to the plain image, and the readout gives each pixel's rank
+  in its ring (#71). Save RHEF PNG writes a RHEF image without changing the view (#73).
+  An opt-in setting runs RHEF at full resolution in the viewer (#76).
+- **A colorbar** beside the image that follows the live stretch, with typed vmin and
+  vmax and draggable histogram handles. It hides in the narrow Finder column pane (#15).
+- **Solar-coordinate tools.** Plane-of-sky rings and position-angle spokes (viewer,
+  Quick Look, iPhone and iPad), and Compare for two files linked by helioprojective
+  coordinates: swipe, blink or side by side in the viewer, a swipe on iPhone and iPad
+  (#63).
+- **Movie mode.** Open a folder to play its FITS files in DATE-OBS order, with a frame
+  rate menu, a scrubber and an optional running difference. Play also loops a file's
+  layers. Nothing starts playing by itself (#70).
+- **Provenance in saved images.** Save PNG, the batch exporter and iOS Share write the
+  display recipe (layer, colormap, limits, stretch, filter, app version) into the PNG's
+  text chunks, with a RHEF stamp when RHEF is on. An Info popover shows the same
+  recipe, and Copy Python now reproduces what is on screen (#64, #65).
+- **Finder thumbnail labels.** Thumbnails of 128 px and up carry the file's instrument
+  and wavelength from its header, files with several layers show a stack edge, and an
+  opt-in setting draws an RHEF cover for files with a solar limb (#67).
+- **Keyboard readout cursor.** Option-arrow moves a readout crosshair, Option-Shift-arrow
+  draws a box and reports its statistics (#72).
+- **A `heliofits` command-line tool** (build from source) with `--header`, `--info` and
+  `--export` (#52).
+
 ### Security
 
 - **The Finder Quick Look and Thumbnail extensions refuse oversized and compressed
