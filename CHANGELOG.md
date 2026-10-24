@@ -18,6 +18,13 @@ All notable changes to HelioFITS are recorded here. Format follows
 
 ### Changed
 
+- **The app icon is the AIA 171 Sun inside a white file outline,** matching Heliad,
+  HelioFITS Studio and Heliogram. The outline, screen and violet-black ground follow
+  Heliogram's icon. The Sun is now the real AIA 171 frame of 2024-05-14 16:51:09 UT at
+  full resolution, tone-matched to the old icon's disc, instead of the 512 px art.
+  `scripts/make_app_icon.py` draws the macOS and iOS icon sets from
+  `scripts/icon_sources/`.
+
 - **RHEF follows RHEF 2.0's Upsilon split at 0.5.** The filter split its
   double-sided gamma at each annulus's mean rank; it now splits at 0.5, as the
   oRHEF-2.0 convention does, and accepts a (low, high) Upsilon pair. No image
